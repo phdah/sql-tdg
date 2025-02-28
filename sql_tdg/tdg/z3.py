@@ -13,6 +13,7 @@ from z3 import (
     Not,
     Distinct,
     # Core
+    is_true,
     ModelRef,
     AstVector,
     FuncDeclRef,
@@ -80,6 +81,7 @@ __all__ = [
     "Not",
     "Distinct",
     # Core
+    "is_true",
     "ModelRef",
     "AstVector",
     "FuncDeclRef",

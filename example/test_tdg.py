@@ -40,6 +40,23 @@ class TestTDG(unittest.TestCase):
         self.assertIsInstance(data.table, Dict)
         self.assertIsInstance(data.table["a"], List)
 
+    def testDataOutputTypes(self):
+        data = self.d.getData()
+        table = data.table
+        self.assertIsInstance(table["a"][0], int)
+        self.assertIsInstance(table["b"][0], str)
+        self.assertIsInstance(table["c"][0], datetime)
+        self.assertIsInstance(table["d"][0], bool)
+
+    def testDataOutputValues(self):
+        data = self.d.getData()
+        table = data.table
+        self.assertEqual(len(table["a"]), len(set(table["a"])))
+        self.assertEqual(len(table["b"]), len(set(table["b"])))
+        self.assertEqual(len(table["c"]), len(set(table["c"])))
+        self.assertIn(True, table["d"])
+        self.assertIn(False, table["d"])
+
 
 if __name__ == "__main__":
     unittest.main()

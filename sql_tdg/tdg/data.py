@@ -10,6 +10,16 @@ from sql_tdg.tdg.types import (
 )
 
 
+class Condition:
+    @staticmethod
+    def distinct(data):
+        return z3.Distinct(data)
+
+    @staticmethod
+    def orBool(data):
+        return z3.Or(data)
+
+
 class TestData:
     def __init__(self, schema: Schema, outputSize: int = 10) -> None:
         self.schema = schema
@@ -69,20 +79,22 @@ class TestData:
         if _type is datetime:
             return value.as_timestamp()  # pyright: ignore
         if _type is bool:
-            return value  # pyright: ignore
+            return z3.is_true(value)  # pyright: ignore
         else:
             raise ValueError(f"No matching function for type {type}")
 
-    def addCondition(self, colType: ColType, col: Col) -> None:
+    def addCondition(self, col: Col, condition: Callable) -> None:
         dataPoints = col.getDataPoints()
-        if colType.type is bool:
-            self.s.add(z3.Or(dataPoints))
-        else:
-            self.s.add(z3.Distinct(dataPoints))
+        self.s.add(condition(dataPoints))
 
     def generateCol(self, colType: ColType) -> None:
         col = self.generateColumn(colType)
-        self.addCondition(colType, col)
+        # TODO: this should come from the query parser
+        if colType.type is bool:
+            condition = Condition.orBool
+        else:
+            condition = Condition.distinct
+        self.addCondition(col, condition)
 
     def generate(self) -> None:
         self.s = z3.Solver()
@@ -98,6 +110,6 @@ class TestData:
             self.data.addValue(colType.name, index, value)
 
     def getData(self):
-        if self.data.table != {}:
-            return self.data
-        raise ValueError("Data is not yet generated")
+        if self.data.table == {}:
+            self.generate()
+        return self.data
