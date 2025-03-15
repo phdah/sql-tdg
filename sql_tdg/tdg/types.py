@@ -1,4 +1,4 @@
-from typing import Dict, List, Set, Type, Any, Union
+from typing import Dict, List, Set, Type, Any
 import sql_tdg.tdg.z3 as z3
 from datetime import datetime
 

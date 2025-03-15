@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Callable, Set, Tuple, Type, Union
+from sql_tdg.tdg.conditions import Condition, Conditions
 import sql_tdg.tdg.z3 as z3
 from sql_tdg.tdg.types import (
     Col,
@@ -10,55 +11,62 @@ from sql_tdg.tdg.types import (
 )
 
 
-class Condition:
-    @staticmethod
-    def distinct(data: z3.colType) -> z3.BoolRef:
-        return z3.Distinct(data)
+class TDG:
+    """Table Data Generator (TDG) for generating data based on a schema and constraints.
 
-    @staticmethod
-    def orBool(data: z3.colType) -> Union[z3.Probe, z3.BoolRef]:
-        return z3.Or(data)
+    Attributes:
+        schema (Schema): The database schema defining column types.
+        conditions (Conditions): Constraints applied to column values.
+        dim (Dim): Dimensions defining the output data size.
+        data (Table): Storage for generated table data.
+    """
 
-    @staticmethod
-    def eq(var: z3.valTypeBool, const: z3.valTypeOrConst) -> z3.conditionBool:
-        return var == const
+    def __init__(
+        self, schema: Schema, conditions: Conditions, outputSize: int = 10
+    ) -> None:
+        """Initializes the TDG instance.
 
-    @staticmethod
-    def neq(var: z3.valTypeBool, const: z3.valTypeOrConst) -> z3.conditionBool:
-        return var != const
-
-    @staticmethod
-    def les(var: z3.valTypeNum, const: z3.valTypeOrConst):
-        return var < const
-
-    @staticmethod
-    def lar(var: z3.valTypeNum, const: z3.valTypeOrConst):
-        return var > const
-
-    @staticmethod
-    def leseq(var: z3.valTypeNum, const: z3.valTypeOrConst) -> z3.conditionNum:
-        return var <= const
-
-    @staticmethod
-    def lageq(var: z3.valTypeNum, const: z3.valTypeOrConst) -> z3.conditionNum:
-        return var >= const
-
-
-class TestData:
-    def __init__(self, schema: Schema, outputSize: int = 10) -> None:
+        Args:
+            schema (Schema): The database schema defining column types.
+            conditions (Conditions): The conditions to apply during data generation.
+            outputSize (int, optional): The number of rows to generate. Defaults to 10.
+        """
         self.schema = schema
+        self.conditions = conditions
         self.dim = Dim(outputSize, len(self.schema))
         self.data = Table(self.dim)
         self._nameIndexSeparator = "__"
 
     def getColumnNames(self) -> Set[str]:
+        """Retrieves the column names from the schema.
+
+        Returns:
+            Set[str]: A set of column names.
+        """
         return self.schema.getColumnNames()
 
     def generateColumn(self, colType: ColType) -> Col:
+        """Generates a column based on its type.
+
+        Args:
+            colType (ColType): The column type to generate.
+
+        Returns:
+            Col: A generated column object.
+        """
         typeFunction = self.getTypeFunction(colType.type)
         return self._generateColumn(colType.name, typeFunction)
 
     def _generateColumn(self, name: str, func: Callable) -> Col:
+        """Internal method to generate a Z3 column.
+
+        Args:
+            name (str): The name of the column.
+            func (Callable): The function to generate Z3 objects.
+
+        Returns:
+            Col: The generated column object.
+        """
         z3Object = func(
             " ".join(
                 f"{name}{self._nameIndexSeparator}{index}"
@@ -70,14 +78,33 @@ class TestData:
     def _objToCol(
         self, obj: Union[z3.FuncDeclRef, z3.AstVector, None]
     ) -> Tuple[ColType, int]:
+        """Maps a Z3 object to its corresponding column type and index.
+
+        Args:
+            obj (Union[z3.FuncDeclRef, z3.AstVector, None]): The Z3 object.
+
+        Returns:
+            Tuple[ColType, int]: The corresponding column type and row index.
+        """
         colNameRaw = obj.name()  # pyright: ignore
         colName, index = colNameRaw.split(self._nameIndexSeparator)
         col = self.schema.getCol(colName)
         return col, int(index)
 
     def getTypeFunction(
-        self, type: Type[int | str | datetime | bool]
+        self, type: Type[Union[int, str, datetime, bool]]
     ) -> Callable[[str], z3.colType]:
+        """Maps Python types to corresponding Z3 functions.
+
+        Args:
+            type (Type[Union[int, str, datetime, bool]]): The Python type.
+
+        Returns:
+            Callable[[str], z3.colType]: The Z3 function corresponding to the type.
+
+        Raises:
+            ValueError: If the type has no matching function.
+        """
         if type is int:
             return z3.Ints
         if type is str:
@@ -92,6 +119,19 @@ class TestData:
     def getDataValues(
         self, col: ColType, value: Union[z3.FuncDeclRef, z3.AstVector, None]
     ) -> Union[int, str, datetime, bool]:
+        """Retrieves the computed value for a column.
+
+        Args:
+            col (ColType): The column type.
+            value (Union[z3.FuncDeclRef, z3.AstVector, None]): The Z3 computed value.
+
+        Returns:
+            Union[int, str, datetime, bool]: The extracted value.
+
+        Raises:
+            RuntimeError: If no solution is found in the solver.
+            ValueError: If the type is unsupported.
+        """
         if self.s.check() != z3.sat:
             raise RuntimeError("No solution to computation")
 
@@ -107,33 +147,50 @@ class TestData:
         else:
             raise ValueError(f"No matching function for type {type}")
 
-    def addCondition(self, col: Col, condition: Callable) -> None:
-        dataPoints = col.getDataPoints()
-        self.s.add(condition(dataPoints))
-
-    def generateCol(self, colType: ColType) -> None:
-        col = self.generateColumn(colType)
-        # TODO: this should come from the query parser
-        if colType.type is bool:
-            condition = Condition.orBool
-        else:
-            condition = Condition.distinct
-        self.addCondition(col, condition)
-
     def generate(self) -> None:
+        """Generates table data based on schema and conditions.
+
+        Raises:
+            RuntimeError: If no valid solution exists for the given constraints.
+        """
         self.s = z3.Solver()
         for colType in self.schema:
-            self.generateCol(colType)
+            colName = colType.name
+            generatedCol = self.generateColumn(colType)
+            dataPoints = generatedCol.getDataPoints()
+
+            # TODO: Handle boolean columns correctly
+            if colType.type is bool:
+                self.s.add(Condition.orBool(dataPoints))
+                continue
+
+            if colName in self.conditions.cols:
+                conds = self.conditions.conds[colName]
+
+                # Ensure uniqueness only if no equality conditions exist
+                if not {True for cond in conds if cond.op == "eq"}:
+                    self.s.add(Condition.distinct(dataPoints))
+
+                for cond in conds:
+                    self.s.add(cond.opFunc(dataPoints, cond.condition))
+            else:
+                self.s.add(Condition.distinct(dataPoints))
 
         if self.s.check() != z3.sat:
             raise RuntimeError("No solution to computation")
+
         model = self.s.model()
         for col in model:
             colType, index = self._objToCol(col)
             value = self.getDataValues(colType, model[col])
             self.data.addValue(colType.name, index, value)
 
-    def getData(self):
-        if self.data.table == {}:
+    def getData(self) -> Table:
+        """Retrieves the generated table data.
+
+        Returns:
+            Table: The table containing the generated data.
+        """
+        if not self.data.table:
             self.generate()
         return self.data

@@ -1,6 +1,5 @@
 from z3 import (
     # Types
-    ExprRef,
     Int,
     Ints,
     String,
@@ -27,14 +26,12 @@ from z3 import (
     sat,
 )
 from datetime import datetime
-from typing import List, Literal, Union
+from typing import List, Union
 
 colType = Union[List[ArithRef], List[SeqRef], List[BoolRef]]
 valTypeBool = Union[ArithRef, SeqRef, BoolRef]
 valTypeNum = Union[ArithRef, SeqRef]
 valTypeOrConst = Union[valTypeBool, int, str, datetime, bool, float]
-conditionBool = Union[BoolRef, Literal[True, False]]
-conditionNum = Union[ExprRef]
 
 
 # Timestamp addition
@@ -69,7 +66,7 @@ def as_timestamp(self) -> datetime:
     return datetime.fromtimestamp(self.as_long())
 
 
-IntNumRef.as_timestamp = as_timestamp
+IntNumRef.as_timestamp = as_timestamp  # pyright: ignore
 
 
 def to_timestamp(timestamp: str):
@@ -111,6 +108,5 @@ __all__ = [
     "colType",
     "valTypeBool",
     "valTypeOrConst",
-    "conditionBool",
     "Probe",
 ]
