@@ -1,11 +1,13 @@
 from z3 import (
     # Types
+    ExprRef,
     Int,
     Ints,
     String,
     Strings,
     Bool,
     Bools,
+    Probe,
     # Expressions
     And,
     Length,
@@ -25,6 +27,14 @@ from z3 import (
     sat,
 )
 from datetime import datetime
+from typing import List, Literal, Union
+
+colType = Union[List[ArithRef], List[SeqRef], List[BoolRef]]
+valTypeBool = Union[ArithRef, SeqRef, BoolRef]
+valTypeNum = Union[ArithRef, SeqRef]
+valTypeOrConst = Union[valTypeBool, int, str, datetime, bool, float]
+conditionBool = Union[BoolRef, Literal[True, False]]
+conditionNum = Union[ExprRef]
 
 
 # Timestamp addition
@@ -97,4 +107,10 @@ __all__ = [
     "Timestamps",
     "as_timestamp",
     "to_timestamp",
+    # Types
+    "colType",
+    "valTypeBool",
+    "valTypeOrConst",
+    "conditionBool",
+    "Probe",
 ]

@@ -112,11 +112,11 @@ class Col:
     """
 
     def __init__(
-        self, dataPoints: Union[List[z3.ArithRef], List[z3.SeqRef], List[z3.BoolRef]]
+        self, dataPoints: z3.colType
     ) -> None:
         self.dataPoints = dataPoints
 
-    def getDataPoints(self):
+    def getDataPoints(self) -> z3.colType:
         return self.dataPoints
 
 

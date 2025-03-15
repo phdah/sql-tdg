@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Callable, List, Set, Tuple, Type, Union
+from typing import Callable, Set, Tuple, Type, Union
 import sql_tdg.tdg.z3 as z3
 from sql_tdg.tdg.types import (
     Col,
@@ -12,12 +12,36 @@ from sql_tdg.tdg.types import (
 
 class Condition:
     @staticmethod
-    def distinct(data):
+    def distinct(data: z3.colType) -> z3.BoolRef:
         return z3.Distinct(data)
 
     @staticmethod
-    def orBool(data):
+    def orBool(data: z3.colType) -> Union[z3.Probe, z3.BoolRef]:
         return z3.Or(data)
+
+    @staticmethod
+    def eq(var: z3.valTypeBool, const: z3.valTypeOrConst) -> z3.conditionBool:
+        return var == const
+
+    @staticmethod
+    def neq(var: z3.valTypeBool, const: z3.valTypeOrConst) -> z3.conditionBool:
+        return var != const
+
+    @staticmethod
+    def les(var: z3.valTypeNum, const: z3.valTypeOrConst):
+        return var < const
+
+    @staticmethod
+    def lar(var: z3.valTypeNum, const: z3.valTypeOrConst):
+        return var > const
+
+    @staticmethod
+    def leseq(var: z3.valTypeNum, const: z3.valTypeOrConst) -> z3.conditionNum:
+        return var <= const
+
+    @staticmethod
+    def lageq(var: z3.valTypeNum, const: z3.valTypeOrConst) -> z3.conditionNum:
+        return var >= const
 
 
 class TestData:
@@ -53,7 +77,7 @@ class TestData:
 
     def getTypeFunction(
         self, type: Type[int | str | datetime | bool]
-    ) -> Callable[[str], Union[List[z3.ArithRef], List[z3.SeqRef], List[z3.BoolRef]]]:
+    ) -> Callable[[str], z3.colType]:
         if type is int:
             return z3.Ints
         if type is str:
