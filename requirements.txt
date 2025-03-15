@@ -3,6 +3,9 @@ setuptools==75.8.0
 debugpy==1.8.12
 pytest==8.3.5
 
+# Pandas
+pandas==2.2.3
+
 # Duckdb
 duckdb==1.2.0
 numpy==2.2.3
