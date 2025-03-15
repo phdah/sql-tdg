@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Run the test script
+make
+EXIT=$?
+
+# Check if the script succeeded
+if [ $EXIT -ne 0 ]; then
+    echo "ERROR: Pre-push checks failed. Push aborted."
+    exit 1
+else
+    echo "All checks passed. Proceeding with push."
+    exit 0
+fi
