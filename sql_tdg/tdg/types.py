@@ -1,4 +1,4 @@
-from typing import Dict, List, Set, Type, Any
+from typing import Dict, List, Type, Any
 import sql_tdg.tdg.z3 as z3
 from datetime import datetime
 import pandas as pd
@@ -45,29 +45,29 @@ class Schema:
     This class serves as a container for these columns.
 
     Attributes:
-        cols (Set[Col]): The set of columns that comprise this schema.
+        cols (List[Col]): The set of columns that comprise this schema.
     """
 
-    def __init__(self, cols: Set[ColType]) -> None:
+    def __init__(self, cols: List[ColType]) -> None:
         self.cols = cols
 
-    def getColumnNames(self) -> Set[str]:
+    def getColumnNames(self) -> List[str]:
         """
         Returns the set of column names in this schema.
 
         Returns:
-            Set[str]: The set of column names.
+            List[str]: The list of column names.
         """
-        return {c.name for c in self.cols}
+        return [c.name for c in self.cols]
 
-    def getColumnTypes(self) -> Set[Type[int | str | datetime | bool]]:
+    def getColumnTypes(self) -> List[Type[int | str | datetime | bool]]:
         """
         Returns the set of data types for each column in this schema.
 
         Returns:
-            Set[Type[int | str | datetime | bool]]: The set of column types.
+            List[Type[int | str | datetime | bool]]: The list of column types.
         """
-        return {c.type for c in self.cols}
+        return [c.type for c in self.cols]
 
     def getCol(self, name: str) -> ColType:
         for col in self.cols:
@@ -129,10 +129,13 @@ class Table:
     that represent individual values.
 
     Attributes:
+        schema (Schema): The schema of the table.
+        dim (Dim): The dimensions of the table.
         table (Dict[str, List[Any]]): The set of columns that comprise this table.
     """
 
-    def __init__(self, dim: Dim) -> None:
+    def __init__(self, schema: Schema, dim: Dim) -> None:
+        self.schema = schema
         self.dim = dim
         self.table: Dict[str, List[Any]] = dict()
 
@@ -161,7 +164,7 @@ class Table:
         """
         if not self.table:
             raise ValueError("Table is empty. No data to convert to DuckDB.")
-        return pd.DataFrame(self.table)
+        return pd.DataFrame(self.table, columns=self.schema.getColumnNames())  # pyright: ignore
 
     def to_duckdb(
         self, conn: DuckDBPyConnection, table_name: str = "tdg_table"
@@ -183,7 +186,7 @@ class Table:
             raise ValueError("Table is empty. No data to convert to DuckDB.")
 
         # Convert the table dictionary to a Pandas DataFrame
-        df = pd.DataFrame(self.table)
+        df = self.to_pandas()  # noqa: F841
 
         # Connect to an in-memory DuckDB instance and create the table
         conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")

@@ -38,16 +38,43 @@ class TestTDG(unittest.TestCase):
 
         # Define a small dataset size (e.g., 10 rows)
         cls.schema = Schema(
-            cols={
+            cols=[
                 ColType("a", int),
                 ColType("b", str),
                 ColType("c", datetime),
                 ColType("d", bool),
-            },
+            ],
         )
 
         cls.d = TDG(schema=cls.schema, conditions=p.conditions)
         cls.dWhere = TDG(schema=cls.schema, conditions=pWhere.conditions)
+
+        data = {
+            "a": [119, 114, 110, 117, 111, 113, 116, 118, 112, 115],
+            "b": ["hello"] * 10,
+            "c": pd.to_datetime(
+                [
+                    "1970-01-01 01:00:00",
+                    "1970-01-01 01:00:10",
+                    "1970-01-01 01:00:11",
+                    "1970-01-01 01:00:12",
+                    "1970-01-01 01:00:13",
+                    "1970-01-01 01:00:14",
+                    "1970-01-01 01:00:15",
+                    "1970-01-01 01:00:16",
+                    "1970-01-01 01:00:17",
+                    "1970-01-01 01:00:18",
+                ]
+            ),
+            "d": [True, False, False, False, False, False, False, False, False, False],
+        }
+        df = pd.DataFrame(data, columns=cls.schema.getColumnNames()) # pyright: ignore
+        # Ensure correct dtypes
+        df["c"] = pd.to_datetime(df["c"])  # Ensure datetime
+        df["a"] = df["a"].astype("int64")  # Ensure integer
+        df["d"] = df["d"].astype("bool")  # Ensure boolean
+        df["b"] = df["b"].astype("object")  # Ensure object (string)
+        cls.dfExpected = df
 
     def testDataDim(self):
         dim = self.dWhere.dim
@@ -102,67 +129,15 @@ class TestTDG(unittest.TestCase):
         self.assertIn(False, table["d"], "Expected at least one False")
 
     def testPandasDF(self):
-        data = {
-            "c": pd.to_datetime(
-                [
-                    "1970-01-01 01:00:00",
-                    "1970-01-01 01:00:10",
-                    "1970-01-01 01:00:11",
-                    "1970-01-01 01:00:12",
-                    "1970-01-01 01:00:13",
-                    "1970-01-01 01:00:14",
-                    "1970-01-01 01:00:15",
-                    "1970-01-01 01:00:16",
-                    "1970-01-01 01:00:17",
-                    "1970-01-01 01:00:18",
-                ]
-            ),
-            "a": [119, 114, 110, 117, 111, 113, 116, 118, 112, 115],
-            "d": [True, False, False, False, False, False, False, False, False, False],
-            "b": ["hello"] * 10,
-        }
-        dfExpected = pd.DataFrame(data)
-        # Ensure correct dtypes
-        dfExpected["c"] = pd.to_datetime(dfExpected["c"])  # Ensure datetime
-        dfExpected["a"] = dfExpected["a"].astype("int64")  # Ensure integer
-        dfExpected["d"] = dfExpected["d"].astype("bool")  # Ensure boolean
-        dfExpected["b"] = dfExpected["b"].astype("object")  # Ensure object (string)
-
         data = self.dWhere.getData()
         dfActual = data.to_pandas()
 
-        pdt.assert_frame_equal(dfActual, dfExpected)
+        pdt.assert_frame_equal(dfActual, self.dfExpected)
 
     def testDuckDB(self):
-        data = {
-            "c": pd.to_datetime(
-                [
-                    "1970-01-01 01:00:00",
-                    "1970-01-01 01:00:10",
-                    "1970-01-01 01:00:11",
-                    "1970-01-01 01:00:12",
-                    "1970-01-01 01:00:13",
-                    "1970-01-01 01:00:14",
-                    "1970-01-01 01:00:15",
-                    "1970-01-01 01:00:16",
-                    "1970-01-01 01:00:17",
-                    "1970-01-01 01:00:18",
-                ]
-            ),
-            "a": [119, 114, 110, 117, 111, 113, 116, 118, 112, 115],
-            "d": [True, False, False, False, False, False, False, False, False, False],
-            "b": ["hello"] * 10,
-        }
-        dfExpected = pd.DataFrame(data)
-        # Ensure correct dtypes
-        dfExpected["c"] = pd.to_datetime(dfExpected["c"])  # Ensure datetime
-        dfExpected["a"] = dfExpected["a"].astype("int64")  # Ensure integer
-        dfExpected["d"] = dfExpected["d"].astype("bool")  # Ensure boolean
-        dfExpected["b"] = dfExpected["b"].astype("object")  # Ensure object (string)
-
         # Convert expected DataFrame to DuckDB table
         conn = duckdb.connect()
-        conn.register("expected_table", dfExpected)
+        conn.register("expected_table", self.dfExpected)
         duckdbExpected = conn.table("expected_table")
 
         data = self.dWhere.getData()
@@ -171,41 +146,17 @@ class TestTDG(unittest.TestCase):
         self.assertEqual(dfActual.fetchall(), duckdbExpected.fetchall())
 
     def testQueryTestingData(self):
-        data = {
-            "a": [119, 114, 110, 117, 111, 113, 116, 118, 112, 115],
-            "b": ["hello"] * 10,
-            "c": pd.to_datetime(
-                [
-                    "1970-01-01 01:00:00",
-                    "1970-01-01 01:00:10",
-                    "1970-01-01 01:00:11",
-                    "1970-01-01 01:00:12",
-                    "1970-01-01 01:00:13",
-                    "1970-01-01 01:00:14",
-                    "1970-01-01 01:00:15",
-                    "1970-01-01 01:00:16",
-                    "1970-01-01 01:00:17",
-                    "1970-01-01 01:00:18",
-                ]
-            ),
-            "d": [True, False, False, False, False, False, False, False, False, False],
-        }
-        dfExpected = pd.DataFrame(data)
-        # Ensure correct dtypes
-        dfExpected["c"] = pd.to_datetime(dfExpected["c"])  # Ensure datetime
-        dfExpected["a"] = dfExpected["a"].astype("int64")  # Ensure integer
-        dfExpected["d"] = dfExpected["d"].astype("bool")  # Ensure boolean
-        dfExpected["b"] = dfExpected["b"].astype("object")  # Ensure object (string)
-
         # Convert expected DataFrame to DuckDB table
         conn = duckdb.connect()
-        conn.register("expected_table", dfExpected)
+        conn.register("expected_table", self.dfExpected)
         duckdbExpected = conn.table("expected_table")
 
         data = self.dWhere.getData()
         _ = data.to_duckdb(conn)
         # TODO: Add "bad" data manually, this should be done in the generator
-        conn.sql("insert into tdg_table values ('1970-01-01 01:00:00', False, 1, 'mark')")
+        conn.sql(
+            "insert into tdg_table values (1, 'mark', '1970-01-01 01:00:00', False)"
+        )
 
         df = conn.sql(self.queryStringWhere)
 

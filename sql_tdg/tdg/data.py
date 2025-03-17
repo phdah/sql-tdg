@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Callable, Set, Tuple, Type, Union
+from typing import Callable, List, Tuple, Type, Union
 from sql_tdg.tdg.conditions import Condition, Conditions
 import sql_tdg.tdg.z3 as z3
 from sql_tdg.tdg.types import (
@@ -34,14 +34,14 @@ class TDG:
         self.schema = schema
         self.conditions = conditions
         self.dim = Dim(outputSize, len(self.schema))
-        self.data = Table(self.dim)
+        self.data = Table(self.schema, self.dim)
         self._nameIndexSeparator = "__"
 
-    def getColumnNames(self) -> Set[str]:
+    def getColumnNames(self) -> List[str]:
         """Retrieves the column names from the schema.
 
         Returns:
-            Set[str]: A set of column names.
+            List[str]: A list of column names.
         """
         return self.schema.getColumnNames()
 

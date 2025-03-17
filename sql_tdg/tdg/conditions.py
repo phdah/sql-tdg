@@ -2,7 +2,6 @@ from typing import Callable, Dict, List, Union
 
 from sqlglot.expressions import Identifier
 from sql_tdg.tdg import z3
-from sql_tdg.tdg.types import ColType
 
 
 class Condition:
