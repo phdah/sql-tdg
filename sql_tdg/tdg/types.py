@@ -2,7 +2,6 @@ from typing import Dict, List, Type, Any
 import sql_tdg.tdg.z3 as z3
 from datetime import datetime
 import pandas as pd
-import duckdb
 from duckdb import DuckDBPyConnection
 
 
@@ -166,18 +165,13 @@ class Table:
             raise ValueError("Table is empty. No data to convert to DuckDB.")
         return pd.DataFrame(self.table, columns=self.schema.getColumnNames())  # pyright: ignore
 
-    def to_duckdb(
-        self, conn: DuckDBPyConnection, table_name: str = "tdg_table"
-    ) -> duckdb.DuckDBPyRelation:
+    def to_duckdb(self, conn: DuckDBPyConnection, table_name: str) -> None:
         """
         Converts the table data into a DuckDB table.
 
         Args:
             conn (DuckDBPyConnection): The DuckDB connection to use:
             table_name (str, optional): The name of the table in DuckDB. Defaults to "tdg_table".
-
-        Returns:
-            duckdb.DuckDBPyRelation: A DuckDB relation containing the table data.
 
         Raises:
             ValueError: If the table has no data.
@@ -190,8 +184,6 @@ class Table:
 
         # Connect to an in-memory DuckDB instance and create the table
         conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")
-
-        return conn.table(table_name)
 
 
 __all__ = [

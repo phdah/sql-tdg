@@ -76,8 +76,8 @@ if __name__ == "__main__":
 
     # Setup a duckdb connection
     conn = duckdb.connect()
-    # Get data, and convert to duckdb table
-    _ = data.getData().to_duckdb(conn)
+    # Create data, and insert into duckdb table
+    data.getData().to_duckdb(conn, "tdg_table")
 
     # Insert "bad" data
     conn.sql("insert into tdg_table values (1, 'mark', '1970-01-01 01:00:19', False)")

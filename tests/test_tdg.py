@@ -141,7 +141,8 @@ class TestTDG(unittest.TestCase):
         duckdbExpected = conn.table("expected_table")
 
         data = self.dWhere.getData()
-        dfActual = data.to_duckdb(conn)
+        data.to_duckdb(conn, "tdg_table")
+        dfActual = conn.table("tdg_table")
 
         self.assertEqual(dfActual.fetchall(), duckdbExpected.fetchall())
 
@@ -152,7 +153,7 @@ class TestTDG(unittest.TestCase):
         duckdbExpected = conn.table("expected_table")
 
         data = self.dWhere.getData()
-        _ = data.to_duckdb(conn)
+        data.to_duckdb(conn, "tdg_table")
         # TODO: Add "bad" data manually, this should be done in the generator
         conn.sql(
             "insert into tdg_table values (1, 'mark', '1970-01-01 01:00:00', False)"
