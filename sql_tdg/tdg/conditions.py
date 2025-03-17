@@ -1,7 +1,10 @@
-from typing import Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Union
 
 from sqlglot.expressions import Identifier
 from sql_tdg.tdg import z3
+
+# A z3 condition
+_Cond = Any
 
 
 class Condition:
@@ -65,82 +68,106 @@ class Condition:
         return z3.Or(data)
 
     @staticmethod
-    def eq(data: z3.colType, const: z3.valTypeOrConst) -> List:
-        """Applies equality constraints to each element in data.
+    def eq(
+        data: z3.colType, const: z3.valTypeOrConst, negate: bool = False
+    ) -> List[_Cond]:
+        """Applies equality constraints to each element in data, optionally negating them.
 
         Args:
             data (z3.colType): A list of Z3 expressions.
             const (z3.valTypeOrConst): A constant value to compare against.
+            negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
-            List[z3.BoolRef]: A list of Z3 boolean expressions representing equality.
+            List[_Cond]: A list of Z3 boolean expressions representing equality.
         """
-        return [var == const for var in data]
+        conditions = [var == const for var in data]
+        return [z3.Not(cond) if negate else cond for cond in conditions]
 
     @staticmethod
-    def neq(data: z3.colType, const: z3.valTypeOrConst) -> List:
-        """Applies inequality constraints to each element in data.
+    def neq(
+        data: z3.colType, const: z3.valTypeOrConst, negate: bool = False
+    ) -> List[_Cond]:
+        """Applies inequality constraints to each element in data, optionally negating them.
 
         Args:
             data (z3.colType): A list of Z3 expressions.
             const (z3.valTypeOrConst): A constant value to compare against.
+            negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
-            List[z3.BoolRef]: A list of Z3 boolean expressions representing inequality.
+            List[_Cond]: A list of Z3 boolean expressions representing inequality.
         """
-        return [var != const for var in data]
+        conditions = [var != const for var in data]
+        return [z3.Not(cond) if negate else cond for cond in conditions]
 
     @staticmethod
-    def lt(data: List[z3.ArithRef], const: z3.valTypeOrConst) -> List[z3.BoolRef]:
-        """Applies less-than constraints to each element in data.
+    def lt(
+        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+    ) -> List[_Cond]:
+        """Applies less-than constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
             const (z3.valTypeOrConst): A constant value to compare against.
+            negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
-            List[z3.BoolRef]: A list of Z3 boolean expressions representing `<` comparisons.
+            List[_Cond]: A list of Z3 boolean expressions representing `<` comparisons.
         """
-        return [var < const for var in data]
+        conditions = [var < const for var in data]
+        return [z3.Not(cond) if negate else cond for cond in conditions]
 
     @staticmethod
-    def gt(data: List[z3.ArithRef], const: z3.valTypeOrConst) -> List[z3.BoolRef]:
-        """Applies greater-than constraints to each element in data.
+    def gt(
+        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+    ) -> List[_Cond]:
+        """Applies greater-than constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
             const (z3.valTypeOrConst): A constant value to compare against.
+            negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
-            List[z3.BoolRef]: A list of Z3 boolean expressions representing `>` comparisons.
+            List[_Cond]: A list of Z3 boolean expressions representing `>` comparisons.
         """
-        return [var > const for var in data]
+        conditions = [var > const for var in data]
+        return [z3.Not(cond) if negate else cond for cond in conditions]
 
     @staticmethod
-    def lte(data: List[z3.ArithRef], const: z3.valTypeOrConst) -> List[z3.BoolRef]:
-        """Applies less-than-or-equal-to constraints to each element in data.
+    def lte(
+        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+    ) -> List[_Cond]:
+        """Applies less-than-or-equal-to constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
             const (z3.valTypeOrConst): A constant value to compare against.
+            negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
-            List[z3.BoolRef]: A list of Z3 boolean expressions representing `<=` comparisons.
+            List[_Cond]: A list of Z3 boolean expressions representing `<=` comparisons.
         """
-        return [var <= const for var in data]
+        conditions = [var <= const for var in data]
+        return [z3.Not(cond) if negate else cond for cond in conditions]
 
     @staticmethod
-    def gte(data: List[z3.ArithRef], const: z3.valTypeOrConst) -> List[z3.BoolRef]:
-        """Applies greater-than-or-equal-to constraints to each element in data.
+    def gte(
+        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+    ) -> List[_Cond]:
+        """Applies greater-than-or-equal-to constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
             const (z3.valTypeOrConst): A constant value to compare against.
+            negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
-            List[z3.BoolRef]: A list of Z3 boolean expressions representing `>=` comparisons.
+            List[_Cond]: A list of Z3 boolean expressions representing `>=` comparisons.
         """
-        return [var >= const for var in data]
+        conditions = [var >= const for var in data]
+        return [z3.Not(cond) if negate else cond for cond in conditions]
 
     conditionMapping: Dict[str, Callable] = {
         "eq": eq,
