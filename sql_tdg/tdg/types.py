@@ -69,6 +69,18 @@ class Schema:
         return [c.type for c in self.cols]
 
     def getCol(self, name: str) -> ColType:
+        """
+        Get column based on column name.
+
+        Args:
+            name (str): The name of the column to get.
+
+        Returns:
+            ColType: The column with the given name.
+
+        Raises:
+            ValueError: If no column with the given name exists.
+        """
         for col in self.cols:
             if col.name == name:
                 return col
@@ -110,13 +122,19 @@ class Col:
     A column consists of a set of data points, where each data point represents an individual value
 
     Attributes:
-        dataPoints (Union[List[z3.ArithRef], List[z3.SeqRef], List[z3.BoolRef]]): The set of data points that comprise this row.
+        dataPoints (z3.colType): The set of data points that comprise this row.
     """
 
     def __init__(self, dataPoints: z3.colType) -> None:
         self.dataPoints = dataPoints
 
-    def getDataPoints(self) -> z3.colType:
+    def get(self) -> z3.colType:
+        """
+        Get the set of data points that comprise this column.
+
+        Returns:
+            z3.colType: The internal data points of the column.
+        """
         return self.dataPoints
 
 
@@ -163,7 +181,7 @@ class Table:
         """
         if not self.table:
             raise ValueError("Table is empty. No data to convert to DuckDB.")
-        return pd.DataFrame(self.table, columns=self.schema.getColumnNames())  # pyright: ignore
+        return pd.DataFrame(self.table, columns=self.schema.getColumnNames())
 
     def to_duckdb(self, conn: DuckDBPyConnection, table_name: str) -> None:
         """
@@ -180,10 +198,10 @@ class Table:
             raise ValueError("Table is empty. No data to convert to DuckDB.")
 
         # Convert the table dictionary to a Pandas DataFrame
-        df = self.to_pandas()  # noqa: F841
+        _df = self.to_pandas()
 
         # Connect to an in-memory DuckDB instance and create the table
-        conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")
+        conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM _df")
 
 
 __all__ = [

@@ -1,6 +1,5 @@
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
-from sqlglot.expressions import Identifier
 from sql_tdg.tdg import z3
 
 # A z3 condition
@@ -18,10 +17,7 @@ class Condition:
     """
 
     def __init__(
-        self,
-        columnName: str,
-        conditionOp: str,
-        conditionValue: Union[str, int, Identifier],
+        self, columnName: str, conditionOp: str, conditionValue: z3.valTypeOrConst
     ) -> None:
         """Initializes a Condition object.
 
@@ -41,14 +37,22 @@ class Condition:
             raise NotImplementedError(
                 f"Operation doesn't exist, passed was {conditionOp}, available are {Condition.conditionMapping}"
             )
-        self.opFunc: Callable = opFunc
+        self.opFunc: Callable[
+            [z3.colType, Optional[z3.valTypeOrConst], bool], List[_Cond]
+        ] = opFunc
 
     @staticmethod
-    def distinct(data: z3.colType) -> z3.BoolRef:
+    def distinct(
+        data: z3.colType,
+        _const: Optional[z3.valTypeOrConst] = None,
+        _negate: bool = False,
+    ) -> z3.BoolRef:
         """Ensures that all values in the given data list are distinct.
 
         Args:
             data (z3.colType): A list of Z3 expressions.
+            const (Optional[z3.valTypeOrConst]): no-op
+            negate (bool): no-op
 
         Returns:
             z3.BoolRef: A Z3 boolean constraint ensuring distinct values.
@@ -56,11 +60,17 @@ class Condition:
         return z3.Distinct(data)
 
     @staticmethod
-    def orBool(data: z3.colType) -> Union[z3.Probe, z3.BoolRef]:
+    def orBool(
+        data: z3.colType,
+        _const: Optional[z3.valTypeOrConst] = None,
+        _negate: bool = False,
+    ) -> Union[z3.Probe, z3.BoolRef]:
         """Applies a logical OR operation across all elements in data.
 
         Args:
             data (z3.colType): A list of Z3 boolean expressions.
+            const (Optional[z3.valTypeOrConst]): no-op
+            negate (bool): no-op
 
         Returns:
             Union[z3.Probe, z3.BoolRef]: A Z3 logical OR expression.
@@ -69,13 +79,15 @@ class Condition:
 
     @staticmethod
     def eq(
-        data: z3.colType, const: z3.valTypeOrConst, negate: bool = False
+        data: z3.colType,
+        const: Optional[z3.valTypeOrConst] = None,
+        negate: bool = False,
     ) -> List[_Cond]:
         """Applies equality constraints to each element in data, optionally negating them.
 
         Args:
             data (z3.colType): A list of Z3 expressions.
-            const (z3.valTypeOrConst): A constant value to compare against.
+            const (Optional[z3.valTypeOrConst]): A constant value to compare against.
             negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
@@ -86,13 +98,15 @@ class Condition:
 
     @staticmethod
     def neq(
-        data: z3.colType, const: z3.valTypeOrConst, negate: bool = False
+        data: z3.colType,
+        const: Optional[z3.valTypeOrConst] = None,
+        negate: bool = False,
     ) -> List[_Cond]:
         """Applies inequality constraints to each element in data, optionally negating them.
 
         Args:
             data (z3.colType): A list of Z3 expressions.
-            const (z3.valTypeOrConst): A constant value to compare against.
+            const (Optional[z3.valTypeOrConst]): A constant value to compare against.
             negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
@@ -103,13 +117,15 @@ class Condition:
 
     @staticmethod
     def lt(
-        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+        data: List[z3.ArithRef],
+        const: Optional[z3.valTypeOrConst] = None,
+        negate: bool = False,
     ) -> List[_Cond]:
         """Applies less-than constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
-            const (z3.valTypeOrConst): A constant value to compare against.
+            const (Optional[z3.valTypeOrConst]): A constant value to compare against.
             negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
@@ -120,13 +136,15 @@ class Condition:
 
     @staticmethod
     def gt(
-        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+        data: List[z3.ArithRef],
+        const: Optional[z3.valTypeOrConst] = None,
+        negate: bool = False,
     ) -> List[_Cond]:
         """Applies greater-than constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
-            const (z3.valTypeOrConst): A constant value to compare against.
+            const (Optional[z3.valTypeOrConst]): A constant value to compare against.
             negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
@@ -137,13 +155,15 @@ class Condition:
 
     @staticmethod
     def lte(
-        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+        data: List[z3.ArithRef],
+        const: Optional[z3.valTypeOrConst] = None,
+        negate: bool = False,
     ) -> List[_Cond]:
         """Applies less-than-or-equal-to constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
-            const (z3.valTypeOrConst): A constant value to compare against.
+            const (Optional[z3.valTypeOrConst]): A constant value to compare against.
             negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:
@@ -154,13 +174,15 @@ class Condition:
 
     @staticmethod
     def gte(
-        data: List[z3.ArithRef], const: z3.valTypeOrConst, negate: bool = False
+        data: List[z3.ArithRef],
+        const: Optional[z3.valTypeOrConst] = None,
+        negate: bool = False,
     ) -> List[_Cond]:
         """Applies greater-than-or-equal-to constraints to each element in data, optionally negating them.
 
         Args:
             data (List[z3.ArithRef]): A list of Z3 arithmetic expressions.
-            const (z3.valTypeOrConst): A constant value to compare against.
+            const (Optional[z3.valTypeOrConst]): A constant value to compare against.
             negate (bool): If True, negates the condition. Defaults to False.
 
         Returns:

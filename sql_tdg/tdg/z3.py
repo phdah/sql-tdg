@@ -36,6 +36,7 @@ valTypeOrConst = Union[valTypeBool, int, str, datetime, bool, float]
 
 # Timestamp addition
 class TimestampRef(IntNumRef):
+    """Timestamp values."""
     def __init__(self, ast, ctx=None):
         super().__init__(ast, ctx)
 
@@ -44,10 +45,6 @@ def Timestamp(name: str, ctx=None) -> ArithRef:
     """Return a Timestamp constant named `name`. If `ctx=None`, then the global context is used.
 
     >>> x = Timestamp('x')
-    >>> is_timestamp(x)
-    True
-    >>> is_timestamp(x + 1)
-    True
     """
     return Int(name, ctx)
 
@@ -55,7 +52,7 @@ def Timestamp(name: str, ctx=None) -> ArithRef:
 def Timestamps(names, ctx=None) -> list[ArithRef]:
     """Return a tuple of Timestamp constants.
 
-    >>> x, y, z = Ints('x y z')
+    >>> x, y, z = Timestamps('x y z')
     >>> Sum(x, y, z)
     x + y + z
     """
@@ -63,6 +60,15 @@ def Timestamps(names, ctx=None) -> list[ArithRef]:
 
 
 def as_timestamp(self) -> datetime:
+    """Return a Z3 integer numeral as a Python datetime.
+
+    >>> s = z3.Solver()
+    >>> v = Timestamp(1735729932)
+    >>> model = s.model()
+    >>> value = model[v]
+    >>> value.as_timestamp()
+    2025-01-01 12:12:12
+    """
     return datetime.fromtimestamp(self.as_long())
 
 
@@ -70,6 +76,11 @@ IntNumRef.as_timestamp = as_timestamp  # pyright: ignore
 
 
 def to_timestamp(timestamp: str):
+    """Return a unix timestamp integer from a string.
+    >>> v = "2025-01-01 12:12:12"
+    >>> to_timestamp(v)
+    1735729932
+    """
     return int(datetime.fromisoformat(timestamp).timestamp())
 
 

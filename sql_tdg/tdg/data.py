@@ -36,6 +36,7 @@ class TDG:
         self.dim = Dim(outputSize, len(self.schema))
         self.data = Table(self.schema, self.dim)
         self._nameIndexSeparator = "__"
+        self.s: z3.Solver
 
     def getColumnNames(self) -> List[str]:
         """Retrieves the column names from the schema.
@@ -113,8 +114,7 @@ class TDG:
             return z3.Timestamps
         if type is bool:
             return z3.Bools
-        else:
-            raise ValueError(f"No matching function for type {type}")
+        raise ValueError(f"No matching function for type {type}")
 
     def getDataValues(
         self, col: ColType, value: Union[z3.FuncDeclRef, z3.AstVector, None]
@@ -144,8 +144,7 @@ class TDG:
             return value.as_timestamp()  # pyright: ignore
         if _type is bool:
             return z3.is_true(value)  # pyright: ignore
-        else:
-            raise ValueError(f"No matching function for type {type}")
+        raise ValueError(f"No matching function for type {type}")
 
     def generate(self) -> None:
         """Generates table data based on schema and conditions.
@@ -157,7 +156,7 @@ class TDG:
         for colType in self.schema:
             colName = colType.name
             generatedCol = self.generateColumn(colType)
-            dataPoints = generatedCol.getDataPoints()
+            dataPoints = generatedCol.get()
 
             # TODO: Handle boolean columns correctly
             if colType.type is bool:
@@ -172,7 +171,7 @@ class TDG:
                     self.s.add(Condition.distinct(dataPoints))
 
                 for cond in conds:
-                    self.s.add(cond.opFunc(dataPoints, cond.condition))
+                    self.s.add(cond.opFunc(dataPoints, cond.condition, False))
             else:
                 self.s.add(Condition.distinct(dataPoints))
 
