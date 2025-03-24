@@ -2,6 +2,7 @@
 setuptools==75.8.0
 debugpy==1.8.12
 pytest==8.3.5
+pylint==3.3.5
 
 # Pandas
 pandas==2.2.3

@@ -1,0 +1,61 @@
+[MAIN]
+# Specify a configuration file.
+load-plugins=pylint.extensions.mccabe
+
+[MESSAGES CONTROL]
+# Disable all by default
+disable=all
+
+# Enable checking for errors related to:
+enable=
+    unreachable,
+    not-an-iterable,
+    invalid-sequence-index,
+    invalid-slice-index,
+    no-member,
+    function-redefined,
+    unexpected-keyword-arg,
+    no-value-for-parameter,
+    bad-indentation,
+    unused-import,
+    unused-argument,
+    unused-variable,
+    used-before-assignment,
+    attribute-defined-outside-init,
+    undefined-variable,
+    missing-function-docstring,
+    missing-class-docstring,
+
+    # Uncomment one by one to see how much work they introduce
+    dangerous-default-value,   # Avoid mutable default args
+    no-else-return,            # Simplify control flow
+    consider-using-with,       # Ensure context managers
+    too-many-nested-blocks,    # Avoid deep nesting
+    chained-comparison,        # Prefer chained comparisons
+    # duplicate-code,            # Detect code duplication
+    # redefined-outer-name,      # Avoid variable shadowing
+    unnecessary-pass,          # Remove redundant pass
+    # too-many-arguments,        # Limit number of function args
+    # protected-access,          # Avoid accessing protected members
+    eval-used,                 # Flag 'eval' usage
+    exec-used                  # Flag 'exec' usage
+
+
+[MISCELLANEOUS]
+notes=FIXME,XXX,TODO
+
+[TYPECHECK]
+# Enable some type checking
+ignored-modules=
+ignored-classes=
+
+[DESIGN]
+# McCabe complexity checker
+max-args=10
+max-locals=15
+max-returns=6
+max-branches=12
+max-statements=50
+max-parents=9
+max-attributes=7
+min-similarity-lines=4
