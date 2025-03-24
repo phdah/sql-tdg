@@ -1,0 +1,11 @@
+setuptools==75.8.0
+debugpy==1.8.12
+pytest==8.3.5
+pylint==3.3.5
+pandas==2.2.3
+duckdb==1.2.0
+numpy==2.2.3
+typing-extensions==4.12.2
+z3-solver==4.13.4.0
+sqlglot==26.8.0
+sqlglotrs==0.4.0

@@ -22,4 +22,4 @@ produced.
 ## Quick start
 
 Follow the guide found in the
-[example](https://github.com/phdah/sql-tdg/tree/main/examples) directory.
+[example](https://github.com/phdah/sql-tdg/tree/main/python_poc/examples) directory.

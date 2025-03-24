@@ -1,0 +1,29 @@
+Metadata-Version: 2.4
+Name: sql-tdg
+Version: 0.0.1
+Summary: A SQL query to test data generator.
+Home-page: https://github.com/phdah/sql-tdg
+Author: Philip Sjöberg
+Author-email: phdah.sjoberg@gmail.com
+Classifier: Programming Language :: Python :: 3.12
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.12
+Requires-Dist: setuptools==75.8.0
+Requires-Dist: debugpy==1.8.12
+Requires-Dist: pytest==8.3.5
+Requires-Dist: pylint==3.3.5
+Requires-Dist: pandas==2.2.3
+Requires-Dist: duckdb==1.2.0
+Requires-Dist: numpy==2.2.3
+Requires-Dist: typing-extensions==4.12.2
+Requires-Dist: z3-solver==4.13.4.0
+Requires-Dist: sqlglot==26.8.0
+Requires-Dist: sqlglotrs==0.4.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

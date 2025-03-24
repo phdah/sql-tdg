@@ -1,0 +1,16 @@
+setup.py
+sql_tdg/__init__.py
+sql_tdg.egg-info/PKG-INFO
+sql_tdg.egg-info/SOURCES.txt
+sql_tdg.egg-info/dependency_links.txt
+sql_tdg.egg-info/requires.txt
+sql_tdg.egg-info/top_level.txt
+sql_tdg/tdg/__init__.py
+sql_tdg/tdg/conditions.py
+sql_tdg/tdg/data.py
+sql_tdg/tdg/types.py
+sql_tdg/tdg/z3.py
+sql_tdg/tdp/__init__.py
+sql_tdg/tdp/parser.py
+tests/test_parser.py
+tests/test_tdg.py

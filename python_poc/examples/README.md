@@ -1,6 +1,6 @@
 # Example
 
-Here is a simple example guide (see all code in [example/main.py](https://github.com/phdah/sql-tdg/blob/main/examples/main.py)).
+Here is a simple example guide (see all code in [main.py](https://github.com/phdah/sql-tdg/blob/main/python_poc/examples/main.py)).
 
 1. Setup `python` environment
 2. Make all imports
@@ -9,12 +9,12 @@ Here is a simple example guide (see all code in [example/main.py](https://github
 
 ## Step 1
 
-All requirements are found in [requirements.txt](https://github.com/phdah/sql-tdg/blob/main/requirements.txt). Simply `pip` install these by running:
+Install python library through [setup.py](https://github.com/phdah/sql-tdg/blob/main/python_poc/setup.py). Simply `pip` install:
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-pip3 install -r requirements.txt
+pip3 install ../
 ```
 
 ## Step 2
