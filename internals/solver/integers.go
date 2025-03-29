@@ -14,6 +14,14 @@ type IntDomain struct {
 	TotalMax  int
 }
 
+func (d *IntDomain) GetTotalMin() int {
+	return d.TotalMin
+}
+
+func (d *IntDomain) GetTotalMax() int {
+	return d.TotalMax
+}
+
 func NewIntDomain() *IntDomain {
 	lower := -1_000_000
 	upper := 1_000_000
@@ -89,7 +97,7 @@ func (d IntDomain) RandomValue(rng *rand.Rand) any {
 	}
 
 	if total == 0 {
-		return fmt.Errorf("no ")
+		return fmt.Errorf("no values to generate")
 	}
 
 	r := rng.Intn(total)
@@ -110,38 +118,32 @@ type IntGt struct{ Value int }
 type IntLte struct{ Value int }
 type IntGte struct{ Value int }
 
-func (c IntEq) Apply(domain types.Domain) (types.Domain, error) {
-	d := domain.(*IntDomain)
-	err := d.UpdateIntervals(types.Interval{Min: c.Value, Max: c.Value})
-	return d, err
+func (c IntEq) Apply(domain types.Domain) error {
+	err := domain.UpdateIntervals(types.Interval{Min: c.Value, Max: c.Value})
+	return err
 }
 
-func (c IntNEq) Apply(domain types.Domain) (types.Domain, error) {
-	d := domain.(*IntDomain)
-	err := d.SplitIntervals(c.Value)
-	return d, err
+func (c IntNEq) Apply(domain types.Domain) error {
+	err := domain.SplitIntervals(c.Value)
+	return err
 }
 
-func (c IntLt) Apply(domain types.Domain) (types.Domain, error) {
-	d := domain.(*IntDomain)
-	err := d.UpdateIntervals(types.Interval{Min: d.TotalMin, Max: c.Value - 1})
-	return d, err
+func (c IntLt) Apply(domain types.Domain) error {
+	err := domain.UpdateIntervals(types.Interval{Min: domain.GetTotalMin(), Max: c.Value - 1})
+	return err
 }
 
-func (c IntLte) Apply(domain types.Domain) (types.Domain, error) {
-	d := domain.(*IntDomain)
-	err := d.UpdateIntervals(types.Interval{Min: d.TotalMin, Max: c.Value})
-	return d, err
+func (c IntLte) Apply(domain types.Domain) error {
+	err := domain.UpdateIntervals(types.Interval{Min: domain.GetTotalMin(), Max: c.Value})
+	return err
 }
 
-func (c IntGt) Apply(domain types.Domain) (types.Domain, error) {
-	d := domain.(*IntDomain)
-	err := d.UpdateIntervals(types.Interval{Min: c.Value + 1, Max: d.TotalMax})
-	return d, err
+func (c IntGt) Apply(domain types.Domain) error {
+	err := domain.UpdateIntervals(types.Interval{Min: c.Value + 1, Max: domain.GetTotalMax()})
+	return err
 }
 
-func (c IntGte) Apply(domain types.Domain) (types.Domain, error) {
-	d := domain.(*IntDomain)
-	err := d.UpdateIntervals(types.Interval{Min: c.Value, Max: d.TotalMax})
-	return d, err
+func (c IntGte) Apply(domain types.Domain) error {
+	err := domain.UpdateIntervals(types.Interval{Min: c.Value, Max: domain.GetTotalMax()})
+	return err
 }

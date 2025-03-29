@@ -2,6 +2,7 @@ package solver_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/phdah/sql-tdg/internals/types"
 )
 
-func TestGenerator_Generate(t *testing.T) {
+func TestIntGenerator_Generate(t *testing.T) {
 	seed := int64(42)
 	tests := []struct {
 		name          string
@@ -85,6 +86,106 @@ func TestGenerator_Generate(t *testing.T) {
 			tt.table.SortInts()
 			r.Equal(tt.expected, tt.table.Ints)
 
+		})
+	}
+}
+
+func TestTimestampGenerator_Generate(t *testing.T) {
+	seed := int64(42)
+	date_1 := solver.FromInt(solver.ToDate("2013-06-17"))
+	date_2 := solver.FromInt(solver.ToTimestamp("2013-06-17T15:21:00Z"))
+	tests := []struct {
+		name          string
+		table         *table.Table
+		expected      any
+		expectedError error
+	}{
+		{
+			name: "test with one column single condition",
+			table: table.NewTable([]types.Column{
+				{
+					Name: "col_a",
+					Type: types.TimestampType,
+					Constraints: []types.Constraints{
+						solver.IntEq{solver.ToDate("2013-06-17")},
+					},
+				},
+			}, 10),
+			expected: map[string][]time.Time{
+				"col_a": {
+					date_1, date_1, date_1, date_1, date_1,
+					date_1, date_1, date_1, date_1, date_1,
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "test with one column multi condition",
+			table: table.NewTable([]types.Column{
+				{
+					Name: "col_a",
+					Type: types.TimestampType,
+					Constraints: []types.Constraints{
+						solver.IntNEq{solver.ToTimestamp("2013-06-17T15:21:00Z")},
+						solver.IntGt{solver.ToTimestamp("2013-06-17T15:10:00Z")},
+						solver.IntLt{solver.ToTimestamp("2013-06-17T15:45:00Z")},
+					},
+				},
+			}, 10),
+			expected: map[string][]time.Time{
+				"col_a": {
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:23:25Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:24:40Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:26:36Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:30:22Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:31:20Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:32:23Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:34:23Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:36:02Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:37:10Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:40:12Z")),
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "test with two columns",
+			table: table.NewTable([]types.Column{
+				{
+					Name: "col_a",
+					Type: types.TimestampType,
+					Constraints: []types.Constraints{
+						solver.IntEq{solver.ToDate("2013-06-17")},
+					},
+				},
+				{
+					Name: "col_b",
+					Type: types.TimestampType,
+					Constraints: []types.Constraints{
+						solver.IntEq{solver.ToTimestamp("2013-06-17T15:21:00Z")},
+					},
+				},
+			}, 10),
+			expected: map[string][]time.Time{
+				"col_a": {
+					date_1, date_1, date_1, date_1, date_1,
+					date_1, date_1, date_1, date_1, date_1,
+				},
+				"col_b": {
+					date_2, date_2, date_2, date_2, date_2,
+					date_2, date_2, date_2, date_2, date_2,
+				},
+			},
+			expectedError: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			var g solver.Generator
+			g.Generate(tt.table, seed)
+			tt.table.SortTimestamps()
+			r.Equal(tt.expected, tt.table.Timestamps)
 		})
 	}
 }

@@ -3,6 +3,7 @@ package table
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/phdah/sql-tdg/internals/types"
 )
@@ -17,9 +18,11 @@ type Table struct {
 	Types  map[string]types.Type
 	Dim    Dim
 
-	Ints map[string][]int
+	Ints       map[string][]int
+	Timestamps map[string][]time.Time
 
-	muInts sync.Mutex
+	muInts       sync.Mutex
+	muTimestamps sync.Mutex
 }
 
 func getColTypes(schema []types.Column) map[string]types.Type {
@@ -32,10 +35,11 @@ func getColTypes(schema []types.Column) map[string]types.Type {
 
 func NewTable(schema []types.Column, rows int) *Table {
 	return &Table{
-		Schema: schema,
-		Types:  getColTypes(schema),
-		Dim:    Dim{Rows: rows, Cols: len(schema)},
-		Ints:   make(map[string][]int),
+		Schema:     schema,
+		Types:      getColTypes(schema),
+		Dim:        Dim{Rows: rows, Cols: len(schema)},
+		Ints:       make(map[string][]int),
+		Timestamps: make(map[string][]time.Time),
 	}
 }
 
@@ -45,6 +49,10 @@ func (t *Table) Append(col string, val any) error {
 		t.muInts.Lock()
 		t.Ints[col] = append(t.Ints[col], val.(int))
 		t.muInts.Unlock()
+	case types.TimestampType:
+		t.muTimestamps.Lock()
+		t.Timestamps[col] = append(t.Timestamps[col], val.(time.Time))
+		t.muTimestamps.Unlock()
 	}
 	return nil
 }
@@ -61,6 +69,19 @@ func (t *Table) SortInts() {
 	for _, col := range t.Schema {
 		if col.Type == types.IntType {
 			sort.Ints(t.Ints[col.Name])
+		}
+	}
+}
+
+func (t *Table) SortTimestamps() {
+	t.muTimestamps.Lock()
+	defer t.muTimestamps.Unlock()
+	for _, col := range t.Schema {
+		if col.Type == types.TimestampType {
+			slice := t.Timestamps[col.Name]
+			sort.Slice(slice, func(i int, j int) bool {
+				return slice[i].Before(slice[j])
+			})
 		}
 	}
 }

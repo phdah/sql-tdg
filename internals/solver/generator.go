@@ -1,8 +1,8 @@
 package solver
 
 import (
-	"sync"
 	"math/rand"
+	"sync"
 
 	"github.com/phdah/sql-tdg/internals/table"
 	"github.com/phdah/sql-tdg/internals/types"
@@ -26,14 +26,26 @@ func (g *Generator) Generate(table *table.Table, seed int64) {
 					switch col.Type {
 					case types.IntType:
 						domain := NewIntDomain()
-						var applied types.Domain
 						var err error
 						for _, c := range col.Constraints {
-							applied, err = c.Apply(domain)
+							err = c.Apply(domain)
 							if err != nil {
 								panic(err)
 							}
-							domain = applied.(*IntDomain)
+						}
+						value := domain.RandomValue(rng)
+						err = table.Append(col.Name, value)
+						if err != nil {
+							panic(err)
+						}
+					case types.TimestampType:
+						domain := NewTimestampDomain()
+						var err error
+						for _, c := range col.Constraints {
+							err = c.Apply(domain)
+							if err != nil {
+								panic(err)
+							}
 						}
 						value := domain.RandomValue(rng)
 						err = table.Append(col.Name, value)

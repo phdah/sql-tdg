@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInt_Single_Apply(t *testing.T) {
+func TestTimestamp_Single_Apply(t *testing.T) {
 	tests := []struct {
 		name string // description of this test case
 		// Named input parameters for target function.
@@ -20,12 +20,14 @@ func TestInt_Single_Apply(t *testing.T) {
 	}{
 		{
 			name:   "only set one equal",
-			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 3, Max: 3},
+			domain: solver.NewTimestampDomain(),
+			want: &solver.TimestampDomain{
+				IntDomain: solver.IntDomain{
+					Intervals: []types.Interval{{Min: 3, Max: 3}},
+					TotalMin:  3,
+					TotalMax:  3,
+				},
 			},
-				TotalMin: 3,
-				TotalMax: 3},
 			conditions: []types.Constraints{
 				solver.IntEq{3},
 			},
@@ -33,13 +35,17 @@ func TestInt_Single_Apply(t *testing.T) {
 		},
 		{
 			name:   "only set one not equal",
-			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: -1_000_000, Max: 2},
-				{Min: 4, Max: 1_000_000},
+			domain: solver.NewTimestampDomain(),
+			want: &solver.TimestampDomain{
+				IntDomain: solver.IntDomain{
+					Intervals: []types.Interval{
+						{Min: 0, Max: 2},
+						{Min: 4, Max: 4102358400},
+					},
+					TotalMin: 0,
+					TotalMax: 4102358400,
+				},
 			},
-				TotalMin: -1_000_000,
-				TotalMax: 1_000_000},
 			conditions: []types.Constraints{
 				solver.IntNEq{3},
 			},
@@ -47,12 +53,16 @@ func TestInt_Single_Apply(t *testing.T) {
 		},
 		{
 			name:   "only set one less than",
-			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: -1_000_000, Max: 2},
+			domain: solver.NewTimestampDomain(),
+			want: &solver.TimestampDomain{
+				IntDomain: solver.IntDomain{
+					Intervals: []types.Interval{
+						{Min: 0, Max: 2},
+					},
+					TotalMin: 0,
+					TotalMax: 2,
+				},
 			},
-				TotalMin: -1_000_000,
-				TotalMax: 2},
 			conditions: []types.Constraints{
 				solver.IntLt{3},
 			},
@@ -60,12 +70,16 @@ func TestInt_Single_Apply(t *testing.T) {
 		},
 		{
 			name:   "only set one less or equal to",
-			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: -1_000_000, Max: 3},
+			domain: solver.NewTimestampDomain(),
+			want: &solver.TimestampDomain{
+				IntDomain: solver.IntDomain{
+					Intervals: []types.Interval{
+						{Min: 0, Max: 3},
+					},
+					TotalMin: 0,
+					TotalMax: 3,
+				},
 			},
-				TotalMin: -1_000_000,
-				TotalMax: 3},
 			conditions: []types.Constraints{
 				solver.IntLte{3},
 			},
@@ -73,12 +87,16 @@ func TestInt_Single_Apply(t *testing.T) {
 		},
 		{
 			name:   "only set one greater than",
-			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 4, Max: 1_000_000},
+			domain: solver.NewTimestampDomain(),
+			want: &solver.TimestampDomain{
+				IntDomain: solver.IntDomain{
+					Intervals: []types.Interval{
+						{Min: 4, Max: 4102358400},
+					},
+					TotalMin: 4,
+					TotalMax: 4102358400,
+				},
 			},
-				TotalMin: 4,
-				TotalMax: 1_000_000},
 			conditions: []types.Constraints{
 				solver.IntGt{3},
 			},
@@ -86,12 +104,16 @@ func TestInt_Single_Apply(t *testing.T) {
 		},
 		{
 			name:   "only set one greater or equal to",
-			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 3, Max: 1_000_000},
+			domain: solver.NewTimestampDomain(),
+			want: &solver.TimestampDomain{
+				IntDomain: solver.IntDomain{
+					Intervals: []types.Interval{
+						{Min: 3, Max: 4102358400},
+					},
+					TotalMin: 3,
+					TotalMax: 4102358400,
+				},
 			},
-				TotalMin: 3,
-				TotalMax: 1_000_000},
 			conditions: []types.Constraints{
 				solver.IntGte{3},
 			},
@@ -116,7 +138,7 @@ func TestInt_Single_Apply(t *testing.T) {
 	}
 }
 
-func TestInt_Multi_Apply(t *testing.T) {
+func TestTimestamp_Multi_Apply(t *testing.T) {
 	tests := []struct {
 		name string // description of this test case
 		// Named input parameters for target function.
@@ -127,12 +149,16 @@ func TestInt_Multi_Apply(t *testing.T) {
 	}{
 		{
 			name:   "set one of each, all applied",
-			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 3, Max: 3},
+			domain: solver.NewTimestampDomain(),
+			want: &solver.TimestampDomain{
+				IntDomain: solver.IntDomain{
+					Intervals: []types.Interval{
+						{Min: 3, Max: 3},
+					},
+					TotalMin: 3,
+					TotalMax: 3,
+				},
 			},
-				TotalMin: 3,
-				TotalMax: 3},
 			conditions: []types.Constraints{
 				solver.IntEq{3}, // Since equal is set, this should be the final one
 				solver.IntGt{-10},
@@ -145,7 +171,7 @@ func TestInt_Multi_Apply(t *testing.T) {
 		},
 		{
 			name:   "not allowed intervals, panic",
-			domain: solver.NewIntDomain(),
+			domain: solver.NewTimestampDomain(),
 			want: &solver.IntDomain{Intervals: []types.Interval{
 				{Min: 3, Max: 3},
 			},
@@ -172,6 +198,50 @@ func TestInt_Multi_Apply(t *testing.T) {
 				r.NoErrorf(err, fmt.Sprintf("Error was rasied: %v", err))
 			}
 			r.Equal(tt.want, tt.domain)
+		})
+	}
+}
+
+func TestToTimestamp(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		date string
+		want int
+	}{
+		{
+			name: "working string to timestamp",
+			date: "2013-06-17",
+			want: 1371427200,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			got := solver.ToDate(tt.date)
+			r.Equal(tt.want, got)
+		})
+	}
+}
+
+func TestToDate(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		timestamp string
+		want      int
+	}{
+		{
+			name:      "working string to timestamp",
+			timestamp: "2013-06-17T00:00:00Z",
+			want:      1371427200,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			got := solver.ToTimestamp(tt.timestamp)
+			r.Equal(tt.want, got)
 		})
 	}
 }
