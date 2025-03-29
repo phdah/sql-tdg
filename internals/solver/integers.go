@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"math/rand"
 
 	"github.com/phdah/sql-tdg/internals/types"
@@ -23,15 +24,30 @@ func NewIntDomain() *IntDomain {
 		TotalMax: upper,
 	}
 }
+func (d *IntDomain) SplitIntervals(splitValue int) error {
+	var updated []types.Interval
+	for _, interval := range d.Intervals {
+		// If value is inside of interval, split it
+		if interval.Min < splitValue && splitValue < interval.Max {
+			updated = append(updated, types.Interval{Min: interval.Min, Max: splitValue - 1})
+			updated = append(updated, types.Interval{Min: splitValue + 1, Max: interval.Max})
+		} else {
+			updated = append(updated, interval)
+		}
+	}
 
-func (d *IntDomain) UpdateIntervals(newInterval types.Interval) {
+	d.Intervals = updated
+	return nil
+}
+
+func (d *IntDomain) UpdateIntervals(newInterval types.Interval) error {
 	// List with all updated, or not updated intervals
 	var updated []types.Interval
 
 	for _, interval := range d.Intervals {
-		// No overlap — panic
+		// No overlap — continue
 		if interval.Min > newInterval.Max || interval.Max < newInterval.Min {
-			panic("interval not allowed")
+			continue
 		}
 
 		// Compute new min and max value
@@ -39,7 +55,7 @@ func (d *IntDomain) UpdateIntervals(newInterval types.Interval) {
 		maxv := utils.Min(interval.Max, newInterval.Max)
 
 		if minv > maxv {
-			panic("min value is larger than max value")
+			return fmt.Errorf("min value is larger than max value")
 		}
 
 		// Set new total min
@@ -52,8 +68,13 @@ func (d *IntDomain) UpdateIntervals(newInterval types.Interval) {
 		}
 		updated = append(updated, types.Interval{Min: minv, Max: maxv})
 	}
+	// If no intervals overlap - panic
+	if len(updated) <= 0 {
+		return fmt.Errorf("interval not allowed: %v", newInterval)
+	}
 
 	d.Intervals = updated
+	return nil
 }
 
 func (d IntDomain) RandomValue() any {
@@ -90,31 +111,36 @@ type IntGte struct{ Value int }
 
 func (c IntEq) Apply(domain types.Domain) (types.Domain, error) {
 	d := domain.(*IntDomain)
-	d.UpdateIntervals(types.Interval{Min: c.Value, Max: c.Value})
-	return d, nil
+	err := d.UpdateIntervals(types.Interval{Min: c.Value, Max: c.Value})
+	return d, err
 }
 
 func (c IntNEq) Apply(domain types.Domain) (types.Domain, error) {
 	d := domain.(*IntDomain)
-	var newIntervals []types.Interval
-
-	for _, interval := range d.Intervals {
-		if c.Value < interval.Min || c.Value > interval.Max {
-			newIntervals = append(newIntervals, interval)
-			continue
-		}
-		if c.Value > interval.Min {
-			d.UpdateIntervals(types.Interval{Min: interval.Min, Max: c.Value - 1})
-		}
-		if c.Value < interval.Max {
-			d.UpdateIntervals(types.Interval{Min: c.Value + 1, Max: interval.Max})
-		}
-	}
-
-	return d, nil
+	err := d.SplitIntervals(c.Value)
+	return d, err
 }
 
-// func (d *types.Domain) intervalNotOverlaping(value int) (bool, error) {
+func (c IntLt) Apply(domain types.Domain) (types.Domain, error) {
+	d := domain.(*IntDomain)
+	err := d.UpdateIntervals(types.Interval{Min: d.TotalMin, Max: c.Value - 1})
+	return d, err
+}
 
-// 	return false, nil
-// }
+func (c IntLte) Apply(domain types.Domain) (types.Domain, error) {
+	d := domain.(*IntDomain)
+	err := d.UpdateIntervals(types.Interval{Min: d.TotalMin, Max: c.Value})
+	return d, err
+}
+
+func (c IntGt) Apply(domain types.Domain) (types.Domain, error) {
+	d := domain.(*IntDomain)
+	err := d.UpdateIntervals(types.Interval{Min: c.Value + 1, Max: d.TotalMax})
+	return d, err
+}
+
+func (c IntGte) Apply(domain types.Domain) (types.Domain, error) {
+	d := domain.(*IntDomain)
+	err := d.UpdateIntervals(types.Interval{Min: c.Value, Max: d.TotalMax})
+	return d, err
+}

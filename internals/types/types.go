@@ -25,5 +25,6 @@ type Interval struct {
 
 type Domain interface {
 	RandomValue() any // Generate random value
-	UpdateIntervals(interval Interval) // Add another interval
+	UpdateIntervals(interval Interval) error // Add another interval
+	SplitIntervals(splitValue int) error // Split intervals
 }
