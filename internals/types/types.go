@@ -18,6 +18,12 @@ type Constraints interface {
 	Apply(domain Domain) (Domain, error)
 }
 
+type Interval struct {
+	Min int
+	Max int
+}
+
 type Domain interface {
 	RandomValue() any // Generate random value
+	UpdateIntervals(interval Interval) // Add another interval
 }

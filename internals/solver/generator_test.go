@@ -13,14 +13,12 @@ import (
 func TestGenerator_Generate(t *testing.T) {
 	tests := []struct {
 		name          string
-		col           string
 		table         *table.Table
 		expected      any
 		expectedError error
 	}{
 		{
-			name: "test this thing",
-			col:  "col_a",
+			name: "test with one column",
 			table: table.NewTable([]types.Column{
 				{
 					Name: "col_a",
@@ -36,8 +34,7 @@ func TestGenerator_Generate(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name: "test this thing",
-			col:  "col_a",
+			name: "test with two columns",
 			table: table.NewTable([]types.Column{
 				{
 					Name: "col_a",

@@ -23,7 +23,7 @@ func (g *Generator) Generate(table *table.Table) {
 				for _, col := range table.Schema {
 					switch col.Type {
 					case types.IntType:
-						domain := IntDomain{Min: -1_000_000, Max: 1_000_000}
+						domain := NewIntDomain()
 						var applied types.Domain
 						var err error
 						for _, c := range col.Constraints {
@@ -31,7 +31,7 @@ func (g *Generator) Generate(table *table.Table) {
 							if err != nil {
 								panic(err)
 							}
-							domain = applied.(IntDomain)
+							domain = applied.(*IntDomain)
 						}
 						value := domain.RandomValue()
 						err = table.Append(col.Name, value)

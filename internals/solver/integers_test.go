@@ -19,10 +19,27 @@ func TestIntEq_Apply(t *testing.T) {
 	}{
 		{
 			name:   "only set one equal",
-			domain: solver.IntDomain{Min: -1_000_000, Max: 1_000_000},
-			want:   solver.IntDomain{Min: 3, Max: 3},
+			domain: solver.NewIntDomain(),
+			want: &solver.IntDomain{Intervals: []types.Interval{
+				{Min: 3, Max: 3},
+			},
+				TotalMin: 3,
+				TotalMax: 3},
 			conditions: []types.Constraints{
 				solver.IntEq{3},
+			},
+		},
+		{
+			name:   "set two equal",
+			domain: solver.NewIntDomain(),
+			want: &solver.IntDomain{Intervals: []types.Interval{
+				{Min: 3, Max: 3},
+			},
+				TotalMin: 3,
+				TotalMax: 3},
+			conditions: []types.Constraints{
+				solver.IntEq{3},
+				solver.IntNEq{5},
 			},
 		},
 	}
