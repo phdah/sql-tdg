@@ -24,6 +24,7 @@ func NewIntDomain() *IntDomain {
 		TotalMax: upper,
 	}
 }
+
 func (d *IntDomain) SplitIntervals(splitValue int) error {
 	var updated []types.Interval
 	for _, interval := range d.Intervals {
@@ -77,7 +78,7 @@ func (d *IntDomain) UpdateIntervals(newInterval types.Interval) error {
 	return nil
 }
 
-func (d IntDomain) RandomValue() any {
+func (d IntDomain) RandomValue(rng *rand.Rand) any {
 	total := 0
 	counts := make([]int, len(d.Intervals))
 
@@ -88,10 +89,10 @@ func (d IntDomain) RandomValue() any {
 	}
 
 	if total == 0 {
-		return nil // or panic, depending on your use case
+		return fmt.Errorf("no ")
 	}
 
-	r := rand.Intn(total)
+	r := rng.Intn(total)
 	for i, count := range counts {
 		if r < count {
 			return d.Intervals[i].Min + r

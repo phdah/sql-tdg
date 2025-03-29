@@ -11,6 +11,7 @@ import (
 )
 
 func TestGenerator_Generate(t *testing.T) {
+	seed := int64(42)
 	tests := []struct {
 		name          string
 		table         *table.Table
@@ -18,7 +19,7 @@ func TestGenerator_Generate(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name: "test with one column",
+			name: "test with one column single condition",
 			table: table.NewTable([]types.Column{
 				{
 					Name: "col_a",
@@ -30,6 +31,24 @@ func TestGenerator_Generate(t *testing.T) {
 			}, 10),
 			expected: map[string][]int{
 				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "test with one column multi condition",
+			table: table.NewTable([]types.Column{
+				{
+					Name: "col_a",
+					Type: types.IntType,
+					Constraints: []types.Constraints{
+						solver.IntNEq{10},
+						solver.IntGt{3},
+						solver.IntLt{100},
+					},
+				},
+			}, 10),
+			expected: map[string][]int{
+				"col_a": {28, 42, 48, 57, 58, 64, 73, 84, 90, 95},
 			},
 			expectedError: nil,
 		},
@@ -62,7 +81,8 @@ func TestGenerator_Generate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := require.New(t)
 			var g solver.Generator
-			g.Generate(tt.table)
+			g.Generate(tt.table, seed)
+			tt.table.SortInts()
 			r.Equal(tt.expected, tt.table.Ints)
 
 		})

@@ -1,5 +1,7 @@
 package types
 
+import "math/rand"
+
 type Type string
 
 const (
@@ -24,7 +26,7 @@ type Interval struct {
 }
 
 type Domain interface {
-	RandomValue() any // Generate random value
+	RandomValue(rng *rand.Rand) any          // Generate random value
 	UpdateIntervals(interval Interval) error // Add another interval
-	SplitIntervals(splitValue int) error // Split intervals
+	SplitIntervals(splitValue int) error     // Split intervals
 }

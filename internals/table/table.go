@@ -1,6 +1,7 @@
 package table
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/phdah/sql-tdg/internals/types"
@@ -52,6 +53,16 @@ func (t *Table) GetInts(col string) ([]int, error) {
 	t.muInts.Lock()
 	defer t.muInts.Unlock()
 	return t.Ints[col], nil
+}
+
+func (t *Table) SortInts() {
+	t.muInts.Lock()
+	defer t.muInts.Unlock()
+	for _, col := range t.Schema {
+		if col.Type == types.IntType {
+			sort.Ints(t.Ints[col.Name])
+		}
+	}
 }
 
 func (t *Table) Wipe() error {

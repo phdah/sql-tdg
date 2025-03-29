@@ -2,6 +2,7 @@ package solver
 
 import (
 	"sync"
+	"math/rand"
 
 	"github.com/phdah/sql-tdg/internals/table"
 	"github.com/phdah/sql-tdg/internals/types"
@@ -11,7 +12,8 @@ type Generator struct {
 	Columns []types.Column
 }
 
-func (g *Generator) Generate(table *table.Table) {
+func (g *Generator) Generate(table *table.Table, seed int64) {
+	rng := rand.New(rand.NewSource(seed))
 	var wg sync.WaitGroup
 	workers := 1 // Set to 1 for debugging
 
@@ -33,7 +35,7 @@ func (g *Generator) Generate(table *table.Table) {
 							}
 							domain = applied.(*IntDomain)
 						}
-						value := domain.RandomValue()
+						value := domain.RandomValue(rng)
 						err = table.Append(col.Name, value)
 						if err != nil {
 							panic(err)
