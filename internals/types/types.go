@@ -27,9 +27,9 @@ type Interval struct {
 }
 
 type Domain interface {
-	GetTotalMin() int
-	GetTotalMax() int
+	GetTotalMin() any                        // Get intervals max
+	GetTotalMax() any                        // Get intervals min
 	RandomValue(rng *rand.Rand) (any, error) // Generate random value
 	UpdateIntervals(interval Interval) error // Add another interval
-	SplitIntervals(splitValue int) error     // Split intervals
+	SplitIntervals(splitValue any) error     // Split intervals
 }

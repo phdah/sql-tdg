@@ -14,11 +14,11 @@ type IntDomain struct {
 	TotalMax  int
 }
 
-func (d *IntDomain) GetTotalMin() int {
+func (d *IntDomain) GetTotalMin() any {
 	return d.TotalMin
 }
 
-func (d *IntDomain) GetTotalMax() int {
+func (d *IntDomain) GetTotalMax() any {
 	return d.TotalMax
 }
 
@@ -33,13 +33,21 @@ func NewIntDomain() *IntDomain {
 	}
 }
 
-func (d *IntDomain) SplitIntervals(splitValue int) error {
+func (d *IntDomain) SplitIntervals(splitValue any) error {
+	splitValueInt, ok := splitValue.(int)
+	if !ok {
+		return fmt.Errorf("expected int, got %T", splitValueInt)
+	}
 	var updated []types.Interval
 	for _, interval := range d.Intervals {
 		// If value is inside of interval, split it
-		if interval.Min < splitValue && splitValue < interval.Max {
-			updated = append(updated, types.Interval{Min: interval.Min, Max: splitValue - 1})
-			updated = append(updated, types.Interval{Min: splitValue + 1, Max: interval.Max})
+		if interval.Min < splitValueInt && splitValueInt < interval.Max {
+			updated = append(updated, types.Interval{
+				Min: interval.Min, Max: splitValueInt - 1,
+			})
+			updated = append(updated, types.Interval{
+				Min: splitValueInt + 1, Max: interval.Max,
+			})
 		} else {
 			updated = append(updated, interval)
 		}
@@ -129,21 +137,29 @@ func (c IntNEq) Apply(domain types.Domain) error {
 }
 
 func (c IntLt) Apply(domain types.Domain) error {
-	err := domain.UpdateIntervals(types.Interval{Min: domain.GetTotalMin(), Max: c.Value - 1})
+	err := domain.UpdateIntervals(types.Interval{
+		Min: domain.GetTotalMin().(int), Max: c.Value - 1,
+	})
 	return err
 }
 
 func (c IntLte) Apply(domain types.Domain) error {
-	err := domain.UpdateIntervals(types.Interval{Min: domain.GetTotalMin(), Max: c.Value})
+	err := domain.UpdateIntervals(types.Interval{
+		Min: domain.GetTotalMin().(int), Max: c.Value,
+	})
 	return err
 }
 
 func (c IntGt) Apply(domain types.Domain) error {
-	err := domain.UpdateIntervals(types.Interval{Min: c.Value + 1, Max: domain.GetTotalMax()})
+	err := domain.UpdateIntervals(types.Interval{
+		Min: c.Value + 1, Max: domain.GetTotalMax().(int),
+	})
 	return err
 }
 
 func (c IntGte) Apply(domain types.Domain) error {
-	err := domain.UpdateIntervals(types.Interval{Min: c.Value, Max: domain.GetTotalMax()})
+	err := domain.UpdateIntervals(types.Interval{
+		Min: c.Value, Max: domain.GetTotalMax().(int),
+	})
 	return err
 }
