@@ -190,3 +190,90 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 		})
 	}
 }
+
+func TestBoolGenerator_Generate(t *testing.T) {
+	seed := int64(42)
+	tests := []struct {
+		name          string
+		table         *table.Table
+		expected      any
+		expectedError error
+	}{
+		{
+			name: "test with one column true",
+			table: table.NewTable([]types.Column{
+				{
+					Name: "col_a",
+					Type: types.BoolType,
+					Constraints: []types.Constraints{
+						solver.BoolTrue{},
+					},
+				},
+			}, 12),
+			expected: map[string][]bool{
+				"col_a": {
+					true, true, true, true, true, true,
+					true, true, true, true, true, true,
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "test with one column false",
+			table: table.NewTable([]types.Column{
+				{
+					Name: "col_a",
+					Type: types.BoolType,
+					Constraints: []types.Constraints{
+						solver.BoolFalse{},
+					},
+				},
+			}, 12),
+			expected: map[string][]bool{
+				"col_a": {
+					false, false, false, false, false, false,
+					false, false, false, false, false, false,
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "test with two columns",
+			table: table.NewTable([]types.Column{
+				{
+					Name: "col_a",
+					Type: types.BoolType,
+					Constraints: []types.Constraints{
+						solver.BoolTrue{},
+					},
+				},
+				{
+					Name: "col_b",
+					Type: types.BoolType,
+					Constraints: []types.Constraints{
+						solver.BoolFalse{},
+					},
+				},
+			}, 12),
+			expected: map[string][]bool{
+				"col_a": {
+					true, true, true, true, true, true,
+					true, true, true, true, true, true,
+				},
+				"col_b": {
+					false, false, false, false, false, false,
+					false, false, false, false, false, false,
+				},
+			},
+			expectedError: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			var g solver.Generator
+			g.Generate(tt.table, seed)
+			r.Equal(tt.expected, tt.table.Bools)
+		})
+	}
+}

@@ -58,6 +58,9 @@ func (g *Generator) Generate(table *table.Table, seed int64) {
 					case types.TimestampType:
 						domain := NewTimestampDomain()
 						g.generateColumn(domain, &col, table, rng)
+					case types.BoolType:
+						domain := NewBoolDomain()
+						g.generateColumn(domain, &col, table, rng)
 					}
 				}
 			}
