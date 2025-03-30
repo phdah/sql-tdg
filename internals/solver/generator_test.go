@@ -29,9 +29,9 @@ func TestIntGenerator_Generate(t *testing.T) {
 						solver.IntEq{10}, // Column should be all equal to 10
 					},
 				},
-			}, 10),
+			}, 12),
 			expected: map[string][]int{
-				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
 			},
 			expectedError: nil,
 		},
@@ -47,9 +47,9 @@ func TestIntGenerator_Generate(t *testing.T) {
 						solver.IntLt{100},
 					},
 				},
-			}, 10),
+			}, 12),
 			expected: map[string][]int{
-				"col_a": {28, 42, 48, 57, 58, 64, 73, 84, 90, 95},
+				"col_a": {28, 42, 48, 57, 58, 64, 71, 73, 76, 84, 90, 95},
 			},
 			expectedError: nil,
 		},
@@ -70,10 +70,10 @@ func TestIntGenerator_Generate(t *testing.T) {
 						solver.IntEq{3}, // Column should be all equal to 3
 					},
 				},
-			}, 10),
+			}, 12),
 			expected: map[string][]int{
-				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
-				"col_b": {3, 3, 3, 3, 3, 3, 3, 3, 3, 3},
+				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+				"col_b": {3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3},
 			},
 			expectedError: nil,
 		},
@@ -85,7 +85,6 @@ func TestIntGenerator_Generate(t *testing.T) {
 			g.Generate(tt.table, seed)
 			tt.table.SortInts()
 			r.Equal(tt.expected, tt.table.Ints)
-
 		})
 	}
 }
@@ -110,11 +109,11 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 						solver.IntEq{solver.ToDate("2013-06-17")},
 					},
 				},
-			}, 10),
+			}, 12),
 			expected: map[string][]time.Time{
 				"col_a": {
-					date_1, date_1, date_1, date_1, date_1,
-					date_1, date_1, date_1, date_1, date_1,
+					date_1, date_1, date_1, date_1, date_1, date_1,
+					date_1, date_1, date_1, date_1, date_1, date_1,
 				},
 			},
 			expectedError: nil,
@@ -131,12 +130,13 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 						solver.IntLt{solver.ToTimestamp("2013-06-17T15:45:00Z")},
 					},
 				},
-			}, 10),
+			}, 12),
 			expected: map[string][]time.Time{
 				"col_a": {
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:23:25Z")),
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:24:40Z")),
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:26:36Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:28:42Z")),
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:30:22Z")),
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:31:20Z")),
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:32:23Z")),
@@ -144,6 +144,7 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:36:02Z")),
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:37:10Z")),
 					solver.FromInt(solver.ToTimestamp("2013-06-17T15:40:12Z")),
+					solver.FromInt(solver.ToTimestamp("2013-06-17T15:42:31Z")),
 				},
 			},
 			expectedError: nil,
@@ -165,15 +166,15 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 						solver.IntEq{solver.ToTimestamp("2013-06-17T15:21:00Z")},
 					},
 				},
-			}, 10),
+			}, 12),
 			expected: map[string][]time.Time{
 				"col_a": {
-					date_1, date_1, date_1, date_1, date_1,
-					date_1, date_1, date_1, date_1, date_1,
+					date_1, date_1, date_1, date_1, date_1, date_1,
+					date_1, date_1, date_1, date_1, date_1, date_1,
 				},
 				"col_b": {
-					date_2, date_2, date_2, date_2, date_2,
-					date_2, date_2, date_2, date_2, date_2,
+					date_2, date_2, date_2, date_2, date_2, date_2,
+					date_2, date_2, date_2, date_2, date_2, date_2,
 				},
 			},
 			expectedError: nil,

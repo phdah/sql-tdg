@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -23,9 +24,13 @@ func NewTimestampDomain() *TimestampDomain {
 	}
 }
 
-func (t TimestampDomain) RandomValue(rng *rand.Rand) any {
-	raw := t.IntDomain.RandomValue(rng).(int)
-	return time.Unix(int64(raw), 0)
+func (t TimestampDomain) RandomValue(rng *rand.Rand) (any, error) {
+	val, err := t.IntDomain.RandomValue(rng)
+	raw, ok := val.(int)
+	if !ok {
+		return time.Time{}, fmt.Errorf("expected int, got %T", val)
+	}
+	return time.Unix(int64(raw), 0), err
 }
 
 // ToTimestamp parses a string in RFC3339 format (e.g. "2006-01-02T15:04:05Z")

@@ -86,7 +86,7 @@ func (d *IntDomain) UpdateIntervals(newInterval types.Interval) error {
 	return nil
 }
 
-func (d IntDomain) RandomValue(rng *rand.Rand) any {
+func (d IntDomain) RandomValue(rng *rand.Rand) (any, error) {
 	total := 0
 	counts := make([]int, len(d.Intervals))
 
@@ -97,18 +97,18 @@ func (d IntDomain) RandomValue(rng *rand.Rand) any {
 	}
 
 	if total == 0 {
-		return fmt.Errorf("no values to generate")
+		return nil, fmt.Errorf("no values to generate")
 	}
 
 	r := rng.Intn(total)
 	for i, count := range counts {
 		if r < count {
-			return d.Intervals[i].Min + r
+			return d.Intervals[i].Min + r, nil
 		}
 		r -= count
 	}
 
-	return nil // unreachable
+	return nil, nil
 }
 
 type IntEq struct{ Value int }
