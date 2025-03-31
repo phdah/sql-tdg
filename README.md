@@ -23,3 +23,7 @@ produced.
 
 Follow the guide found in the
 [example](https://github.com/phdah/sql-tdg/tree/main/python_poc/examples) directory.
+
+# Readmap
+
+[] [gRPC](https://grpc.io/) for interop with other languages.
