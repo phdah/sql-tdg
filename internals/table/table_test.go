@@ -77,3 +77,62 @@ func TestTable_Wipe(t *testing.T) {
 		})
 	}
 }
+
+func TestTable_SortInts(t *testing.T) {
+	tests := []struct {
+		name     string // description of this test case
+		table    *table.Table
+		expected map[string][]int
+	}{
+		{
+			name: "single list of ints",
+			table: &table.Table{
+				Schema: []types.Column{
+					{
+						Name: "col1",
+						Type: types.IntType,
+					},
+				},
+				Ints: map[string][]int{
+					"col1": {7, 2, 6, 3, 1},
+				},
+			},
+			expected: map[string][]int{
+				"col1": {1, 2, 3, 6, 7},
+			},
+		},
+		{
+			name: "multiple int columns",
+			table: &table.Table{
+				Schema: []types.Column{
+					{
+						Name: "col1",
+						Type: types.IntType,
+					},
+					{
+						Name: "col2",
+						Type: types.IntType,
+					},
+				},
+				Ints: map[string][]int{
+					"col1": {5, 3, 9},
+					"col2": {2, 2, 1},
+				},
+			},
+			expected: map[string][]int{
+				"col1": {3, 5, 9},
+				"col2": {1, 2, 2},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			tt.table.SortInts()
+			for col, result := range tt.table.Ints {
+				r.Equal(tt.expected[col], result)
+			}
+		})
+	}
+}
