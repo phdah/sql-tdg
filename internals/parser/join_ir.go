@@ -44,7 +44,7 @@ const (
 type JoinIR struct {
 	Kind      string
 	Table     string
-	Condition ConditionsIR
+	Condition []ConditionsIR
 }
 
 // GetKind returns the JoinKind corresponding to the flags set on the

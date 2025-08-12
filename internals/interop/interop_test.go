@@ -42,8 +42,8 @@ func TestInterop_FullQueryGenerator(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name:  "test with two column single conditions",
-			query: "SELECT col_a FROM t WHERE col_a = 10",
+			name:  "test with two column multi conditions",
+			query: "SELECT col_a, col_b FROM t WHERE col_a > 5 OR col_a = 10 AND col_b = 5",
 			table: table.NewTable([]types.Column{
 				{
 					Name:        "col_a",
@@ -56,8 +56,9 @@ func TestInterop_FullQueryGenerator(t *testing.T) {
 					Constraints: nil,
 				},
 			}, 12),
-			expected: []int{
-				10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+			expected: map[string][]int{
+				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+				"col_b": {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5},
 			},
 			expectedError: nil,
 		},
@@ -79,11 +80,7 @@ func TestInterop_FullQueryGenerator(t *testing.T) {
 			}
 			g.Generate(tt.table, seed)
 			tt.table.SortInts()
-			if len(tt.table.Ints) == 1 {
-				r.Equal(tt.expected, tt.table.Ints)
-			} else {
-				r.Equal(tt.expected, tt.table.Ints["col_a"])
-			}
+			r.Equal(tt.expected, tt.table.Ints)
 		})
 	}
 }

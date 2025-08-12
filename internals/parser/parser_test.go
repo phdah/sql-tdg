@@ -12,10 +12,10 @@ func TestParse_QuaryParsing(t *testing.T) {
 		SELECT x,y
 		FROM t
 		LEFT JOIN u ON t.x = u.p
-		JOIN u ON t.x = u.p
+		JOIN u ON t.x = u.p AND t.x = u.r
 		CROSS JOIN t ON t.a > t.l
 		NATURAL JOIN t ON t.a > t.l
-		WHERE x > 5
+		WHERE x > 5 OR y = 10 AND x = 10
 	`
 	// QUALIFY row_number() = 1
 	q, err := parser.Parser.ParseString("", query)
@@ -26,22 +26,25 @@ func TestParse_QuaryParsing(t *testing.T) {
 		{
 			Kind:      "LEFT",
 			Table:     "u",
-			Condition: parser.ConditionsIR{Left: "t.x", Op: "=", Right: "u.p"},
+			Condition: []parser.ConditionsIR{{Left: "t.x", Op: "=", Right: "u.p"}},
 		},
 		{
 			Kind:      "INNER",
 			Table:     "u",
-			Condition: parser.ConditionsIR{Left: "t.x", Op: "=", Right: "u.p"},
+			Condition: []parser.ConditionsIR{
+				{Left: "t.x", Op: "=", Right: "u.p"},
+				{Left: "t.x", Op: "=", Right: "u.r"},
+			},
 		},
 		{
 			Kind:      "CROSS",
 			Table:     "t",
-			Condition: parser.ConditionsIR{Left: "t.a", Op: ">", Right: "t.l"},
+			Condition: []parser.ConditionsIR{{Left: "t.a", Op: ">", Right: "t.l"}},
 		},
 		{
 			Kind:      "NATURAL INNER",
 			Table:     "t",
-			Condition: parser.ConditionsIR{Left: "t.a", Op: ">", Right: "t.l"},
+			Condition: []parser.ConditionsIR{{Left: "t.a", Op: ">", Right: "t.l"}},
 		},
 	}
 	wantConditions := []parser.ConditionsIR{
@@ -49,6 +52,16 @@ func TestParse_QuaryParsing(t *testing.T) {
 			Left:  "x",
 			Op:    ">",
 			Right: "5",
+		},
+		{
+			Left:  "y",
+			Op:    "=",
+			Right: "10",
+		},
+		{
+			Left:  "x",
+			Op:    "=",
+			Right: "10",
 		},
 	}
 	gotJoins := q.GetJoins()

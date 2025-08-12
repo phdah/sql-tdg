@@ -2,35 +2,33 @@ package parser
 
 import "strings"
 
-// Parser IR type aliases for readability.
-// LeftIR represents the left-hand side of a condition.
-// OpIR   represents the operator.
-// RightIR represents the right-hand side of a condition.
-type (
-	LeftIR  string
-	OpIR    string
-	RightIR string
-)
+// LeftIR represents the left side of a condition in the IR.
+type LeftIR string
 
-// ConditionsIR is a simple IR representation of a binary
-// condition consisting of a left operand, an operator
-// and a right operand.
+// OpIR represents the operator of a condition in the IR.
+type OpIR string
+
+// RightIR represents the right side of a condition in the IR.
+type RightIR string
+
+// ConditionsIR is a lightweight representation of a single condition,
+// containing the left operand, the operator, and the right operand.
 type ConditionsIR struct {
 	Left  LeftIR
 	Op    OpIR
 	Right RightIR
 }
 
-// primaryAtom turns a Primary AST node into a single
-// atom string (e.g. identifier, numeric literal or
-// string literal). It returns an empty string if the
-// Primary is nil or has no recognizable value.
+// primaryAtom converts a Primary expression into its string representation.
+// It handles qualified identifiers, numeric literals, string literals,
+// and function calls. If the Primary is nil or does not contain a
+// recognizable value, it returns an empty string.
 func primaryAtom(p *Primary) string {
 	if p == nil {
 		return ""
 	}
-	if len(p.QIdent) > 0 {
-		return strings.Join(p.QIdent, ".")
+	if p.QIdent != nil && len(p.QIdent.Parts) > 0 {
+		return strings.Join(p.QIdent.Parts, ".")
 	}
 	if p.Num != nil {
 		return *p.Num
@@ -38,56 +36,61 @@ func primaryAtom(p *Primary) string {
 	if p.Str != nil {
 		return *p.Str
 	}
+	if p.Func != nil {
+		return strings.Join(p.Func.Name.Parts, ".") + "()"
+	}
 	return ""
 }
 
-// GetLeftIR extracts the left-hand side of the expression
-// and returns it as a LeftIR. If the expression's left
-// side is nil, an empty string is returned.
-func (e *Expr) GetLeftIR() LeftIR {
-	return LeftIR(primaryAtom(e.Left))
-}
+// ToIR converts an Expr into a slice of ConditionsIR, representing the
+// intermediate form of the expression. It walks the expression tree,
+// extracting each condition and preserving logical operators.
+func (e *Expr) ToIR() []ConditionsIR {
+	conditions := make([]ConditionsIR, 0)
+	conditions = append(conditions, e.Left.ToIR()...)
 
-// GetOpIR extracts the operator from the expression.
-// If the operator is nil, an empty OpIR is returned.
-func (e *Expr) GetOpIR() OpIR {
-	if e.Op == nil {
-		return OpIR("")
+	for _, orTerm := range e.Rest {
+		conditions = append(conditions, orTerm.Right.ToIR()...)
 	}
-	return OpIR(*e.Op)
+	return conditions
 }
 
-// GetRightIR extracts the right-hand side of the expression
-// and returns it as a RightIR. If the expression's right
-// side is nil, an empty string is returned.
-func (e *Expr) GetRightIR() RightIR {
-	return RightIR(primaryAtom(e.Right))
-}
+// ToIR converts an And expression into a slice of ConditionsIR,
+// extracting each conjunctive condition. It handles the leftmost term
+// separately and then iterates over any additional terms.
+func (a *And) ToIR() []ConditionsIR {
+	conditions := make([]ConditionsIR, 0)
 
-// ToIR converts an Expr into its ConditionsIR
-// representation, aggregating the left, operator and
-// right components.
-func (e *Expr) ToIR() ConditionsIR {
-	return ConditionsIR{
-		Left:  e.GetLeftIR(),
-		Op:    e.GetOpIR(),
-		Right: e.GetRightIR(),
+	if a.Left != nil && a.Left.Op != nil {
+		conditions = append(conditions, ConditionsIR{
+			Left:  LeftIR(primaryAtom(a.Left.Left)),
+			Op:    OpIR(*a.Left.Op),
+			Right: RightIR(primaryAtom(a.Left.Right)),
+		})
 	}
+
+	for _, andTerm := range a.Rest {
+		if andTerm.Right != nil && andTerm.Right.Op != nil {
+			conditions = append(conditions, ConditionsIR{
+				Left:  LeftIR(primaryAtom(andTerm.Right.Left)),
+				Op:    OpIR(*andTerm.Right.Op),
+				Right: RightIR(primaryAtom(andTerm.Right.Right)),
+			})
+		}
+	}
+	return conditions
 }
 
-// GetConditions collects simple (left, op, right) conditions
-// from a Query's WHERE and QUALIFY clauses and returns them
-// as a slice of ConditionsIR. The slice may contain zero,
-// one or two elements depending on which clauses are present.
+// GetConditions extracts all condition clauses from a Query, including
+// both the WHERE and QUALIFY clauses. It returns a flat slice of
+// ConditionsIR representing every condition in the query.
 func (q *Query) GetConditions() []ConditionsIR {
-	out := make([]ConditionsIR, 0, 2)
-	// TODO: have it iterate over all where
+	out := make([]ConditionsIR, 0)
 	if q.Where != nil {
-		out = append(out, q.Where.ToIR())
+		out = append(out, q.Where.ToIR()...)
 	}
-	// TODO: have it iterate over all qualify
 	if q.Qualify != nil {
-		out = append(out, q.Qualify.ToIR())
+		out = append(out, q.Qualify.ToIR()...)
 	}
 	return out
 }

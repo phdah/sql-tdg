@@ -61,21 +61,17 @@ type QIdent struct {
 /* ---- Expressions (no left recursion) ---- */
 
 type Expr struct {
-	Left  *Primary `parser:"@@"`
-	Op    *string  `parser:"( @CmpOp"`
-	Right *Primary `parser:"  @@ )?"`
-}
-
-type Or struct {
 	Left *And `parser:"@@"`
 	Rest []*struct {
-		Right *And `parser:"'OR' @@"`
+		Op    string `parser:"@'OR'"`
+		Right *And   `parser:"@@"`
 	} `parser:"@@*"`
 }
 type And struct {
 	Left *Cmp `parser:"@@"`
 	Rest []*struct {
-		Right *Cmp `parser:"'AND' @@"`
+		Op    string `parser:"@'AND'"`
+		Right *Cmp   `parser:"@@"`
 	} `parser:"@@*"`
 }
 type Cmp struct {
@@ -84,10 +80,11 @@ type Cmp struct {
 	Right *Primary `parser:"  @@ )?"`
 }
 type Primary struct {
-	QIdent []string `parser:"@Ident ( '.' @Ident )*"`
-	Num    *string  `parser:"| @Int"`
-	Str    *string  `parser:"| @String"`
-	Paren  *Expr    `parser:"| '(' @@ ')'"`
+	QIdent *QIdent `parser:"  @@"`
+	Num    *string `parser:"| @Int"`
+	Str    *string `parser:"| @String"`
+	Paren  *Expr   `parser:"| '(' @@ ')'"`
+	Func   *Func   `parser:"| @@"`
 }
 type Func struct {
 	Name *QIdent `parser:"@@"`
