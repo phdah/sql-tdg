@@ -1,13 +1,13 @@
 package parser_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/phdah/sql-tdg/internals/parser"
+	"github.com/stretchr/testify/require"
 )
 
-func TestParse_WhereClauseVisitor(t *testing.T) {
+func TestParse_QuaryParsing(t *testing.T) {
 	query := `
 		SELECT x,y
 		FROM t
@@ -22,8 +22,39 @@ func TestParse_WhereClauseVisitor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed parsing query:\n%s, err:\n%e", query, err)
 	}
-	joins := q.GetJoins()
-	conditions := q.GetConditions()
-	fmt.Println(joins)
-	fmt.Println(conditions)
+	wantJoins := []parser.JoinIR{
+		{
+			Kind:      "LEFT",
+			Table:     "u",
+			Condition: parser.ConditionsIR{Left: "t.x", Op: "=", Right: "u.p"},
+		},
+		{
+			Kind:      "INNER",
+			Table:     "u",
+			Condition: parser.ConditionsIR{Left: "t.x", Op: "=", Right: "u.p"},
+		},
+		{
+			Kind:      "CROSS",
+			Table:     "t",
+			Condition: parser.ConditionsIR{Left: "t.a", Op: ">", Right: "t.l"},
+		},
+		{
+			Kind:      "NATURAL INNER",
+			Table:     "t",
+			Condition: parser.ConditionsIR{Left: "t.a", Op: ">", Right: "t.l"},
+		},
+	}
+	wantConditions := []parser.ConditionsIR{
+		{
+			Left:  "x",
+			Op:    ">",
+			Right: "5",
+		},
+	}
+	gotJoins := q.GetJoins()
+	gotConditions := q.GetConditions()
+
+	r := require.New(t)
+	r.Equal(gotJoins, wantJoins)
+	r.Equal(gotConditions, wantConditions)
 }
