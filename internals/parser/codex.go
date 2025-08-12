@@ -11,7 +11,7 @@ var SqlLex = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "WS", Pattern: `[ \t\r\n]+`},
 	{Name: "LineComment", Pattern: `--[^\n]*`},
 
-	{Name: "String", Pattern: `'([^']|'')*'`},
+	{Name: "String", Pattern: `'([^']|'')*'|"([^"]|"")*"`},
 	{Name: "Int", Pattern: `\d+`},
 	{Name: "Ident", Pattern: `[A-Za-z_][A-Za-z0-9_]*`},
 

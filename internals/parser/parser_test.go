@@ -15,7 +15,7 @@ func TestParse_QuaryParsing(t *testing.T) {
 		JOIN u ON t.x = u.p AND t.x = u.r
 		CROSS JOIN t ON t.a > t.l
 		NATURAL JOIN t ON t.a > t.l
-		WHERE x > 5 OR y = 10 AND t AND x = 10
+		WHERE x > 5 OR y = 10 AND t AND x = 10 AND t = "2025-06-19"
 	`
 	// QUALIFY row_number() = 1
 	q, err := parser.Parser.ParseString("", query)
@@ -60,13 +60,18 @@ func TestParse_QuaryParsing(t *testing.T) {
 		},
 		{
 			Left:  "t",
-			Op:    "true",
-			Right: "",
+			Op:    "bool",
+			Right: "true",
 		},
 		{
 			Left:  "x",
 			Op:    "=",
 			Right: "10",
+		},
+		{
+			Left:  "t",
+			Op:    "=",
+			Right: `"2025-06-19"`,
 		},
 	}
 	gotJoins := q.GetJoins()
