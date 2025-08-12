@@ -16,7 +16,7 @@ func TestIntGenerator_Generate(t *testing.T) {
 	tests := []struct {
 		name          string
 		table         *table.Table
-		expected      any
+		expected      map[string][]int32
 		expectedError error
 	}{
 		{
@@ -26,11 +26,11 @@ func TestIntGenerator_Generate(t *testing.T) {
 					Name: "col_a",
 					Type: types.IntType,
 					Constraints: []types.Constraints{
-						solver.IntEq{10}, // Column should be all equal to 10
+						solver.IntEq{Value: 10},
 					},
 				},
 			}, 12),
-			expected: map[string][]int{
+			expected: map[string][]int32{
 				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
 			},
 			expectedError: nil,
@@ -42,13 +42,13 @@ func TestIntGenerator_Generate(t *testing.T) {
 					Name: "col_a",
 					Type: types.IntType,
 					Constraints: []types.Constraints{
-						solver.IntNEq{10},
-						solver.IntGt{3},
-						solver.IntLt{100},
+						solver.IntNEq{Value: 10},
+						solver.IntGt{Value: 3},
+						solver.IntLt{Value: 100},
 					},
 				},
 			}, 12),
-			expected: map[string][]int{
+			expected: map[string][]int32{
 				"col_a": {28, 42, 48, 57, 58, 64, 71, 73, 76, 84, 90, 95},
 			},
 			expectedError: nil,
@@ -60,18 +60,18 @@ func TestIntGenerator_Generate(t *testing.T) {
 					Name: "col_a",
 					Type: types.IntType,
 					Constraints: []types.Constraints{
-						solver.IntEq{10}, // Column should be all equal to 10
+						solver.IntEq{Value: 10},
 					},
 				},
 				{
 					Name: "col_b",
 					Type: types.IntType,
 					Constraints: []types.Constraints{
-						solver.IntEq{3}, // Column should be all equal to 3
+						solver.IntEq{Value: 3},
 					},
 				},
 			}, 12),
-			expected: map[string][]int{
+			expected: map[string][]int32{
 				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
 				"col_b": {3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3},
 			},
@@ -83,8 +83,21 @@ func TestIntGenerator_Generate(t *testing.T) {
 			r := require.New(t)
 			var g solver.Generator
 			g.Generate(tt.table, seed)
+
+			// Call BuildInts to finalize the Arrow arrays from the builders
+			tt.table.BuildInts()
+
 			tt.table.SortInts()
-			r.Equal(tt.expected, tt.table.Ints)
+
+			// Create a map to hold the actual Go slices from the Arrow arrays
+			actual := make(map[string][]int32)
+			for colName := range tt.expected {
+				arr, _ := tt.table.GetInts(colName)
+				if arr != nil {
+					actual[colName] = arr.Int32Values()
+				}
+			}
+			r.Equal(tt.expected, actual)
 		})
 	}
 }
@@ -106,7 +119,7 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 					Name: "col_a",
 					Type: types.TimestampType,
 					Constraints: []types.Constraints{
-						solver.IntEq{solver.ToDate("2013-06-17")},
+						solver.IntEq{Value: solver.ToDate("2013-06-17")},
 					},
 				},
 			}, 12),
@@ -125,9 +138,9 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 					Name: "col_a",
 					Type: types.TimestampType,
 					Constraints: []types.Constraints{
-						solver.IntNEq{solver.ToTimestamp("2013-06-17T15:21:00Z")},
-						solver.IntGt{solver.ToTimestamp("2013-06-17T15:10:00Z")},
-						solver.IntLt{solver.ToTimestamp("2013-06-17T15:45:00Z")},
+						solver.IntNEq{Value: solver.ToTimestamp("2013-06-17T15:21:00Z")},
+						solver.IntGt{Value: solver.ToTimestamp("2013-06-17T15:10:00Z")},
+						solver.IntLt{Value: solver.ToTimestamp("2013-06-17T15:45:00Z")},
 					},
 				},
 			}, 12),
@@ -156,14 +169,14 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 					Name: "col_a",
 					Type: types.TimestampType,
 					Constraints: []types.Constraints{
-						solver.IntEq{solver.ToDate("2013-06-17")},
+						solver.IntEq{Value: solver.ToDate("2013-06-17")},
 					},
 				},
 				{
 					Name: "col_b",
 					Type: types.TimestampType,
 					Constraints: []types.Constraints{
-						solver.IntEq{solver.ToTimestamp("2013-06-17T15:21:00Z")},
+						solver.IntEq{Value: solver.ToTimestamp("2013-06-17T15:21:00Z")},
 					},
 				},
 			}, 12),
