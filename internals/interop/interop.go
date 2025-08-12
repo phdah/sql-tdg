@@ -75,7 +75,10 @@ func MakeConstraint(typ types.Type, c parser.ConditionsIR) (types.Constraints, e
 		}
 
 	case types.TimestampType:
-		n := solver.ToTimestamp(string(c.Right))
+		n, err := solver.ParseTime(string(c.Right))
+		if err != nil {
+			return nil, fmt.Errorf("date/timestamp parse: %w", err)
+		}
 		switch c.Op {
 		case "=":
 			return solver.IntEq{Value: n}, nil

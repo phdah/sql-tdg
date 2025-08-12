@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+	"strings"
 
 	"github.com/phdah/sql-tdg/internals/types"
 )
@@ -37,6 +38,9 @@ func (t TimestampDomain) RandomValue(rng *rand.Rand) (any, error) {
 // and returns the corresponding Unix timestamp as an int.
 // Example input: "2013-06-17T00:00:00Z"
 func ToTimestamp(timestamp string) int {
+	// Trim both single and double quotes from the string.
+	// This handles `"2013-06-17"` and `'2013-06-17'`.
+	timestamp = strings.Trim(timestamp, `"'`)
 	t, _ := time.Parse(time.RFC3339, timestamp)
 	return int(t.Unix())
 }
@@ -45,8 +49,33 @@ func ToTimestamp(timestamp string) int {
 // and returns the corresponding Unix timestamp as an int (seconds since epoch).
 // It ignores any parsing errors (assumes valid input).
 func ToDate(timestamp string) int {
+	// Trim both single and double quotes from the string.
+	// This handles `"2013-06-17"` and `'2013-06-17'`.
+	timestamp = strings.Trim(timestamp, `"'`)
 	t, _ := time.Parse("2006-01-02", timestamp)
 	return int(t.Unix())
+}
+
+// ParseTime dynamically determines the format of a date or timestamp string
+// and returns the corresponding Unix timestamp.
+func ParseTime(timestamp string) (int, error) {
+	// 1. Trim quotes from the string
+	timestamp = strings.Trim(timestamp, `"'`)
+
+	// 2. Try the most specific format first: RFC3339
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err == nil {
+		return int(t.Unix()), nil
+	}
+
+	// 3. If RFC3339 fails, try the date-only format: "2006-01-02"
+	t, err = time.Parse("2006-01-02", timestamp)
+	if err == nil {
+		return int(t.Unix()), nil
+	}
+
+	// 4. If all known formats fail, return an error
+	return 0, fmt.Errorf("could not parse timestamp or date: %s", timestamp)
 }
 
 // FromInt converts an integer Unix timestamp (seconds since epoch)

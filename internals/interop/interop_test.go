@@ -2,6 +2,7 @@ package interop_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -122,6 +123,75 @@ func TestInterop_FullQueryGeneratorBool(t *testing.T) {
 			}
 			g.Generate(tt.table, seed)
 			r.Equal(tt.expected, tt.table.Bools)
+		})
+	}
+}
+
+func TestInterop_FullQueryGeneratorTimestamp(t *testing.T) {
+	seed := int64(42)
+	date_1 := solver.FromInt(solver.ToDate("2013-06-17"))
+	date_2 := solver.FromInt(solver.ToTimestamp("2013-06-17T14:29:00Z"))
+	tests := []struct {
+		name          string
+		query         string
+		table         *table.Table
+		expected      any
+		expectedError error
+	}{
+		{
+			name:  "test with one column single condition",
+			query: `SELECT col_a FROM t WHERE col_a = '2013-06-17'`,
+			table: table.NewTable([]types.Column{
+				{
+					Name:        "col_a",
+					Type:        types.TimestampType,
+					Constraints: nil,
+				},
+			}, 12),
+			expected: map[string][]time.Time{
+				"col_a": {
+					date_1, date_1, date_1, date_1, date_1, date_1,
+					date_1, date_1, date_1, date_1, date_1, date_1,
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name:  "test with one column single condition",
+			query: `SELECT col_a FROM t WHERE col_a = "2013-06-17T14:29:00Z"`,
+			table: table.NewTable([]types.Column{
+				{
+					Name:        "col_a",
+					Type:        types.TimestampType,
+					Constraints: nil,
+				},
+			}, 12),
+			expected: map[string][]time.Time{
+				"col_a": {
+					date_2, date_2, date_2, date_2, date_2, date_2,
+					date_2, date_2, date_2, date_2, date_2, date_2,
+				},
+			},
+			expectedError: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+
+			q, err := parser.Parser.ParseString("", tt.query)
+			if err != nil {
+				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
+			}
+
+			interopQuery := interop.Wrap(q)
+			var g solver.Generator
+			err = interopQuery.AddConditions(tt.table)
+			if err != nil {
+				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
+			}
+			g.Generate(tt.table, seed)
+			r.Equal(tt.expected, tt.table.Timestamps)
 		})
 	}
 }
