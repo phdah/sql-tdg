@@ -13,11 +13,6 @@ import (
 )
 
 func TestInterop_FullQueryGeneratorInts(t *testing.T) {
-	wantJoins := []parser.JoinIR{}
-	gotJoins := []parser.JoinIR{}
-	r := require.New(t)
-	r.Equal(gotJoins, wantJoins)
-
 	seed := int64(42)
 	tests := []struct {
 		name          string
@@ -86,11 +81,6 @@ func TestInterop_FullQueryGeneratorInts(t *testing.T) {
 }
 
 func TestInterop_FullQueryGeneratorBool(t *testing.T) {
-	wantJoins := []parser.JoinIR{}
-	gotJoins := []parser.JoinIR{}
-	r := require.New(t)
-	r.Equal(gotJoins, wantJoins)
-
 	seed := int64(42)
 	tests := []struct {
 		name          string
