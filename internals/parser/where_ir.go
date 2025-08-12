@@ -61,21 +61,37 @@ func (e *Expr) ToIR() []ConditionsIR {
 func (a *And) ToIR() []ConditionsIR {
 	conditions := make([]ConditionsIR, 0)
 
-	if a.Left != nil && a.Left.Op != nil {
-		conditions = append(conditions, ConditionsIR{
-			Left:  LeftIR(primaryAtom(a.Left.Left)),
-			Op:    OpIR(*a.Left.Op),
-			Right: RightIR(primaryAtom(a.Left.Right)),
-		})
+	if a.Left != nil {
+		if a.Left.Op != nil {
+			conditions = append(conditions, ConditionsIR{
+				Left:  LeftIR(primaryAtom(a.Left.Left)),
+				Op:    OpIR(*a.Left.Op),
+				Right: RightIR(primaryAtom(a.Left.Right)),
+			})
+		} else {
+			conditions = append(conditions, ConditionsIR{
+				Left:  LeftIR(primaryAtom(a.Left.Left)),
+				Op:    OpIR("bool"),
+				Right: RightIR("true"),
+			})
+		}
 	}
 
 	for _, andTerm := range a.Rest {
-		if andTerm.Right != nil && andTerm.Right.Op != nil {
-			conditions = append(conditions, ConditionsIR{
-				Left:  LeftIR(primaryAtom(andTerm.Right.Left)),
-				Op:    OpIR(*andTerm.Right.Op),
-				Right: RightIR(primaryAtom(andTerm.Right.Right)),
-			})
+		if andTerm.Right != nil {
+			if andTerm.Right.Op != nil {
+				conditions = append(conditions, ConditionsIR{
+					Left:  LeftIR(primaryAtom(andTerm.Right.Left)),
+					Op:    OpIR(*andTerm.Right.Op),
+					Right: RightIR(primaryAtom(andTerm.Right.Right)),
+				})
+			} else {
+				conditions = append(conditions, ConditionsIR{
+					Left:  LeftIR(primaryAtom(andTerm.Right.Left)),
+					Op:    OpIR("bool"),
+					Right: RightIR("true"),
+				})
+			}
 		}
 	}
 	return conditions

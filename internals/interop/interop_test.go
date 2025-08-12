@@ -12,7 +12,7 @@ import (
 	"github.com/phdah/sql-tdg/internals/types"
 )
 
-func TestInterop_FullQueryGenerator(t *testing.T) {
+func TestInterop_FullQueryGeneratorInts(t *testing.T) {
 	wantJoins := []parser.JoinIR{}
 	gotJoins := []parser.JoinIR{}
 	r := require.New(t)
@@ -81,6 +81,57 @@ func TestInterop_FullQueryGenerator(t *testing.T) {
 			g.Generate(tt.table, seed)
 			tt.table.SortInts()
 			r.Equal(tt.expected, tt.table.Ints)
+		})
+	}
+}
+
+func TestInterop_FullQueryGeneratorBool(t *testing.T) {
+	wantJoins := []parser.JoinIR{}
+	gotJoins := []parser.JoinIR{}
+	r := require.New(t)
+	r.Equal(gotJoins, wantJoins)
+
+	seed := int64(42)
+	tests := []struct {
+		name          string
+		query         string
+		table         *table.Table
+		expected      any
+		expectedError error
+	}{
+		{
+			name:  "test with one column single condition",
+			query: "SELECT col_a FROM t WHERE col_a",
+			table: table.NewTable([]types.Column{
+				{
+					Name:        "col_a",
+					Type:        types.BoolType,
+					Constraints: nil,
+				},
+			}, 12),
+			expected: map[string][]bool{
+				"col_a": {true, true, true, true, true, true, true, true, true, true, true, true},
+			},
+			expectedError: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+
+			q, err := parser.Parser.ParseString("", tt.query)
+			if err != nil {
+				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
+			}
+
+			interopQuery := interop.Wrap(q)
+			var g solver.Generator
+			err = interopQuery.AddConditions(tt.table)
+			if err != nil {
+				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
+			}
+			g.Generate(tt.table, seed)
+			r.Equal(tt.expected, tt.table.Bools)
 		})
 	}
 }

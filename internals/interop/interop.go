@@ -64,42 +64,34 @@ func MakeConstraint(typ types.Type, c parser.ConditionsIR) (types.Constraints, e
 			return nil, fmt.Errorf("bad int op %q", c.Op)
 		}
 
-	// case types.BoolType:
-	// 	b, err := strconv.ParseBool(val)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("bool parse: %w", err)
-	// 	}
-	// 	switch op {
-	// 	case "=":
-	// 		return solver.BoolTrue{Value: b}, nil
-	// 	case "!=":
-	// 		return solver.BoolFalse{Value: b}, nil
-	// 	default:
-	// 		return nil, fmt.Errorf("bad bool op %q", op)
-	// 	}
+	case types.BoolType:
+		switch c.Right {
+		case "true":
+			return solver.BoolTrue{}, nil
+		case "false":
+			return solver.BoolFalse{}, nil
+		default:
+			return nil, fmt.Errorf("bad bool op %q", c.Op)
+		}
 
-	// case types.TimestampType:
-	// 	// pick your accepted layout(s)
-	// 	ts, err := time.Parse(time.RFC3339, val)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("time parse (RFC3339): %w", err)
-	// 	}
-	// 	switch op {
-	// 	case "=":
-	// 		return solver.TimeEq{Value: ts}, nil
-	// 	case "!=":
-	// 		return solver.TimeNe{Value: ts}, nil
-	// 	case ">":
-	// 		return solver.TimeGt{Value: ts}, nil
-	// 	case ">=":
-	// 		return solver.TimeGe{Value: ts}, nil
-	// 	case "<":
-	// 		return solver.TimeLt{Value: ts}, nil
-	// 	case "<=":
-	// 		return solver.TimeLe{Value: ts}, nil
-	// 	default:
-	// 		return nil, fmt.Errorf("bad time op %q", op)
-	// 	}
+	case types.TimestampType:
+		n := solver.ToTimestamp(string(c.Right))
+		switch c.Op {
+		case "=":
+			return solver.IntEq{Value: n}, nil
+		case "!=":
+			return solver.IntNEq{Value: n}, nil
+		case ">":
+			return solver.IntGt{Value: n}, nil
+		case ">=":
+			return solver.IntGte{Value: n}, nil
+		case "<":
+			return solver.IntLt{Value: n}, nil
+		case "<=":
+			return solver.IntLte{Value: n}, nil
+		default:
+			return nil, fmt.Errorf("bad time op %q", c.Op)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported column type %v", typ)
 	}
