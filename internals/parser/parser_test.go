@@ -23,5 +23,7 @@ func TestParse_WhereClauseVisitor(t *testing.T) {
 		t.Fatalf("Failed parsing query:\n%s, err:\n%e", query, err)
 	}
 	joins := q.GetJoins()
+	conditions := q.GetConditions()
 	fmt.Println(joins)
+	fmt.Println(conditions)
 }
