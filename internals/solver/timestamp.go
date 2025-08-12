@@ -3,8 +3,8 @@ package solver
 import (
 	"fmt"
 	"math/rand"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/phdah/sql-tdg/internals/types"
 )
@@ -14,11 +14,11 @@ type TimestampDomain struct {
 }
 
 func NewTimestampDomain() *TimestampDomain {
-	lower := 0
-	upper := 4102358400
+	lower := int32(0)
+	upper := int32(2147483647)
 	return &TimestampDomain{
 		IntDomain: IntDomain{
-			Intervals: []types.Interval{{Min: lower, Max: upper}},
+			Intervals: []types.Interval{{Min: int(lower), Max: int(upper)}},
 			TotalMin:  lower,
 			TotalMax:  upper,
 		},
@@ -27,59 +27,48 @@ func NewTimestampDomain() *TimestampDomain {
 
 func (t TimestampDomain) RandomValue(rng *rand.Rand) (any, error) {
 	val, err := t.IntDomain.RandomValue(rng)
-	raw, ok := val.(int)
+	raw, ok := val.(int32)
 	if !ok {
-		return time.Time{}, fmt.Errorf("expected int, got %T", val)
+		return time.Time{}, fmt.Errorf("expected int32, got %T", val)
 	}
 	return time.Unix(int64(raw), 0), err
 }
 
-// ToTimestamp parses a string in RFC3339 format (e.g. "2006-01-02T15:04:05Z")
-// and returns the corresponding Unix timestamp as an int.
-// Example input: "2013-06-17T00:00:00Z"
-func ToTimestamp(timestamp string) int {
-	// Trim both single and double quotes from the string.
-	// This handles `"2013-06-17"` and `'2013-06-17'`.
+// ToTimestamp parses a string in RFC3339 format and returns the
+// corresponding Unix timestamp as an int32.
+func ToTimestamp(timestamp string) int32 {
 	timestamp = strings.Trim(timestamp, `"'`)
 	t, _ := time.Parse(time.RFC3339, timestamp)
-	return int(t.Unix())
+	return int32(t.Unix())
 }
 
-// ToDate parses a date string in the format "yyyy-MM-dd" (e.g. "2013-06-17")
-// and returns the corresponding Unix timestamp as an int (seconds since epoch).
-// It ignores any parsing errors (assumes valid input).
-func ToDate(timestamp string) int {
-	// Trim both single and double quotes from the string.
-	// This handles `"2013-06-17"` and `'2013-06-17'`.
+// ToDate parses a date string and returns the corresponding
+// Unix timestamp as an int32.
+func ToDate(timestamp string) int32 {
 	timestamp = strings.Trim(timestamp, `"'`)
 	t, _ := time.Parse("2006-01-02", timestamp)
-	return int(t.Unix())
+	return int32(t.Unix())
 }
 
 // ParseTime dynamically determines the format of a date or timestamp string
-// and returns the corresponding Unix timestamp.
-func ParseTime(timestamp string) (int, error) {
-	// 1. Trim quotes from the string
+// and returns the corresponding Unix timestamp as an int32.
+func ParseTime(timestamp string) (int32, error) {
 	timestamp = strings.Trim(timestamp, `"'`)
 
-	// 2. Try the most specific format first: RFC3339
 	t, err := time.Parse(time.RFC3339, timestamp)
 	if err == nil {
-		return int(t.Unix()), nil
+		return int32(t.Unix()), nil
 	}
 
-	// 3. If RFC3339 fails, try the date-only format: "2006-01-02"
 	t, err = time.Parse("2006-01-02", timestamp)
 	if err == nil {
-		return int(t.Unix()), nil
+		return int32(t.Unix()), nil
 	}
 
-	// 4. If all known formats fail, return an error
 	return 0, fmt.Errorf("could not parse timestamp or date: %s", timestamp)
 }
 
-// FromInt converts an integer Unix timestamp (seconds since epoch)
-// to a time.Time value in UTC.
-func FromInt(timestamp int) time.Time {
+// FromInt converts an int32 Unix timestamp to a time.Time value in UTC.
+func FromInt(timestamp int32) time.Time {
 	return time.Unix(int64(timestamp), 0)
 }

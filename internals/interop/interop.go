@@ -47,19 +47,20 @@ func MakeConstraint(typ types.Type, c parser.ConditionsIR) (types.Constraints, e
 		if err != nil {
 			return nil, fmt.Errorf("int parse: %w", err)
 		}
+		val := int32(n)
 		switch c.Op {
 		case "=":
-			return solver.IntEq{Value: n}, nil
+			return solver.IntEq{Value: val}, nil
 		case "!=":
-			return solver.IntNEq{Value: n}, nil
+			return solver.IntNEq{Value: val}, nil
 		case ">":
-			return solver.IntGt{Value: n}, nil
+			return solver.IntGt{Value: val}, nil
 		case ">=":
-			return solver.IntGte{Value: n}, nil
+			return solver.IntGte{Value: val}, nil
 		case "<":
-			return solver.IntLt{Value: n}, nil
+			return solver.IntLt{Value: val}, nil
 		case "<=":
-			return solver.IntLte{Value: n}, nil
+			return solver.IntLte{Value: val}, nil
 		default:
 			return nil, fmt.Errorf("bad int op %q", c.Op)
 		}
@@ -79,19 +80,20 @@ func MakeConstraint(typ types.Type, c parser.ConditionsIR) (types.Constraints, e
 		if err != nil {
 			return nil, fmt.Errorf("date/timestamp parse: %w", err)
 		}
+		val := int32(n)
 		switch c.Op {
 		case "=":
-			return solver.IntEq{Value: n}, nil
+			return solver.IntEq{Value: val}, nil
 		case "!=":
-			return solver.IntNEq{Value: n}, nil
+			return solver.IntNEq{Value: val}, nil
 		case ">":
-			return solver.IntGt{Value: n}, nil
+			return solver.IntGt{Value: val}, nil
 		case ">=":
-			return solver.IntGte{Value: n}, nil
+			return solver.IntGte{Value: val}, nil
 		case "<":
-			return solver.IntLt{Value: n}, nil
+			return solver.IntLt{Value: val}, nil
 		case "<=":
-			return solver.IntLte{Value: n}, nil
+			return solver.IntLte{Value: val}, nil
 		default:
 			return nil, fmt.Errorf("bad time op %q", c.Op)
 		}
