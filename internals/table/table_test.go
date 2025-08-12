@@ -11,11 +11,11 @@ import (
 
 func TestTable_Append(t *testing.T) {
 	tests := []struct {
-		name    string // description of this test case
+		name    string
 		columns []types.Column
 		rows    int
 		col     string
-		val     int
+		val     int32
 	}{
 		{
 			name: "test append",
@@ -45,26 +45,23 @@ func TestTable_Append(t *testing.T) {
 
 func TestTable_Wipe(t *testing.T) {
 	tests := []struct {
-		name     string // description of this test case
+		name     string
 		columns  []types.Column
 		rows     int
 		col      string
-		expected []int
+		expected []int32
 	}{
 		{
-			name: "test append",
+			name: "test wipe",
 			columns: []types.Column{
 				{
 					Name: "col_a",
 					Type: types.IntType,
-					Constraints: []types.Constraints{
-						solver.IntEq{},
-					},
 				},
 			},
 			rows:     1,
 			col:      "col_a",
-			expected: []int([]int(nil)),
+			expected: nil,
 		},
 	}
 	for _, tt := range tests {
@@ -72,54 +69,48 @@ func TestTable_Wipe(t *testing.T) {
 			r := require.New(t)
 			ta := table.NewTable(tt.columns, tt.rows)
 			ta.Wipe()
-			result, _ := ta.GetInts(tt.col)
-			r.Equal(tt.expected, result)
+			resultArr, _ := ta.GetInts(tt.col)
+
+			if resultArr == nil {
+				r.Nil(tt.expected)
+			} else {
+				resultSlice := resultArr.Int32Values()
+				r.Equal(tt.expected, resultSlice)
+			}
 		})
 	}
 }
 
 func TestTable_SortInts(t *testing.T) {
 	tests := []struct {
-		name     string // description of this test case
-		table    *table.Table
-		expected map[string][]int
+		name     string
+		schema   []types.Column
+		input    map[string][]int32
+		expected map[string][]int32
 	}{
 		{
 			name: "single list of ints",
-			table: &table.Table{
-				Schema: []types.Column{
-					{
-						Name: "col1",
-						Type: types.IntType,
-					},
-				},
-				Ints: map[string][]int{
-					"col1": {7, 2, 6, 3, 1},
-				},
+			schema: []types.Column{
+				{Name: "col1", Type: types.IntType},
 			},
-			expected: map[string][]int{
+			input: map[string][]int32{
+				"col1": {7, 2, 6, 3, 1},
+			},
+			expected: map[string][]int32{
 				"col1": {1, 2, 3, 6, 7},
 			},
 		},
 		{
 			name: "multiple int columns",
-			table: &table.Table{
-				Schema: []types.Column{
-					{
-						Name: "col1",
-						Type: types.IntType,
-					},
-					{
-						Name: "col2",
-						Type: types.IntType,
-					},
-				},
-				Ints: map[string][]int{
-					"col1": {5, 3, 9},
-					"col2": {2, 2, 1},
-				},
+			schema: []types.Column{
+				{Name: "col1", Type: types.IntType},
+				{Name: "col2", Type: types.IntType},
 			},
-			expected: map[string][]int{
+			input: map[string][]int32{
+				"col1": {5, 3, 9},
+				"col2": {2, 2, 1},
+			},
+			expected: map[string][]int32{
 				"col1": {3, 5, 9},
 				"col2": {1, 2, 2},
 			},
@@ -129,9 +120,23 @@ func TestTable_SortInts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := require.New(t)
-			tt.table.SortInts()
-			for col, result := range tt.table.Ints {
-				r.Equal(tt.expected[col], result)
+
+			ta := table.NewTable(tt.schema, len(tt.input[tt.schema[0].Name]))
+
+			for colName, values := range tt.input {
+				for _, val := range values {
+					ta.Append(colName, val)
+				}
+			}
+
+			ta.BuildInts()
+
+			ta.SortInts()
+
+			for col, expectedSlice := range tt.expected {
+				resultArr, _ := ta.GetInts(col)
+				r.NotNil(resultArr)
+				r.Equal(expectedSlice, resultArr.Int32Values())
 			}
 		})
 	}
