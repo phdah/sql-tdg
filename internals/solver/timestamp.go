@@ -70,5 +70,5 @@ func ParseTime(timestamp string) (int32, error) {
 
 // FromInt converts an int32 Unix timestamp to a time.Time value in UTC.
 func FromInt(timestamp int32) time.Time {
-	return time.Unix(int64(timestamp), 0)
+	return time.Unix(int64(timestamp), 0).UTC()
 }

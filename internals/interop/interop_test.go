@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/stretchr/testify/require"
 
 	"github.com/phdah/sql-tdg/internals/interop"
@@ -150,7 +151,7 @@ func TestInterop_FullQueryGeneratorTimestamp(t *testing.T) {
 		name          string
 		query         string
 		table         *table.Table
-		expected      any
+		expected      map[string][]time.Time
 		expectedError error
 	}{
 		{
@@ -206,7 +207,23 @@ func TestInterop_FullQueryGeneratorTimestamp(t *testing.T) {
 				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
 			}
 			g.Generate(tt.table, seed)
-			r.Equal(tt.expected, tt.table.Timestamps)
+
+			// Finalize the Arrow timestamp arrays
+			tt.table.BuildTimestamps()
+
+			// Create a map to hold the actual Go slices from the Arrow arrays
+			actual := make(map[string][]time.Time)
+			for colName := range tt.expected {
+				arr, _ := tt.table.GetTimestamps(colName)
+				if arr != nil {
+					actual[colName] = make([]time.Time, arr.Len())
+					for i := range arr.Len() {
+						actual[colName][i] = arr.Value(i).ToTime(arrow.Microsecond)
+					}
+				}
+			}
+
+			r.Equal(tt.expected, actual)
 		})
 	}
 }
