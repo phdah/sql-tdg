@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/stretchr/testify/require"
 
 	"github.com/phdah/sql-tdg/internals/interop"
@@ -210,20 +209,11 @@ func TestInterop_FullQueryGeneratorTimestamp(t *testing.T) {
 
 			// Finalize the Arrow timestamp arrays
 			tt.table.BuildTimestamps()
-
-			// Create a map to hold the actual Go slices from the Arrow arrays
-			actual := make(map[string][]time.Time)
-			for colName := range tt.expected {
-				arr, _ := tt.table.GetTimestamps(colName)
-				if arr != nil {
-					actual[colName] = make([]time.Time, arr.Len())
-					for i := range arr.Len() {
-						actual[colName][i] = arr.Value(i).ToTime(arrow.Microsecond)
-					}
-				}
+			got, err := tt.table.GetAllTimestamps()
+			if err != nil {
+				t.Fatalf("Failed getting timestamp columns, err:\n%e", err)
 			}
-
-			r.Equal(tt.expected, actual)
+			r.Equal(tt.expected, got)
 		})
 	}
 }
