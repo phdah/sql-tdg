@@ -3,6 +3,7 @@ package solver_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/phdah/sql-tdg/internals/solver"
 	"github.com/phdah/sql-tdg/internals/types"
@@ -206,7 +207,7 @@ func TestTimestamp_Multi_Apply(t *testing.T) {
 	}
 }
 
-func TestToTimestamp(t *testing.T) {
+func TestToDate(t *testing.T) {
 	tests := []struct {
 		name string
 		date string
@@ -227,7 +228,7 @@ func TestToTimestamp(t *testing.T) {
 	}
 }
 
-func TestToDate(t *testing.T) {
+func TestToTimestamp(t *testing.T) {
 	tests := []struct {
 		name      string
 		timestamp string
@@ -235,14 +236,50 @@ func TestToDate(t *testing.T) {
 	}{
 		{
 			name:      "working string to timestamp",
-			timestamp: "2013-06-17T00:00:00Z",
-			want:      1371427200,
+			timestamp: "2013-06-17T12:25:04Z",
+			want:      1371471904,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := require.New(t)
 			got := solver.ToTimestamp(tt.timestamp)
+			r.Equal(tt.want, got)
+		})
+	}
+}
+
+func TestFromInt(t *testing.T) {
+	tests := []struct {
+		name      string
+		timestamp int32
+		want      time.Time
+	}{
+		{
+			name:      "date with explicit int32",
+			timestamp: 1371427200,
+			want:      time.Date(2013, time.June, 17, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:      "timestamp with explicit int32",
+			timestamp: 1371471904,
+			want:      time.Date(2013, time.June, 17, 12, 25, 4, 0, time.UTC),
+		},
+		{
+			name:      "date with explicit int32",
+			timestamp: solver.ToDate("2013-06-17"),
+			want:      time.Date(2013, time.June, 17, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:      "timestamp with explicit int32",
+			timestamp: solver.ToTimestamp("2013-06-17T12:25:04Z"),
+			want:      time.Date(2013, time.June, 17, 12, 25, 4, 0, time.UTC),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			got := solver.FromInt(tt.timestamp)
 			r.Equal(tt.want, got)
 		})
 	}

@@ -1,12 +1,12 @@
 package table
 
 import (
-	"sort"
 	"sync"
 	"time"
 
 	"github.com/phdah/sql-tdg/internals/types"
 
+	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/apache/arrow/go/v14/arrow/array"
 	"github.com/apache/arrow/go/v14/arrow/memory"
 	"slices"
@@ -19,19 +19,20 @@ type Dim struct {
 }
 
 // Table represents a data table with columns of various types. It stores
-// integer columns using Apache Arrow arrays for efficient batch processing,
-// while timestamp and boolean columns are stored as standard Go slices.
+// integer and timestamp columns using Apache Arrow arrays for efficient
+// batch processing, while boolean columns are stored as standard Go slices.
 type Table struct {
 	Schema []types.Column
 	Types  map[string]types.Type
 	Dim    Dim
 
 	Ints       map[string]*array.Int32
-	Timestamps map[string][]time.Time
+	Timestamps map[string]*array.Timestamp
 	Bools      map[string][]bool
 
-	IntBuilders map[string]*array.Int32Builder
-	mem         memory.Allocator
+	IntBuilders       map[string]*array.Int32Builder
+	TimestampBuilders map[string]*array.TimestampBuilder
+	mem               memory.Allocator
 
 	muInts       sync.Mutex
 	muTimestamps sync.Mutex
@@ -49,8 +50,8 @@ func getColTypes(schema []types.Column) map[string]types.Type {
 }
 
 // NewTable creates a new Table with the given schema and number of rows.
-// It initializes the Arrow memory allocator, builders for integer columns,
-// and empty maps for timestamps and booleans.
+// It initializes the Arrow memory allocator, builders for integer and
+// timestamp columns, and empty maps for timestamps and booleans.
 func NewTable(schema []types.Column, rows int) *Table {
 	// Initialize the Arrow memory allocator
 	mem := memory.NewGoAllocator()
@@ -59,22 +60,31 @@ func NewTable(schema []types.Column, rows int) *Table {
 	intBuilders := make(map[string]*array.Int32Builder)
 	ints := make(map[string]*array.Int32)
 
+	timestampBuilders := make(map[string]*array.TimestampBuilder)
+	timestamps := make(map[string]*array.Timestamp)
+
 	// Initialize a builder for each int column
 	for _, col := range schema {
 		if col.Type == types.IntType {
 			intBuilders[col.Name] = array.NewInt32Builder(mem)
 		}
+		if col.Type == types.TimestampType {
+			// Default to Microsecond precision for timestamps
+			// Use & to pass a pointer to the TimestampType struct
+			timestampBuilders[col.Name] = array.NewTimestampBuilder(mem, &arrow.TimestampType{Unit: arrow.Microsecond})
+		}
 	}
 
 	return &Table{
-		Schema:      schema,
-		Types:       getColTypes(schema),
-		Dim:         Dim{Rows: rows, Cols: len(schema)},
-		Ints:        ints,
-		Timestamps:  make(map[string][]time.Time),
-		Bools:       make(map[string][]bool),
-		IntBuilders: intBuilders,
-		mem:         mem,
+		Schema:            schema,
+		Types:             getColTypes(schema),
+		Dim:               Dim{Rows: rows, Cols: len(schema)},
+		Ints:              ints,
+		Timestamps:        timestamps,
+		Bools:             make(map[string][]bool),
+		IntBuilders:       intBuilders,
+		TimestampBuilders: timestampBuilders,
+		mem:               mem,
 	}
 }
 
@@ -90,7 +100,7 @@ func (t *Table) Append(col string, val any) error {
 		t.muInts.Unlock()
 	case types.TimestampType:
 		t.muTimestamps.Lock()
-		t.Timestamps[col] = append(t.Timestamps[col], val.(time.Time))
+		t.TimestampBuilders[col].Append(arrow.Timestamp(val.(time.Time).UnixMicro()))
 		t.muTimestamps.Unlock()
 	case types.BoolType:
 		t.muBools.Lock()
@@ -116,6 +126,21 @@ func (t *Table) BuildInts() {
 	}
 }
 
+// BuildTimestamps finalizes all timestamp columns by building Arrow arrays from
+// the current builders. The builders are then released and reinitialized
+// for future use.
+func (t *Table) BuildTimestamps() {
+	t.muTimestamps.Lock()
+	defer t.muTimestamps.Unlock()
+
+	for colName, builder := range t.TimestampBuilders {
+		t.Timestamps[colName] = builder.NewTimestampArray()
+		builder.Release()
+		// Reinitialize the builder with the same type
+		t.TimestampBuilders[colName] = array.NewTimestampBuilder(t.mem, &arrow.TimestampType{Unit: arrow.Microsecond})
+	}
+}
+
 // GetInts returns the Arrow array for the specified integer column. If
 // the column has not been built yet, the method returns nil. The caller
 // should not modify the returned array directly.
@@ -132,9 +157,9 @@ func (t *Table) GetInts(col string) (*array.Int32, error) {
 	return nil, nil // Or return an error if not found
 }
 
-// GetTimestamps returns the slice of timestamp values for the specified
-// column. The slice is protected by a mutex to ensure thread safety.
-func (t *Table) GetTimestamps(col string) ([]time.Time, error) {
+// GetTimestamps returns the Arrow timestamp array for the specified
+// column. The array is protected by a mutex to ensure thread safety.
+func (t *Table) GetTimestamps(col string) (*array.Timestamp, error) {
 	t.muTimestamps.Lock()
 	defer t.muTimestamps.Unlock()
 	return t.Timestamps[col], nil
@@ -180,10 +205,15 @@ func (t *Table) SortTimestamps() {
 	defer t.muTimestamps.Unlock()
 	for _, col := range t.Schema {
 		if col.Type == types.TimestampType {
-			slice := t.Timestamps[col.Name]
-			sort.Slice(slice, func(i, j int) bool {
-				return slice[i].Before(slice[j])
-			})
+			slice := t.Timestamps[col.Name].TimestampValues()
+			slices.Sort(slice)
+
+			// Build a new Arrow timestamp array from the sorted slice
+			newBuilder := array.NewTimestampBuilder(t.mem, &arrow.TimestampType{Unit: arrow.Microsecond})
+			newBuilder.AppendValues(slice, nil)
+			t.Timestamps[col.Name].Release()
+			t.Timestamps[col.Name] = newBuilder.NewTimestampArray()
+			newBuilder.Release()
 		}
 	}
 }
@@ -202,13 +232,25 @@ func (t *Table) Wipe() error {
 	for _, builder := range t.IntBuilders {
 		builder.Release()
 	}
+	for _, arr := range t.Timestamps {
+		arr.Release()
+	}
+	for _, builder := range t.TimestampBuilders {
+		builder.Release()
+	}
 
 	t.Ints = make(map[string]*array.Int32)
 	t.IntBuilders = make(map[string]*array.Int32Builder)
+	t.Timestamps = make(map[string]*array.Timestamp)
+	t.TimestampBuilders = make(map[string]*array.TimestampBuilder)
+
 	// Reinitialize builders
 	for _, col := range t.Schema {
 		if col.Type == types.IntType {
 			t.IntBuilders[col.Name] = array.NewInt32Builder(t.mem)
+		}
+		if col.Type == types.TimestampType {
+			t.TimestampBuilders[col.Name] = array.NewTimestampBuilder(t.mem, &arrow.TimestampType{Unit: arrow.Microsecond})
 		}
 	}
 	return nil

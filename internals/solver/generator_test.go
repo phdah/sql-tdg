@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/stretchr/testify/require"
 
 	"github.com/phdah/sql-tdg/internals/solver"
@@ -86,7 +87,6 @@ func TestIntGenerator_Generate(t *testing.T) {
 
 			// Call BuildInts to finalize the Arrow arrays from the builders
 			tt.table.BuildInts()
-
 			tt.table.SortInts()
 
 			// Create a map to hold the actual Go slices from the Arrow arrays
@@ -109,7 +109,7 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 	tests := []struct {
 		name          string
 		table         *table.Table
-		expected      any
+		expected      map[string][]time.Time
 		expectedError error
 	}{
 		{
@@ -198,8 +198,19 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 			r := require.New(t)
 			var g solver.Generator
 			g.Generate(tt.table, seed)
+			tt.table.BuildTimestamps()
 			tt.table.SortTimestamps()
-			r.Equal(tt.expected, tt.table.Timestamps)
+			actual := make(map[string][]time.Time)
+			for colName := range tt.expected {
+				arr, _ := tt.table.GetTimestamps(colName)
+				if arr != nil {
+					actual[colName] = make([]time.Time, arr.Len())
+					for i := 0; i < arr.Len(); i++ {
+						actual[colName][i] = arr.Value(i).ToTime(arrow.Microsecond)
+					}
+				}
+			}
+			r.Equal(tt.expected, actual)
 		})
 	}
 }
