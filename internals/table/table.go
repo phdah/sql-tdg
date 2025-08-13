@@ -1,15 +1,17 @@
 package table
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/phdah/sql-tdg/internals/types"
 
+	"slices"
+
 	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/apache/arrow/go/v14/arrow/array"
 	"github.com/apache/arrow/go/v14/arrow/memory"
-	"slices"
 )
 
 // Dim represents the dimensions of a table, with rows and columns.
@@ -159,10 +161,31 @@ func (t *Table) GetInts(col string) (*array.Int32, error) {
 
 // GetTimestamps returns the Arrow timestamp array for the specified
 // column. The array is protected by a mutex to ensure thread safety.
-func (t *Table) GetTimestamps(col string) (*array.Timestamp, error) {
+func (t *Table) GetTimestamps(col string) ([]time.Time, error) {
 	t.muTimestamps.Lock()
 	defer t.muTimestamps.Unlock()
-	return t.Timestamps[col], nil
+
+	arr, ok := t.Timestamps[col]
+	if !ok || arr == nil {
+		return nil, fmt.Errorf("coulmn not found or not a timestamp column: %s", col)
+	}
+	result := make([]time.Time, arr.Len())
+	for i := range arr.Len() {
+		result[i] = arr.Value(i).ToTime(arrow.Microsecond)
+	}
+	return result, nil
+}
+
+func (t *Table) GetAllTimestamps() (map[string][]time.Time, error) {
+	result := make(map[string][]time.Time)
+	var err error
+	for _, col := range t.Schema {
+		result[col.Name], err = t.GetTimestamps(col.Name)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 // GetBools returns the slice of boolean values for the specified column.

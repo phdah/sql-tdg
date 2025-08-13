@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/stretchr/testify/require"
 
 	"github.com/phdah/sql-tdg/internals/solver"
@@ -200,17 +199,11 @@ func TestTimestampGenerator_Generate(t *testing.T) {
 			g.Generate(tt.table, seed)
 			tt.table.BuildTimestamps()
 			tt.table.SortTimestamps()
-			actual := make(map[string][]time.Time)
-			for colName := range tt.expected {
-				arr, _ := tt.table.GetTimestamps(colName)
-				if arr != nil {
-					actual[colName] = make([]time.Time, arr.Len())
-					for i := 0; i < arr.Len(); i++ {
-						actual[colName][i] = arr.Value(i).ToTime(arrow.Microsecond)
-					}
-				}
+			got, err := tt.table.GetAllTimestamps()
+			if err != nil {
+				t.Fatalf("Failed getting timestamp columns, err:\n%e", err)
 			}
-			r.Equal(tt.expected, actual)
+			r.Equal(tt.expected, got)
 		})
 	}
 }
