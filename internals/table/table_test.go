@@ -68,15 +68,15 @@ func TestTable_Wipe(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := require.New(t)
 			ta := table.NewTable(tt.columns, tt.rows)
-			ta.Wipe()
-			resultArr, _ := ta.GetInts(tt.col)
-
-			if resultArr == nil {
-				r.Nil(tt.expected)
-			} else {
-				resultSlice := resultArr.Int32Values()
-				r.Equal(tt.expected, resultSlice)
+			err := ta.Wipe()
+			if err != nil {
+				t.Fatalf("Failed wiping the table, err:\n%e", err)
 			}
+			got, err := ta.GetAllInts()
+			if err != nil {
+				t.Fatalf("Failed getting integer columns, err:\n%e", err)
+			}
+			r.Equal(tt.expected, got)
 		})
 	}
 }
@@ -130,14 +130,12 @@ func TestTable_SortInts(t *testing.T) {
 			}
 
 			ta.BuildInts()
-
 			ta.SortInts()
-
-			for col, expectedSlice := range tt.expected {
-				resultArr, _ := ta.GetInts(col)
-				r.NotNil(resultArr)
-				r.Equal(expectedSlice, resultArr.Int32Values())
+			got, err := ta.GetAllInts()
+			if err != nil {
+				t.Fatalf("Failed getting integer columns, err:\n%e", err)
 			}
+			r.Equal(tt.expected, got)
 		})
 	}
 }

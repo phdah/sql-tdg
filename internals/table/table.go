@@ -61,6 +61,7 @@ func NewTable(schema []types.Column, rows int) *Table {
 	// Create the map for Arrow builders and final arrays
 	intBuilders := make(map[string]*array.Int32Builder)
 	ints := make(map[string]*array.Int32)
+	bools := make(map[string][]bool)
 
 	timestampBuilders := make(map[string]*array.TimestampBuilder)
 	timestamps := make(map[string]*array.Timestamp)
@@ -69,11 +70,16 @@ func NewTable(schema []types.Column, rows int) *Table {
 	for _, col := range schema {
 		if col.Type == types.IntType {
 			intBuilders[col.Name] = array.NewInt32Builder(mem)
+			ints[col.Name] = nil
 		}
 		if col.Type == types.TimestampType {
 			// Default to Microsecond precision for timestamps
 			// Use & to pass a pointer to the TimestampType struct
 			timestampBuilders[col.Name] = array.NewTimestampBuilder(mem, &arrow.TimestampType{Unit: arrow.Microsecond})
+			timestamps[col.Name] = nil
+		}
+		if col.Type == types.BoolType {
+			bools[col.Name] = nil
 		}
 	}
 
@@ -83,7 +89,7 @@ func NewTable(schema []types.Column, rows int) *Table {
 		Dim:               Dim{Rows: rows, Cols: len(schema)},
 		Ints:              ints,
 		Timestamps:        timestamps,
-		Bools:             make(map[string][]bool),
+		Bools:             bools,
 		IntBuilders:       intBuilders,
 		TimestampBuilders: timestampBuilders,
 		mem:               mem,
@@ -146,17 +152,27 @@ func (t *Table) BuildTimestamps() {
 // GetInts returns the Arrow array for the specified integer column. If
 // the column has not been built yet, the method returns nil. The caller
 // should not modify the returned array directly.
-func (t *Table) GetInts(col string) (*array.Int32, error) {
+func (t *Table) GetInts(col string) ([]int32, error) {
 	t.muInts.Lock()
 	defer t.muInts.Unlock()
 
-	// This will get the already-built Arrow array
-	if arr, ok := t.Ints[col]; ok {
-		return arr, nil
+	arr, ok := t.Ints[col]
+	if !ok {
+		return nil, fmt.Errorf("coulmn not found or not an integer column: %s", col)
 	}
-	// If the data is still in the builder, you might want to build it first.
-	// For simplicity, we'll assume the BuildInts method is called before getting.
-	return nil, nil // Or return an error if not found
+	return arr.Int32Values(), nil
+}
+
+func (t *Table) GetAllInts() (map[string][]int32, error) {
+	result := make(map[string][]int32)
+	var err error
+	for _, col := range t.Schema {
+		result[col.Name], err = t.GetInts(col.Name)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 // GetTimestamps returns the Arrow timestamp array for the specified
@@ -250,22 +266,35 @@ func (t *Table) Wipe() error {
 
 	// Release the Arrow arrays and builders
 	for _, arr := range t.Ints {
-		arr.Release()
+		if arr != nil {
+			arr.Release()
+		}
 	}
 	for _, builder := range t.IntBuilders {
-		builder.Release()
+		if builder != nil {
+			builder.Release()
+		}
 	}
 	for _, arr := range t.Timestamps {
-		arr.Release()
+		if arr != nil {
+			arr.Release()
+		}
 	}
 	for _, builder := range t.TimestampBuilders {
-		builder.Release()
+		if builder != nil {
+			builder.Release()
+		}
 	}
 
 	t.Ints = make(map[string]*array.Int32)
 	t.IntBuilders = make(map[string]*array.Int32Builder)
 	t.Timestamps = make(map[string]*array.Timestamp)
 	t.TimestampBuilders = make(map[string]*array.TimestampBuilder)
+	// for _, col := range t.Schema {
+	// 	if col.Type == types.IntType {
+	// 		t.Ints[col.Name] = make(*array.Int32)
+	// 	}
+	// }
 
 	// Reinitialize builders
 	for _, col := range t.Schema {

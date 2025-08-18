@@ -81,17 +81,11 @@ func TestInterop_FullQueryGeneratorInts(t *testing.T) {
 
 			// Sort is now optional depending on the test, but let's keep it to ensure it works.
 			tt.table.SortInts()
-
-			// Create a map to hold the actual Go slices from the Arrow arrays
-			actual := make(map[string][]int32)
-			for colName := range tt.expected {
-				arr, _ := tt.table.GetInts(colName)
-				if arr != nil {
-					actual[colName] = arr.Int32Values()
-				}
+			got, err := tt.table.GetAllInts()
+			if err != nil {
+				t.Fatalf("Failed getting integer columns, err:\n%e", err)
 			}
-
-			r.Equal(tt.expected, actual)
+			r.Equal(tt.expected, got)
 		})
 	}
 }
