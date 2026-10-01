@@ -10,8 +10,8 @@ import (
 
 type IntDomain struct {
 	Intervals []types.Interval
-	TotalMin  int
-	TotalMax  int
+	TotalMin  int32
+	TotalMax  int32
 }
 
 func (d *IntDomain) GetTotalMin() any {
@@ -23,10 +23,10 @@ func (d *IntDomain) GetTotalMax() any {
 }
 
 func NewIntDomain() *IntDomain {
-	lower := -1_000_000
-	upper := 1_000_000
+	lower := int32(-1_000_000)
+	upper := int32(1_000_000)
 	return &IntDomain{Intervals: []types.Interval{
-		{Min: lower, Max: upper},
+		{Min: int(lower), Max: int(upper)},
 	},
 		TotalMin: lower,
 		TotalMax: upper,
@@ -34,19 +34,27 @@ func NewIntDomain() *IntDomain {
 }
 
 func (d *IntDomain) SplitIntervals(splitValue any) error {
-	splitValueInt, ok := splitValue.(int)
+	splitValueInt, ok := splitValue.(int32)
 	if !ok {
-		return fmt.Errorf("expected int, got %T", splitValueInt)
+		return fmt.Errorf("expected int32, got %T", splitValue)
 	}
 	var updated []types.Interval
 	for _, interval := range d.Intervals {
 		// If value is inside of interval, split it
-		if interval.Min < splitValueInt && splitValueInt < interval.Max {
+		if int32(interval.Min) < splitValueInt && splitValueInt < int32(interval.Max) {
 			updated = append(updated, types.Interval{
-				Min: interval.Min, Max: splitValueInt - 1,
+				Min: interval.Min, Max: int(splitValueInt - 1),
 			})
 			updated = append(updated, types.Interval{
-				Min: splitValueInt + 1, Max: interval.Max,
+				Min: int(splitValueInt + 1), Max: interval.Max,
+			})
+		} else if int32(interval.Min) == splitValueInt {
+			updated = append(updated, types.Interval{
+				Min: int(splitValueInt + 1), Max: interval.Max,
+			})
+		} else if int32(interval.Max) == splitValueInt {
+			updated = append(updated, types.Interval{
+				Min: interval.Min, Max: int(splitValueInt - 1),
 			})
 		} else {
 			updated = append(updated, interval)
@@ -58,16 +66,13 @@ func (d *IntDomain) SplitIntervals(splitValue any) error {
 }
 
 func (d *IntDomain) UpdateIntervals(newInterval types.Interval) error {
-	// List with all updated, or not updated intervals
 	var updated []types.Interval
 
 	for _, interval := range d.Intervals {
-		// No overlap — continue
 		if interval.Min > newInterval.Max || interval.Max < newInterval.Min {
 			continue
 		}
 
-		// Compute new min and max value
 		minv := utils.Max(interval.Min, newInterval.Min)
 		maxv := utils.Min(interval.Max, newInterval.Max)
 
@@ -75,17 +80,15 @@ func (d *IntDomain) UpdateIntervals(newInterval types.Interval) error {
 			return fmt.Errorf("min value is larger than max value")
 		}
 
-		// Set new total min
-		if minv > d.TotalMin {
-			d.TotalMin = minv
+		if int32(minv) > d.TotalMin {
+			d.TotalMin = int32(minv)
 		}
-		// Set new total max
-		if maxv < d.TotalMax {
-			d.TotalMax = maxv
+		if int32(maxv) < d.TotalMax {
+			d.TotalMax = int32(maxv)
 		}
 		updated = append(updated, types.Interval{Min: minv, Max: maxv})
 	}
-	// If no intervals overlap - panic
+
 	if len(updated) <= 0 {
 		return fmt.Errorf("interval not allowed: %v", newInterval)
 	}
@@ -111,7 +114,7 @@ func (d IntDomain) RandomValue(rng *rand.Rand) (any, error) {
 	r := rng.Intn(total)
 	for i, count := range counts {
 		if r < count {
-			return d.Intervals[i].Min + r, nil
+			return int32(d.Intervals[i].Min + r), nil
 		}
 		r -= count
 	}
@@ -119,15 +122,17 @@ func (d IntDomain) RandomValue(rng *rand.Rand) (any, error) {
 	return nil, nil
 }
 
-type IntEq struct{ Value int }
-type IntNEq struct{ Value int }
-type IntLt struct{ Value int }
-type IntGt struct{ Value int }
-type IntLte struct{ Value int }
-type IntGte struct{ Value int }
+// Constraint types updated to use int32
+type IntEq struct{ Value int32 }
+type IntNEq struct{ Value int32 }
+type IntLt struct{ Value int32 }
+type IntGt struct{ Value int32 }
+type IntLte struct{ Value int32 }
+type IntGte struct{ Value int32 }
 
+// Updated Apply methods to handle int32
 func (c IntEq) Apply(domain types.Domain) error {
-	err := domain.UpdateIntervals(types.Interval{Min: c.Value, Max: c.Value})
+	err := domain.UpdateIntervals(types.Interval{Min: int(c.Value), Max: int(c.Value)})
 	return err
 }
 
@@ -138,28 +143,28 @@ func (c IntNEq) Apply(domain types.Domain) error {
 
 func (c IntLt) Apply(domain types.Domain) error {
 	err := domain.UpdateIntervals(types.Interval{
-		Min: domain.GetTotalMin().(int), Max: c.Value - 1,
+		Min: int(domain.GetTotalMin().(int32)), Max: int(c.Value - 1),
 	})
 	return err
 }
 
 func (c IntLte) Apply(domain types.Domain) error {
 	err := domain.UpdateIntervals(types.Interval{
-		Min: domain.GetTotalMin().(int), Max: c.Value,
+		Min: int(domain.GetTotalMin().(int32)), Max: int(c.Value),
 	})
 	return err
 }
 
 func (c IntGt) Apply(domain types.Domain) error {
 	err := domain.UpdateIntervals(types.Interval{
-		Min: c.Value + 1, Max: domain.GetTotalMax().(int),
+		Min: int(c.Value + 1), Max: int(domain.GetTotalMax().(int32)),
 	})
 	return err
 }
 
 func (c IntGte) Apply(domain types.Domain) error {
 	err := domain.UpdateIntervals(types.Interval{
-		Min: c.Value, Max: domain.GetTotalMax().(int),
+		Min: int(c.Value), Max: int(domain.GetTotalMax().(int32)),
 	})
 	return err
 }

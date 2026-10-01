@@ -11,8 +11,7 @@ import (
 
 func TestInt_Single_Apply(t *testing.T) {
 	tests := []struct {
-		name string // description of this test case
-		// Named input parameters for target function.
+		name       string
 		domain     types.Domain
 		want       types.Domain
 		wantErr    error
@@ -21,79 +20,89 @@ func TestInt_Single_Apply(t *testing.T) {
 		{
 			name:   "only set one equal",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 3, Max: 3},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{{Min: 3, Max: 3}},
+				TotalMin:  3,
+				TotalMax:  3,
 			},
-				TotalMin: 3,
-				TotalMax: 3},
 			conditions: []types.Constraints{
-				solver.IntEq{3},
+				solver.IntEq{Value: 3},
 			},
 			wantErr: nil,
 		},
 		{
 			name:   "only set one not equal",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: -1_000_000, Max: 2},
-				{Min: 4, Max: 1_000_000},
-			},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{
+					{Min: -1_000_000, Max: 2},
+					{Min: 4, Max: 1_000_000},
+				},
 				TotalMin: -1_000_000,
-				TotalMax: 1_000_000},
+				TotalMax: 1_000_000,
+			},
 			conditions: []types.Constraints{
-				solver.IntNEq{3},
+				solver.IntNEq{Value: 3},
 			},
 			wantErr: nil,
 		},
 		{
 			name:   "only set one less than",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: -1_000_000, Max: 2},
-			},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{
+					{Min: -1_000_000, Max: 2},
+				},
 				TotalMin: -1_000_000,
-				TotalMax: 2},
+				TotalMax: 2,
+			},
 			conditions: []types.Constraints{
-				solver.IntLt{3},
+				solver.IntLt{Value: 3},
 			},
 			wantErr: nil,
 		},
 		{
 			name:   "only set one less or equal to",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: -1_000_000, Max: 3},
-			},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{
+					{Min: -1_000_000, Max: 3},
+				},
 				TotalMin: -1_000_000,
-				TotalMax: 3},
+				TotalMax: 3,
+			},
 			conditions: []types.Constraints{
-				solver.IntLte{3},
+				solver.IntLte{Value: 3},
 			},
 			wantErr: nil,
 		},
 		{
 			name:   "only set one greater than",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 4, Max: 1_000_000},
-			},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{
+					{Min: 4, Max: 1_000_000},
+				},
 				TotalMin: 4,
-				TotalMax: 1_000_000},
+				TotalMax: 1_000_000,
+			},
 			conditions: []types.Constraints{
-				solver.IntGt{3},
+				solver.IntGt{Value: 3},
 			},
 			wantErr: nil,
 		},
 		{
 			name:   "only set one greater or equal to",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 3, Max: 1_000_000},
-			},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{
+					{Min: 3, Max: 1_000_000},
+				},
 				TotalMin: 3,
-				TotalMax: 1_000_000},
+				TotalMax: 1_000_000,
+			},
 			conditions: []types.Constraints{
-				solver.IntGte{3},
+				solver.IntGte{Value: 3},
 			},
 			wantErr: nil,
 		},
@@ -118,8 +127,7 @@ func TestInt_Single_Apply(t *testing.T) {
 
 func TestInt_Multi_Apply(t *testing.T) {
 	tests := []struct {
-		name string // description of this test case
-		// Named input parameters for target function.
+		name       string
 		domain     types.Domain
 		want       types.Domain
 		wantErr    error
@@ -128,32 +136,36 @@ func TestInt_Multi_Apply(t *testing.T) {
 		{
 			name:   "set one of each, all applied",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 3, Max: 3},
-			},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{
+					{Min: 3, Max: 3},
+				},
 				TotalMin: 3,
-				TotalMax: 3},
+				TotalMax: 3,
+			},
 			conditions: []types.Constraints{
-				solver.IntEq{3}, // Since equal is set, this should be the final one
-				solver.IntGt{-10},
-				solver.IntGte{0},
-				solver.IntLt{200},
-				solver.IntLte{150},
-				solver.IntNEq{100},
+				solver.IntEq{Value: 3},
+				solver.IntGt{Value: -10},
+				solver.IntGte{Value: 0},
+				solver.IntLt{Value: 200},
+				solver.IntLte{Value: 150},
+				solver.IntNEq{Value: 100},
 			},
 			wantErr: nil,
 		},
 		{
 			name:   "not allowed intervals, panic",
 			domain: solver.NewIntDomain(),
-			want: &solver.IntDomain{Intervals: []types.Interval{
-				{Min: 3, Max: 3},
+			want: &solver.IntDomain{
+				Intervals: []types.Interval{
+					{Min: 5, Max: 5},
+				},
+				TotalMin: 5,
+				TotalMax: 5,
 			},
-				TotalMin: 3,
-				TotalMax: 3},
 			conditions: []types.Constraints{
-				solver.IntNEq{5},
-				solver.IntEq{5},
+				solver.IntNEq{Value: 5},
+				solver.IntEq{Value: 5},
 			},
 			wantErr: fmt.Errorf("interval not allowed: {5 5}"),
 		},

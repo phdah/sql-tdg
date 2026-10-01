@@ -19,7 +19,7 @@ func TestInterop_FullQueryGeneratorInts(t *testing.T) {
 		name          string
 		query         string
 		table         *table.Table
-		expected      any
+		expected      map[string][]int32
 		expectedError error
 	}{
 		{
@@ -32,7 +32,7 @@ func TestInterop_FullQueryGeneratorInts(t *testing.T) {
 					Constraints: nil,
 				},
 			}, 12),
-			expected: map[string][]int{
+			expected: map[string][]int32{
 				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
 			},
 			expectedError: nil,
@@ -52,7 +52,7 @@ func TestInterop_FullQueryGeneratorInts(t *testing.T) {
 					Constraints: nil,
 				},
 			}, 12),
-			expected: map[string][]int{
+			expected: map[string][]int32{
 				"col_a": {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
 				"col_b": {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5},
 			},
@@ -75,8 +75,17 @@ func TestInterop_FullQueryGeneratorInts(t *testing.T) {
 				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
 			}
 			g.Generate(tt.table, seed)
+
+			// The table's data is still in builders, so we need to build the final Arrow arrays first.
+			tt.table.BuildInts()
+
+			// Sort is now optional depending on the test, but let's keep it to ensure it works.
 			tt.table.SortInts()
-			r.Equal(tt.expected, tt.table.Ints)
+			got, err := tt.table.GetAllInts()
+			if err != nil {
+				t.Fatalf("Failed getting integer columns, err:\n%e", err)
+			}
+			r.Equal(tt.expected, got)
 		})
 	}
 }
@@ -122,7 +131,12 @@ func TestInterop_FullQueryGeneratorBool(t *testing.T) {
 				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
 			}
 			g.Generate(tt.table, seed)
-			r.Equal(tt.expected, tt.table.Bools)
+			tt.table.BuildBools()
+			got, err := tt.table.GetAllBools()
+			if err != nil {
+				t.Fatalf("Failed getting boolean columns, err:\n%e", err)
+			}
+			r.Equal(tt.expected, got)
 		})
 	}
 }
@@ -135,7 +149,7 @@ func TestInterop_FullQueryGeneratorTimestamp(t *testing.T) {
 		name          string
 		query         string
 		table         *table.Table
-		expected      any
+		expected      map[string][]time.Time
 		expectedError error
 	}{
 		{
@@ -191,7 +205,14 @@ func TestInterop_FullQueryGeneratorTimestamp(t *testing.T) {
 				t.Fatalf("Failed parsing query:\n%s, err:\n%e", tt.query, err)
 			}
 			g.Generate(tt.table, seed)
-			r.Equal(tt.expected, tt.table.Timestamps)
+
+			// Finalize the Arrow timestamp arrays
+			tt.table.BuildTimestamps()
+			got, err := tt.table.GetAllTimestamps()
+			if err != nil {
+				t.Fatalf("Failed getting timestamp columns, err:\n%e", err)
+			}
+			r.Equal(tt.expected, got)
 		})
 	}
 }
