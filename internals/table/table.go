@@ -2,16 +2,14 @@ package table
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
-
-	"github.com/phdah/sql-tdg/internals/types"
-
-	"slices"
 
 	"github.com/apache/arrow/go/v14/arrow"
 	"github.com/apache/arrow/go/v14/arrow/array"
 	"github.com/apache/arrow/go/v14/arrow/memory"
+	"github.com/phdah/sql-tdg/internals/types"
 )
 
 // Dim represents the dimensions of a table, with rows and columns.
@@ -20,9 +18,7 @@ type Dim struct {
 	Cols int
 }
 
-// Table represents a data table with columns of various types. It stores
-// integer and timestamp columns using Apache Arrow arrays for efficient
-// batch processing, while boolean columns are stored as standard Go slices.
+// Table represents a data table with Arrow-backed columns.
 type Table struct {
 	Schema []types.Column
 	Types  map[string]types.Type
@@ -30,144 +26,228 @@ type Table struct {
 
 	Ints       map[string]*array.Int32
 	Timestamps map[string]*array.Timestamp
-	Bools      map[string][]bool
+	Bools      map[string]*array.Boolean
+	Strings    map[string]*array.String
 
 	IntBuilders       map[string]*array.Int32Builder
 	TimestampBuilders map[string]*array.TimestampBuilder
+	BoolBuilders      map[string]*array.BooleanBuilder
+	StringBuilders    map[string]*array.StringBuilder
 	mem               memory.Allocator
 
 	muInts       sync.Mutex
 	muTimestamps sync.Mutex
 	muBools      sync.Mutex
+	muStrings    sync.Mutex
 }
 
 // getColTypes returns a map from column names to their corresponding types
 // based on the provided schema.
 func getColTypes(schema []types.Column) map[string]types.Type {
-	types := make(map[string]types.Type)
+	columnTypes := make(map[string]types.Type, len(schema))
 	for _, col := range schema {
-		types[col.Name] = col.Type
+		columnTypes[col.Name] = col.Type
 	}
-	return types
+	return columnTypes
 }
 
 // NewTable creates a new Table with the given schema and number of rows.
-// It initializes the Arrow memory allocator, builders for integer and
-// timestamp columns, and empty maps for timestamps and booleans.
 func NewTable(schema []types.Column, rows int) *Table {
-	// Initialize the Arrow memory allocator
 	mem := memory.NewGoAllocator()
-
-	// Create the map for Arrow builders and final arrays
-	intBuilders := make(map[string]*array.Int32Builder)
-	ints := make(map[string]*array.Int32)
-
-	timestampBuilders := make(map[string]*array.TimestampBuilder)
-	timestamps := make(map[string]*array.Timestamp)
-
-	// Initialize a builder for each int column
-	for _, col := range schema {
-		if col.Type == types.IntType {
-			intBuilders[col.Name] = array.NewInt32Builder(mem)
-		}
-		if col.Type == types.TimestampType {
-			// Default to Microsecond precision for timestamps
-			// Use & to pass a pointer to the TimestampType struct
-			timestampBuilders[col.Name] = array.NewTimestampBuilder(mem, &arrow.TimestampType{Unit: arrow.Microsecond})
-		}
-	}
-
-	return &Table{
+	t := &Table{
 		Schema:            schema,
 		Types:             getColTypes(schema),
 		Dim:               Dim{Rows: rows, Cols: len(schema)},
-		Ints:              ints,
-		Timestamps:        timestamps,
-		Bools:             make(map[string][]bool),
-		IntBuilders:       intBuilders,
-		TimestampBuilders: timestampBuilders,
+		Ints:              make(map[string]*array.Int32),
+		Timestamps:        make(map[string]*array.Timestamp),
+		Bools:             make(map[string]*array.Boolean),
+		Strings:           make(map[string]*array.String),
+		IntBuilders:       make(map[string]*array.Int32Builder),
+		TimestampBuilders: make(map[string]*array.TimestampBuilder),
+		BoolBuilders:      make(map[string]*array.BooleanBuilder),
+		StringBuilders:    make(map[string]*array.StringBuilder),
 		mem:               mem,
+	}
+	t.resetBuilders()
+	return t
+}
+
+func (t *Table) resetBuilders() {
+	for _, col := range t.Schema {
+		switch col.Type {
+		case types.IntType:
+			t.Ints[col.Name] = nil
+			t.IntBuilders[col.Name] = array.NewInt32Builder(t.mem)
+		case types.TimestampType:
+			t.Timestamps[col.Name] = nil
+			t.TimestampBuilders[col.Name] = array.NewTimestampBuilder(
+				t.mem,
+				&arrow.TimestampType{Unit: arrow.Microsecond},
+			)
+		case types.BoolType:
+			t.Bools[col.Name] = nil
+			t.BoolBuilders[col.Name] = array.NewBooleanBuilder(t.mem)
+		case types.StringType:
+			t.Strings[col.Name] = nil
+			t.StringBuilders[col.Name] = array.NewStringBuilder(t.mem)
+		}
 	}
 }
 
-// Append adds a value to the specified column in the table. The value must
-// be of the appropriate Go type for the column's Arrow type. For integer
-// columns the value is appended to the Arrow builder; for timestamp and
-// boolean columns it is appended to the corresponding slice.
+// Append adds a value to the specified column. The value must match the
+// column's declared type.
 func (t *Table) Append(col string, val any) error {
-	switch t.Types[col] {
+	typ, ok := t.Types[col]
+	if !ok {
+		return fmt.Errorf("unknown column %q", col)
+	}
+
+	switch typ {
 	case types.IntType:
+		value, ok := val.(int32)
+		if !ok {
+			return fmt.Errorf("expected int32 for column %q, got %T", col, val)
+		}
 		t.muInts.Lock()
-		t.IntBuilders[col].Append(val.(int32))
-		t.muInts.Unlock()
+		defer t.muInts.Unlock()
+		t.IntBuilders[col].Append(value)
 	case types.TimestampType:
+		value, ok := val.(time.Time)
+		if !ok {
+			return fmt.Errorf("expected time.Time for column %q, got %T", col, val)
+		}
 		t.muTimestamps.Lock()
-		t.TimestampBuilders[col].Append(arrow.Timestamp(val.(time.Time).UnixMicro()))
-		t.muTimestamps.Unlock()
+		defer t.muTimestamps.Unlock()
+		t.TimestampBuilders[col].Append(arrow.Timestamp(value.UnixMicro()))
 	case types.BoolType:
+		value, ok := val.(bool)
+		if !ok {
+			return fmt.Errorf("expected bool for column %q, got %T", col, val)
+		}
 		t.muBools.Lock()
-		t.Bools[col] = append(t.Bools[col], val.(bool))
-		t.muBools.Unlock()
+		defer t.muBools.Unlock()
+		t.BoolBuilders[col].Append(value)
+	case types.StringType:
+		value, ok := val.(string)
+		if !ok {
+			return fmt.Errorf("expected string for column %q, got %T", col, val)
+		}
+		t.muStrings.Lock()
+		defer t.muStrings.Unlock()
+		t.StringBuilders[col].Append(value)
+	default:
+		return fmt.Errorf("unsupported column type %q", typ)
 	}
 	return nil
 }
 
-// BuildInts finalizes all integer columns by building Arrow arrays from
-// the current builders. The builders are then released and reinitialized
-// for future use.
+// BuildInts finalizes all integer builders into Arrow arrays.
 func (t *Table) BuildInts() {
 	t.muInts.Lock()
 	defer t.muInts.Unlock()
 
 	for colName, builder := range t.IntBuilders {
-		// Build a new Int32 array from the builder
+		if arr := t.Ints[colName]; arr != nil {
+			arr.Release()
+		}
 		t.Ints[colName] = builder.NewInt32Array()
-		// Reset the builder for future use
 		builder.Release()
 		t.IntBuilders[colName] = array.NewInt32Builder(t.mem)
 	}
 }
 
-// BuildTimestamps finalizes all timestamp columns by building Arrow arrays from
-// the current builders. The builders are then released and reinitialized
-// for future use.
+// BuildTimestamps finalizes all timestamp builders into Arrow arrays.
 func (t *Table) BuildTimestamps() {
 	t.muTimestamps.Lock()
 	defer t.muTimestamps.Unlock()
 
 	for colName, builder := range t.TimestampBuilders {
+		if arr := t.Timestamps[colName]; arr != nil {
+			arr.Release()
+		}
 		t.Timestamps[colName] = builder.NewTimestampArray()
 		builder.Release()
-		// Reinitialize the builder with the same type
-		t.TimestampBuilders[colName] = array.NewTimestampBuilder(t.mem, &arrow.TimestampType{Unit: arrow.Microsecond})
+		t.TimestampBuilders[colName] = array.NewTimestampBuilder(
+			t.mem,
+			&arrow.TimestampType{Unit: arrow.Microsecond},
+		)
 	}
 }
 
-// GetInts returns the Arrow array for the specified integer column. If
-// the column has not been built yet, the method returns nil. The caller
-// should not modify the returned array directly.
-func (t *Table) GetInts(col string) (*array.Int32, error) {
+// BuildBools finalizes all boolean builders into Arrow arrays.
+func (t *Table) BuildBools() {
+	t.muBools.Lock()
+	defer t.muBools.Unlock()
+
+	for colName, builder := range t.BoolBuilders {
+		if arr := t.Bools[colName]; arr != nil {
+			arr.Release()
+		}
+		t.Bools[colName] = builder.NewBooleanArray()
+		builder.Release()
+		t.BoolBuilders[colName] = array.NewBooleanBuilder(t.mem)
+	}
+}
+
+// BuildStrings finalizes all string builders into Arrow arrays.
+func (t *Table) BuildStrings() {
+	t.muStrings.Lock()
+	defer t.muStrings.Unlock()
+
+	for colName, builder := range t.StringBuilders {
+		if arr := t.Strings[colName]; arr != nil {
+			arr.Release()
+		}
+		t.Strings[colName] = builder.NewStringArray()
+		builder.Release()
+		t.StringBuilders[colName] = array.NewStringBuilder(t.mem)
+	}
+}
+
+// GetInts returns a copy of the integer values for the specified column.
+// It returns nil when the column exists but has not been built yet.
+func (t *Table) GetInts(col string) ([]int32, error) {
 	t.muInts.Lock()
 	defer t.muInts.Unlock()
 
-	// This will get the already-built Arrow array
-	if arr, ok := t.Ints[col]; ok {
-		return arr, nil
+	arr, ok := t.Ints[col]
+	if !ok {
+		return nil, fmt.Errorf("column not found or not an integer column: %s", col)
 	}
-	// If the data is still in the builder, you might want to build it first.
-	// For simplicity, we'll assume the BuildInts method is called before getting.
-	return nil, nil // Or return an error if not found
+	if arr == nil {
+		return nil, nil
+	}
+	return append([]int32(nil), arr.Int32Values()...), nil
 }
 
-// GetTimestamps returns the Arrow timestamp array for the specified
-// column. The array is protected by a mutex to ensure thread safety.
+// GetAllInts returns all integer columns as Go slices.
+func (t *Table) GetAllInts() (map[string][]int32, error) {
+	result := make(map[string][]int32)
+	for _, col := range t.Schema {
+		if col.Type != types.IntType {
+			continue
+		}
+		values, err := t.GetInts(col.Name)
+		if err != nil {
+			return nil, err
+		}
+		result[col.Name] = values
+	}
+	return result, nil
+}
+
+// GetTimestamps returns the timestamp values for the specified column.
+// It returns nil when the column exists but has not been built yet.
 func (t *Table) GetTimestamps(col string) ([]time.Time, error) {
 	t.muTimestamps.Lock()
 	defer t.muTimestamps.Unlock()
 
 	arr, ok := t.Timestamps[col]
-	if !ok || arr == nil {
-		return nil, fmt.Errorf("coulmn not found or not a timestamp column: %s", col)
+	if !ok {
+		return nil, fmt.Errorf("column not found or not a timestamp column: %s", col)
+	}
+	if arr == nil {
+		return nil, nil
 	}
 	result := make([]time.Time, arr.Len())
 	for i := range arr.Len() {
@@ -176,105 +256,206 @@ func (t *Table) GetTimestamps(col string) ([]time.Time, error) {
 	return result, nil
 }
 
+// GetAllTimestamps returns all timestamp columns as Go slices.
 func (t *Table) GetAllTimestamps() (map[string][]time.Time, error) {
 	result := make(map[string][]time.Time)
-	var err error
 	for _, col := range t.Schema {
-		result[col.Name], err = t.GetTimestamps(col.Name)
+		if col.Type != types.TimestampType {
+			continue
+		}
+		values, err := t.GetTimestamps(col.Name)
 		if err != nil {
 			return nil, err
 		}
+		result[col.Name] = values
 	}
 	return result, nil
 }
 
-// GetBools returns the slice of boolean values for the specified column.
+// GetBools returns the boolean values for the specified column.
+// It returns nil when the column exists but has not been built yet.
 func (t *Table) GetBools(col string) ([]bool, error) {
 	t.muBools.Lock()
 	defer t.muBools.Unlock()
-	return t.Bools[col], nil
+
+	arr, ok := t.Bools[col]
+	if !ok {
+		return nil, fmt.Errorf("column not found or not a boolean column: %s", col)
+	}
+	if arr == nil {
+		return nil, nil
+	}
+	result := make([]bool, arr.Len())
+	for i := range arr.Len() {
+		result[i] = arr.Value(i)
+	}
+	return result, nil
 }
 
-// SortInts sorts all integer columns in the table in ascending order.
-// It retrieves the underlying Go slice from the Arrow array, sorts it,
-// and rebuilds the Arrow array with the sorted values.
+// GetAllBools returns all boolean columns as Go slices.
+func (t *Table) GetAllBools() (map[string][]bool, error) {
+	result := make(map[string][]bool)
+	for _, col := range t.Schema {
+		if col.Type != types.BoolType {
+			continue
+		}
+		values, err := t.GetBools(col.Name)
+		if err != nil {
+			return nil, err
+		}
+		result[col.Name] = values
+	}
+	return result, nil
+}
+
+// GetStrings returns the string values for the specified column.
+// It returns nil when the column exists but has not been built yet.
+func (t *Table) GetStrings(col string) ([]string, error) {
+	t.muStrings.Lock()
+	defer t.muStrings.Unlock()
+
+	arr, ok := t.Strings[col]
+	if !ok {
+		return nil, fmt.Errorf("column not found or not a string column: %s", col)
+	}
+	if arr == nil {
+		return nil, nil
+	}
+	result := make([]string, arr.Len())
+	for i := range arr.Len() {
+		result[i] = arr.Value(i)
+	}
+	return result, nil
+}
+
+// GetAllStrings returns all string columns as Go slices.
+func (t *Table) GetAllStrings() (map[string][]string, error) {
+	result := make(map[string][]string)
+	for _, col := range t.Schema {
+		if col.Type != types.StringType {
+			continue
+		}
+		values, err := t.GetStrings(col.Name)
+		if err != nil {
+			return nil, err
+		}
+		result[col.Name] = values
+	}
+	return result, nil
+}
+
+// SortInts sorts all built integer columns in ascending order.
 func (t *Table) SortInts() {
 	t.muInts.Lock()
 	defer t.muInts.Unlock()
 
 	for _, col := range t.Schema {
-		if col.Type == types.IntType {
-			// Get the Go slice from the Arrow array
-			slice := t.Ints[col.Name].Int32Values()
-			// Sort the slice
-			slices.Sort(slice)
-
-			// Build a new Arrow array from the sorted slice
-			newBuilder := array.NewInt32Builder(t.mem)
-			// Corrected line: provide an empty []bool slice for valid values
-			newBuilder.AppendValues(slice, nil) // Use nil to indicate all values are valid
-
-			// Release the old array and assign the new one
-			t.Ints[col.Name].Release()
-			t.Ints[col.Name] = newBuilder.NewInt32Array()
-			newBuilder.Release()
+		if col.Type != types.IntType {
+			continue
 		}
+		arr := t.Ints[col.Name]
+		if arr == nil {
+			continue
+		}
+		values := append([]int32(nil), arr.Int32Values()...)
+		slices.Sort(values)
+
+		builder := array.NewInt32Builder(t.mem)
+		builder.AppendValues(values, nil)
+		newArr := builder.NewInt32Array()
+		builder.Release()
+
+		arr.Release()
+		t.Ints[col.Name] = newArr
 	}
 }
 
-// SortTimestamps sorts all timestamp columns in ascending order.
+// SortTimestamps sorts all built timestamp columns in ascending order.
 func (t *Table) SortTimestamps() {
 	t.muTimestamps.Lock()
 	defer t.muTimestamps.Unlock()
-	for _, col := range t.Schema {
-		if col.Type == types.TimestampType {
-			slice := t.Timestamps[col.Name].TimestampValues()
-			slices.Sort(slice)
 
-			// Build a new Arrow timestamp array from the sorted slice
-			newBuilder := array.NewTimestampBuilder(t.mem, &arrow.TimestampType{Unit: arrow.Microsecond})
-			newBuilder.AppendValues(slice, nil)
-			t.Timestamps[col.Name].Release()
-			t.Timestamps[col.Name] = newBuilder.NewTimestampArray()
-			newBuilder.Release()
+	for _, col := range t.Schema {
+		if col.Type != types.TimestampType {
+			continue
 		}
+		arr := t.Timestamps[col.Name]
+		if arr == nil {
+			continue
+		}
+		values := append([]arrow.Timestamp(nil), arr.TimestampValues()...)
+		slices.Sort(values)
+
+		builder := array.NewTimestampBuilder(t.mem, &arrow.TimestampType{Unit: arrow.Microsecond})
+		builder.AppendValues(values, nil)
+		newArr := builder.NewTimestampArray()
+		builder.Release()
+
+		arr.Release()
+		t.Timestamps[col.Name] = newArr
 	}
 }
 
-// Wipe clears all data from the table, releasing Arrow resources and
-// resetting builders for future use. It should be called when the table
-// is no longer needed to free memory.
+// Wipe clears all built data and resets Arrow builders for future use.
 func (t *Table) Wipe() error {
 	t.muInts.Lock()
 	defer t.muInts.Unlock()
+	t.muTimestamps.Lock()
+	defer t.muTimestamps.Unlock()
+	t.muBools.Lock()
+	defer t.muBools.Unlock()
+	t.muStrings.Lock()
+	defer t.muStrings.Unlock()
 
-	// Release the Arrow arrays and builders
 	for _, arr := range t.Ints {
-		arr.Release()
+		if arr != nil {
+			arr.Release()
+		}
 	}
 	for _, builder := range t.IntBuilders {
-		builder.Release()
+		if builder != nil {
+			builder.Release()
+		}
 	}
 	for _, arr := range t.Timestamps {
-		arr.Release()
+		if arr != nil {
+			arr.Release()
+		}
 	}
 	for _, builder := range t.TimestampBuilders {
-		builder.Release()
+		if builder != nil {
+			builder.Release()
+		}
+	}
+	for _, arr := range t.Bools {
+		if arr != nil {
+			arr.Release()
+		}
+	}
+	for _, builder := range t.BoolBuilders {
+		if builder != nil {
+			builder.Release()
+		}
+	}
+	for _, arr := range t.Strings {
+		if arr != nil {
+			arr.Release()
+		}
+	}
+	for _, builder := range t.StringBuilders {
+		if builder != nil {
+			builder.Release()
+		}
 	}
 
 	t.Ints = make(map[string]*array.Int32)
-	t.IntBuilders = make(map[string]*array.Int32Builder)
 	t.Timestamps = make(map[string]*array.Timestamp)
+	t.Bools = make(map[string]*array.Boolean)
+	t.Strings = make(map[string]*array.String)
+	t.IntBuilders = make(map[string]*array.Int32Builder)
 	t.TimestampBuilders = make(map[string]*array.TimestampBuilder)
-
-	// Reinitialize builders
-	for _, col := range t.Schema {
-		if col.Type == types.IntType {
-			t.IntBuilders[col.Name] = array.NewInt32Builder(t.mem)
-		}
-		if col.Type == types.TimestampType {
-			t.TimestampBuilders[col.Name] = array.NewTimestampBuilder(t.mem, &arrow.TimestampType{Unit: arrow.Microsecond})
-		}
-	}
+	t.BoolBuilders = make(map[string]*array.BooleanBuilder)
+	t.StringBuilders = make(map[string]*array.StringBuilder)
+	t.resetBuilders()
 	return nil
 }
