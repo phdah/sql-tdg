@@ -160,3 +160,11 @@ expected domain, extract a helper in the test file instead of copy-pasting setup
 
 **Benchmarks for hot paths** Changes to the generator or domains that claim a performance
 improvement come with a `BenchmarkX` function and before/after `go test -bench` numbers.
+
+## Task tracking
+
+Todos, planned work, and decisions for this project are tracked in a local
+[Backlog.md](https://github.com/MrLesk/Backlog.md) board stored in `.backlog/`. Use the
+`backlog_*` MCP tools or the `backlog` CLI when available; otherwise edit the Markdown
+files under `.backlog/` directly, following the format of existing files. The board is
+versioned with the repo, so commit task changes alongside the work they describe.
