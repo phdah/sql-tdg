@@ -249,11 +249,11 @@ impl fmt::Display for ParserError {
             Self::UnsupportedStatement(statement) => {
                 write!(formatter, "unsupported SQL statement: {statement}")
             }
-            Self::UnsupportedQuery(clause) => write!(formatter, "unsupported query clause: {clause}"),
+            Self::UnsupportedQuery(clause) => {\n                write!(formatter, "unsupported query clause: {clause}")\n            }
             Self::UnsupportedProjection(projection) => {
                 write!(formatter, "unsupported projection: {projection}")
             }
-            Self::UnsupportedTable(table) => write!(formatter, "unsupported table reference: {table}"),
+            Self::UnsupportedTable(table) => {\n                write!(formatter, "unsupported table reference: {table}")\n            }
             Self::UnsupportedJoin(join) => write!(formatter, "unsupported join: {join}"),
             Self::UnsupportedJoinConstraint(constraint) => {
                 write!(formatter, "unsupported join constraint: {constraint}")
@@ -261,7 +261,7 @@ impl fmt::Display for ParserError {
             Self::UnsupportedExpression(expression) => {
                 write!(formatter, "unsupported expression: {expression}")
             }
-            Self::UnsupportedSyntax(syntax) => write!(formatter, "unsupported SQL syntax: {syntax}"),
+            Self::UnsupportedSyntax(syntax) => {\n                write!(formatter, "unsupported SQL syntax: {syntax}")\n            }
         }
     }
 }
@@ -492,7 +492,7 @@ fn is_supported_binary_operator(operator: &BinaryOperator) -> bool {
 
 fn lower_conditions(expression: &Expr, out: &mut Vec<ConditionIR>) -> Result<(), ParserError> {
     match expression {
-        Expr::BinaryOp { left, op, right } if matches!(op, BinaryOperator::And | BinaryOperator::Or) => {
+        Expr::BinaryOp { left, op, right }\n            if matches!(op, BinaryOperator::And | BinaryOperator::Or) =>\n        {
             lower_conditions(left, out)?;
             lower_conditions(right, out)
         }
