@@ -89,7 +89,10 @@ impl fmt::Display for GeneratorError {
                 "column {column:?} domain with {value_count} values is too large to sample"
             ),
             Self::Table { column, .. } => {
-                write!(formatter, "could not append generated value to column {column:?}")
+                write!(
+                    formatter,
+                    "could not append generated value to column {column:?}"
+                )
             }
         }
     }
@@ -226,13 +229,12 @@ impl ColumnPlan {
         match &self.domain {
             GenerationDomain::Int(domain) => {
                 let index = sample_index(rng, domain.value_count(), &self.name)?;
-                let value =
-                    domain
-                        .value_at(index)
-                        .map_err(|source| GeneratorError::Solver {
-                            column: self.name.clone(),
-                            source,
-                        })?;
+                let value = domain
+                    .value_at(index)
+                    .map_err(|source| GeneratorError::Solver {
+                        column: self.name.clone(),
+                        source,
+                    })?;
                 Ok(TableValue::Int(value))
             }
             GenerationDomain::Timestamp(domain) => {
