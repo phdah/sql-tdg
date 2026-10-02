@@ -13,7 +13,7 @@ dependencies:
 ## Description
 
 Port the shared domain model needed by parser, solver, and table code. Prefer Rust enums and
-concrete types over a mechanical translation of Go interfaces and any-style values.
+concrete types over a mechanical translation of Go interfaces and `any`.
 
 ## Acceptance Criteria
 
