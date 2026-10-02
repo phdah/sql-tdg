@@ -185,12 +185,7 @@ mod tests {
     #[test]
     fn single_apply_matches_supported_operators() {
         let cases = [
-            (
-                IntConstraint::Equal(3),
-                vec![(3, 3)],
-                3,
-                3,
-            ),
+            (IntConstraint::Equal(3), vec![(3, 3)], 3, 3),
             (
                 IntConstraint::NotEqual(3),
                 vec![(-1_000_000, 2), (4, 1_000_000)],
@@ -249,7 +244,9 @@ mod tests {
             IntConstraint::LessThanOrEqual(150),
             IntConstraint::NotEqual(100),
         ] {
-            domain.apply(constraint).expect("constraints should overlap");
+            domain
+                .apply(constraint)
+                .expect("constraints should overlap");
         }
 
         assert_eq!(domain.intervals().len(), 1);

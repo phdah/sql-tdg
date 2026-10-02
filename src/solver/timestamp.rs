@@ -74,9 +74,10 @@ impl Default for TimestampDomain {
 /// Parses an RFC3339 timestamp literal into Unix seconds.
 pub fn to_timestamp(timestamp: &str) -> Result<i32, SolverError> {
     let value = trim_quotes(timestamp);
-    let parsed = DateTime::parse_from_rfc3339(value).map_err(|_| SolverError::InvalidTimestamp {
-        value: value.to_owned(),
-    })?;
+    let parsed =
+        DateTime::parse_from_rfc3339(value).map_err(|_| SolverError::InvalidTimestamp {
+            value: value.to_owned(),
+        })?;
     checked_seconds(parsed.timestamp(), value)
 }
 
@@ -105,11 +106,12 @@ pub fn parse_time(timestamp: &str) -> Result<i32, SolverError> {
     }
 
     if let Ok(parsed) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
-        let midnight = parsed
-            .and_hms_opt(0, 0, 0)
-            .ok_or_else(|| SolverError::InvalidTimestamp {
-                value: value.to_owned(),
-            })?;
+        let midnight =
+            parsed
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| SolverError::InvalidTimestamp {
+                    value: value.to_owned(),
+                })?;
         return checked_seconds(midnight.and_utc().timestamp(), value);
     }
 
@@ -143,9 +145,7 @@ mod tests {
 
     use crate::TimestampConstraint;
 
-    use super::{
-        SolverError, TimestampDomain, from_unix, parse_time, to_date, to_timestamp,
-    };
+    use super::{SolverError, TimestampDomain, from_unix, parse_time, to_date, to_timestamp};
 
     #[test]
     fn single_apply_matches_supported_operators() {
@@ -158,12 +158,7 @@ mod tests {
                 i32::MAX,
             ),
             (TimestampConstraint::LessThan(3), vec![(0, 2)], 0, 2),
-            (
-                TimestampConstraint::LessThanOrEqual(3),
-                vec![(0, 3)],
-                0,
-                3,
-            ),
+            (TimestampConstraint::LessThanOrEqual(3), vec![(0, 3)], 0, 3),
             (
                 TimestampConstraint::GreaterThan(3),
                 vec![(4, i32::MAX)],
@@ -204,7 +199,9 @@ mod tests {
             TimestampConstraint::LessThanOrEqual(150),
             TimestampConstraint::NotEqual(100),
         ] {
-            domain.apply(constraint).expect("constraints should overlap");
+            domain
+                .apply(constraint)
+                .expect("constraints should overlap");
         }
 
         assert_eq!(domain.intervals().len(), 1);
@@ -237,10 +234,7 @@ mod tests {
     #[test]
     fn to_timestamp_matches_supported_rfc3339_format() {
         assert_eq!(to_timestamp("2013-06-17T12:25:04Z"), Ok(1_371_471_904));
-        assert_eq!(
-            to_timestamp("\"2013-06-17T12:25:04Z\""),
-            Ok(1_371_471_904)
-        );
+        assert_eq!(to_timestamp("\"2013-06-17T12:25:04Z\""), Ok(1_371_471_904));
     }
 
     #[test]
@@ -296,7 +290,9 @@ mod tests {
             .apply(TimestampConstraint::Equal(1_371_427_200))
             .expect("timestamp should be in supported range");
 
-        let actual = domain.value_at(0).expect("single value should be available");
+        let actual = domain
+            .value_at(0)
+            .expect("single value should be available");
         let expected = Utc
             .with_ymd_and_hms(2013, 6, 17, 0, 0, 0)
             .single()
