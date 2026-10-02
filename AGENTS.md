@@ -4,7 +4,9 @@ See [README.md](README.md) for the project overview: given a SQL query and a tab
 generate test data that satisfies the query's conditions (e.g. `where a > 10` yields rows
 where `a > 10`). The Go module at the repo root is the active implementation;
 `python_poc/` is the original proof of concept and is frozen unless the user asks
-otherwise. This file holds principles only.
+otherwise. A Rust rewrite is planned and tracked in `.backlog/`; until cutover, Go remains
+the reference implementation and Rust is developed alongside it. Language-specific rules below
+apply to files written in that language. This file holds principles only.
 
 ## Architecture
 
@@ -19,8 +21,8 @@ The pipeline flows in one direction, one package per stage under `internals/`:
 - `table`: typed, columnar storage for the generated rows.
 - `types`: shared domain types and interfaces (`Column`, `Domain`, `Constraints`).
 
-The CLI entry point lives in `cmd/sql-tdg/` and sits on top of the pipeline; nothing
-under `internals/` imports it.
+There is currently no active CLI entry point on `main`. If a CLI is introduced, it must sit on
+top of the library pipeline and contain no parsing, solving, or storage logic.
 
 Dependencies point downward only: `parser` and `solver` never import `interop`, and
 `types` imports nothing from the module. Never introduce import cycles or reach across
@@ -94,13 +96,64 @@ comment describing its responsibility. Use comments to explain *why*, not *what*
 cover most needs. Confirm with the user before adding a module. Keep `go.mod` tidy with
 `go mod tidy`; direct dependencies must not be marked `// indirect`.
 
-**Tooling** Use the `go` toolchain for everything. Read `go.mod` before writing code; it is
-the authoritative source for the Go version and dependencies, so only use language and
-standard library features available in that version. Code is formatted with `gofmt` and
+**Go tooling** For Go code, use the `go` toolchain. Read `go.mod` before writing Go code;
+it is the authoritative source for the Go version and dependencies, so only use language and
+standard library features available in that version. Go code is formatted with `gofmt` and
 must pass `go vet` with no findings.
 
-Don't add `//nolint` directives or other lint suppressions without confirmation from the
-user. Fix the underlying issue, or consult the user for explicit guidance.
+Don't add `//nolint`, `#[allow(...)]`, or other lint suppressions without confirmation from
+the user. Fix the underlying issue, or consult the user for explicit guidance.
+
+## Rust migration rules
+
+These rules apply to Rust code added during the migration. They supplement the existing
+language-independent architecture and correctness principles; they do not weaken the Go rules
+while Go remains the reference implementation.
+
+**Rust module boundaries** Preserve the same one-way architecture in Rust. Parser-library AST
+types are an input format and stay inside the parser boundary. Lower them into project-owned IR
+types before interop or solver code sees them. `src/lib.rs` is the module index and public
+library surface; keep its module docs and re-exports synchronized with public API changes.
+
+**Rust strict types** Use enums for closed sets such as column types, comparison operators, and
+join kinds; use newtypes when identifiers must not be mixed. Prefer structs with named fields
+over positional tuples for domain data. Match project-owned enums exhaustively and avoid
+catch-all arms that could hide a newly added variant. A catch-all over a large third-party parser
+enum is acceptable only when it produces an explicit unsupported error.
+
+**Rust invariants** Make invalid states unrepresentable. Construct values through constructors
+that enforce invariants, keep invariant-bearing fields private where useful, and prefer parsing
+into a valid domain value over constructing an invalid value and validating it later.
+
+**Rust ownership** Bindings are immutable by default. Borrow `&str`, `&[T]`, and `&T` in
+arguments when ownership is unnecessary and return owned values when the caller must retain them.
+Clone deliberately, not merely to satisfy the borrow checker; if cloning feels structural,
+revisit the design.
+
+**Rust errors** Library code returns `Result` with domain-specific error variants. Use `?` for
+propagation. Do not use `unwrap()`, `expect()`, `panic!()`, or panic-prone indexing in
+library code for bad input. An `expect("...")` is acceptable only for a true internal invariant
+whose reason is stated. Generic boxed errors belong at an application boundary, not in core
+library APIs.
+
+**Rust traits and generics** Prefer plain functions and concrete structs. Introduce a trait only
+for a real contract with multiple concrete implementations or a clear consumer need. Do not add
+generic or trait-object abstraction only for hypothetical flexibility.
+
+**Rust safety** Do not introduce `unsafe`. The project does not require it.
+
+**Rust dependencies** Minimize crate dependencies and enable only features that are used. Confirm
+with the user before adding a new crate. Read `Cargo.toml` before writing Rust code; it is the
+authoritative source for the Rust edition, dependencies, and profiles.
+
+**Rust tooling** Use Cargo for Rust work. Rust code uses rustfmt defaults and must pass Clippy
+with no warnings. Once the Rust crate exists, pull-request CI must run formatting, Clippy, and
+tests for every Rust change.
+
+**Rust tests** Put focused unit tests in `#[cfg(test)] mod tests` beside the implementation when
+private behavior needs coverage. Put end-to-end and public API parity tests under `tests/`.
+State SQL fixtures inline when practical, name tests for behavior, cover unsupported paths, and
+share helpers rather than duplicating setup.
 
 **Semantic versioning** Follow semver. While pre-1.0, a breaking change to the exported
 API bumps the minor version.
@@ -115,7 +168,7 @@ scope. Common types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `build`
 
 ## Verification
 
-Run checks proportional to the change. Before considering a change done:
+Run checks proportional to the change. While Go remains active, Go changes must pass:
 
 ```console
 gofmt -l .        # must print nothing
@@ -124,9 +177,20 @@ go test -race ./...
 go mod tidy       # must leave go.mod and go.sum unchanged
 ```
 
-`make tests` runs the unit tests verbosely and is what the pre-push hook
-(`.gitHooks/pre-push`) uses. Use `go test -run TestName ./internals/<pkg>` to iterate on a
-single test.
+Once `Cargo.toml` exists, Rust changes must also pass:
+
+```console
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets --all-features
+```
+
+Run `cargo doc --no-deps` when Rust public documentation changes.
+
+`make tests` currently runs the Go unit tests verbosely and is what the pre-push hook
+(`.gitHooks/pre-push`) uses. TASK-1 of the Rust rewrite must extend repository tooling and CI so
+the Rust checks above are mandatory as soon as the Rust crate exists. Use
+`go test -run TestName ./internals/<pkg>` to iterate on a single Go test.
 
 ## Test conventions
 
