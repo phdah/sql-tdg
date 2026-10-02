@@ -20,7 +20,7 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
-    /// Returns the stable textual representation used by the Go implementation.
+    /// Returns the canonical textual representation.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Int => "int",
@@ -120,7 +120,7 @@ pub enum IntConstraint {
 
 /// Constraints supported for timestamp columns.
 ///
-/// Operands use Unix seconds, matching the current Go solver representation.
+/// Operands use Unix seconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimestampConstraint {
     /// Value must equal the operand.
