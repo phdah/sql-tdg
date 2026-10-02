@@ -40,4 +40,9 @@ asserted by Go generator tests.
 | `internals/table/table_test.go::TestTable_SortInts` | `src/table/tests.rs::sort_ints` | TASK-5 | exact |
 | `internals/table/table_test.go::TestTable_AllColumnTypesUseArrowStorage` | `src/table/tests.rs::all_column_types_use_arrow_storage` | TASK-5 | exact |
 
+
+The constraint-mapping portion exercised by the three interop full-query tests is covered in
+TASK-6 by `src/interop/tests.rs`. Their generator-dependent end-to-end behavior remains assigned
+to TASK-8.
+
 The bootstrap smoke test in `tests/bootstrap.rs` is infrastructure-only and is not a parity case.

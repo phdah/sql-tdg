@@ -1,7 +1,7 @@
 ---
 id: TASK-6
 title: Port parser-solver interop
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-02'
 labels: []
@@ -20,9 +20,9 @@ This remains the only parser-to-solver conversion boundary.
 
 ## Acceptance Criteria
 
-- [ ] Integer condition IR maps to the equivalent typed constraints.
-- [ ] Boolean condition IR maps to the equivalent typed constraints.
-- [ ] Timestamp condition IR parses and maps to the equivalent typed constraints.
-- [ ] Unknown columns return explicit errors.
-- [ ] Unsupported column types and operators return explicit errors.
-- [ ] Rust interop tests cover every current Go interop expectation before the task is complete.
+- [x] Integer condition IR maps to the equivalent typed constraints.
+- [x] Boolean condition IR maps to the equivalent typed constraints.
+- [x] Timestamp condition IR parses and maps to the equivalent typed constraints.
+- [x] Unknown columns return explicit errors.
+- [x] Unsupported column types and operators return explicit errors.
+- [x] Rust interop tests cover every current Go interop expectation before the task is complete.

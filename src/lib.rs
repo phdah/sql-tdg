@@ -2,11 +2,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod interop;
 pub mod parser;
 pub mod solver;
 pub mod table;
 pub mod types;
 
+pub use interop::{InteropError, apply_conditions};
 pub use parser::{
     ConditionIR, ConditionOperator, JoinIR, JoinKind, ParserError, QueryIR, parse_query,
 };
