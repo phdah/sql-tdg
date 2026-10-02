@@ -139,6 +139,18 @@ Add a Rust crate beside the Go module, make both test suites runnable from the r
 tooling, and create a parity matrix mapping every existing Go test to its Rust counterpart.
 Keep the Rust suite green from the first commit.
 
+The first task must also add mandatory pull-request CI for Rust immediately, before substantive
+porting begins. The workflow must run:
+
+```console
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets --all-features
+```
+
+Existing Go CI remains active during the migration, so both implementations are continuously
+verified until cutover.
+
 ### 2. Port shared types and invariants
 
 Port column types, columns, intervals, constraint representations, and small utilities. Use Rust
@@ -181,9 +193,9 @@ implementation. Remove the Go module only after the Rust suite covers the requir
 
 At cutover:
 
-- replace Go CI with Rust CI,
-- update the Makefile and pre-push hook,
-- rewrite `AGENTS.md` for Rust conventions,
+- remove the Go-only CI path while keeping the Rust CI introduced in the bootstrap task,
+- update the Makefile and pre-push hook so Rust is the default active implementation,
+- simplify `AGENTS.md` from dual-language migration guidance to Rust-only conventions,
 - update the README,
 - remove `go.mod`, `go.sum`, and active Go sources,
 - leave `python_poc/` frozen.
