@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use arrow_array::{
-    Array, BooleanArray, Int32Array, StringArray, TimestampMicrosecondArray,
-};
+use arrow_array::{Array, BooleanArray, Int32Array, StringArray, TimestampMicrosecondArray};
 use arrow_schema::{DataType, TimeUnit};
 use chrono::{Duration, TimeZone, Utc};
 
@@ -120,7 +118,9 @@ fn wipe() {
         .expect("wiped builder should be reusable");
     table.build_ints();
     assert_eq!(
-        table.get_ints("int_col").expect("integer getter should work"),
+        table
+            .get_ints("int_col")
+            .expect("integer getter should work"),
         Some(vec![20])
     );
 }
@@ -138,10 +138,7 @@ fn sort_ints() {
                 column("col1", ColumnType::Int),
                 column("col2", ColumnType::Int),
             ],
-            BTreeMap::from([
-                ("col1", vec![5, 3, 9]),
-                ("col2", vec![2, 2, 1]),
-            ]),
+            BTreeMap::from([("col1", vec![5, 3, 9]), ("col2", vec![2, 2, 1])]),
             BTreeMap::from([
                 ("col1".to_owned(), Some(vec![3, 5, 9])),
                 ("col2".to_owned(), Some(vec![1, 2, 2])),
@@ -180,7 +177,11 @@ fn sort_timestamps() {
     let mut table =
         Table::new(vec![column("ts", ColumnType::Timestamp)], 3).expect("valid table schema");
 
-    for timestamp in [base + Duration::seconds(2), base, base + Duration::seconds(1)] {
+    for timestamp in [
+        base + Duration::seconds(2),
+        base,
+        base + Duration::seconds(1),
+    ] {
         table
             .append("ts", TableValue::Timestamp(timestamp))
             .expect("timestamp should append");
