@@ -276,7 +276,7 @@ impl Error for ParserError {}
 
 /// Parses one SELECT query and lowers it into project-owned IR.
 pub fn parse_query(sql: &str) -> Result<QueryIR, ParserError> {
-    let (normalized_sql, natural_joins) = normalize_natural_joins(sql)?;
+    let (normalized_sql, join_modifiers) = normalize_join_syntax(sql)?;
     let dialect = GenericDialect {};
     let mut statements = Parser::parse_sql(&dialect, &normalized_sql)
         .map_err(|error| ParserError::Syntax(error.to_string()))?;
@@ -294,10 +294,10 @@ pub fn parse_query(sql: &str) -> Result<QueryIR, ParserError> {
         return Err(ParserError::UnsupportedStatement(statement.to_string()));
     };
 
-    lower_query(&query, &natural_joins)
+    lower_query(&query, &join_modifiers)
 }
 
-fn lower_query(query: &Query, natural_joins: &[bool]) -> Result<QueryIR, ParserError> {
+fn lower_query(query: &Query, join_modifiers: &[JoinModifiers]) -> Result<QueryIR, ParserError> {
     reject_query_extensions(query)?;
 
     let SetExpr::Select(select) = query.body.as_ref() else {
@@ -313,9 +313,9 @@ fn lower_query(query: &Query, natural_joins: &[bool]) -> Result<QueryIR, ParserE
     }
 
     let from = &select.from[0];
-    if natural_joins.len() != from.joins.len() {
+    if join_modifiers.len() != from.joins.len() {
         return Err(ParserError::UnsupportedSyntax(
-            "could not associate NATURAL modifiers with joins".to_owned(),
+            "could not associate join modifiers with joins".to_owned(),
         ));
     }
 
@@ -329,8 +329,8 @@ fn lower_query(query: &Query, natural_joins: &[bool]) -> Result<QueryIR, ParserE
     let joins = from
         .joins
         .iter()
-        .zip(natural_joins)
-        .map(|(join, natural)| lower_join(join, *natural))
+        .zip(join_modifiers)
+        .map(|(join, modifiers)| lower_join(join, *modifiers))
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut conditions = Vec::new();
@@ -549,7 +549,7 @@ fn lower_atom(expression: &Expr) -> Result<String, ParserError> {
     }
 }
 
-fn lower_join(join: &Join, natural: bool) -> Result<JoinIR, ParserError> {
+fn lower_join(join: &Join, modifiers: JoinModifiers) -> Result<JoinIR, ParserError> {
     if join.global {
         return Err(ParserError::UnsupportedJoin("GLOBAL JOIN".to_owned()));
     }
@@ -569,7 +569,17 @@ fn lower_join(join: &Join, natural: bool) -> Result<JoinIR, ParserError> {
         unsupported => return Err(ParserError::UnsupportedJoin(format!("{unsupported:?}"))),
     };
 
-    let kind = if natural { kind.natural()? } else { kind };
+    let kind = if modifiers.natural && modifiers.cross {
+        return Err(ParserError::UnsupportedJoin(
+            "NATURAL CROSS JOIN".to_owned(),
+        ));
+    } else if modifiers.cross {
+        JoinKind::Cross
+    } else if modifiers.natural {
+        kind.natural()?
+    } else {
+        kind
+    };
     let table = plain_table_name(&join.relation, true)?;
 
     let JoinConstraint::On(expression) = constraint else {
@@ -616,12 +626,18 @@ struct WordToken {
     upper: String,
 }
 
-fn normalize_natural_joins(sql: &str) -> Result<(String, Vec<bool>), ParserError> {
+#[derive(Debug, Clone, Copy, Default)]
+struct JoinModifiers {
+    natural: bool,
+    cross: bool,
+}
+
+fn normalize_join_syntax(sql: &str) -> Result<(String, Vec<JoinModifiers>), ParserError> {
     let mut characters: Vec<char> = sql.chars().collect();
     let words = scan_words(&characters)?;
 
-    let mut natural_ranges = Vec::new();
-    let mut natural_flags = Vec::new();
+    let mut ranges = Vec::new();
+    let mut modifiers = Vec::new();
 
     for (index, word) in words.iter().enumerate() {
         if word.upper != "JOIN" {
@@ -629,21 +645,25 @@ fn normalize_natural_joins(sql: &str) -> Result<(String, Vec<bool>), ParserError
         }
 
         let natural_index = natural_modifier_index(&words, index);
-        natural_flags.push(natural_index.is_some());
+        let cross_index = cross_modifier_index(&words, index);
+        modifiers.push(JoinModifiers {
+            natural: natural_index.is_some(),
+            cross: cross_index.is_some(),
+        });
 
-        if let Some(natural_index) = natural_index {
-            let natural = &words[natural_index];
-            natural_ranges.push((natural.start, natural.end));
+        for modifier_index in [natural_index, cross_index].into_iter().flatten() {
+            let modifier = &words[modifier_index];
+            ranges.push((modifier.start, modifier.end));
         }
     }
 
-    for (start, end) in natural_ranges {
+    for (start, end) in ranges {
         for character in &mut characters[start..end] {
             *character = ' ';
         }
     }
 
-    Ok((characters.into_iter().collect(), natural_flags))
+    Ok((characters.into_iter().collect(), modifiers))
 }
 
 fn natural_modifier_index(words: &[WordToken], join_index: usize) -> Option<usize> {
@@ -662,7 +682,19 @@ fn natural_modifier_index(words: &[WordToken], join_index: usize) -> Option<usiz
         index -= 1;
     }
 
-    if words[index].upper != "NATURAL" {
+    modifier_index(words, index, "NATURAL")
+}
+
+fn cross_modifier_index(words: &[WordToken], join_index: usize) -> Option<usize> {
+    if join_index == 0 {
+        return None;
+    }
+
+    modifier_index(words, join_index - 1, "CROSS")
+}
+
+fn modifier_index(words: &[WordToken], index: usize, expected: &str) -> Option<usize> {
+    if words[index].upper != expected {
         return None;
     }
 
