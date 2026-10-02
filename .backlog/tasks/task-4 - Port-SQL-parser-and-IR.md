@@ -1,7 +1,7 @@
 ---
 id: TASK-4
 title: Port SQL parser and IR
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-02'
 labels: []
@@ -19,9 +19,9 @@ syntax must still fail explicitly during lowering when the project cannot safely
 
 ## Acceptance Criteria
 
-- [ ] Current SELECT, FROM, JOIN, WHERE, QUALIFY, AND, OR, comparison, identifier, literal, and function parsing has Rust coverage.
-- [ ] Condition IR matches current supported lowering behavior.
-- [ ] Join kind and join condition IR match current supported behavior.
-- [ ] Unsupported constructs return explicit errors instead of being silently discarded.
-- [ ] Parser-specific AST types do not leak past the parser boundary.
-- [ ] Rust parser tests cover every current Go parser expectation before the task is complete.
+- [x] Current SELECT, FROM, JOIN, WHERE, QUALIFY, AND, OR, comparison, identifier, literal, and function parsing has Rust coverage.
+- [x] Condition IR matches current supported lowering behavior.
+- [x] Join kind and join condition IR match current supported behavior.
+- [x] Unsupported constructs return explicit errors instead of being silently discarded.
+- [x] Parser-specific AST types do not leak past the parser boundary.
+- [x] Rust parser tests cover every current Go parser expectation before the task is complete.
