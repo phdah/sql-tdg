@@ -16,10 +16,9 @@ fn constraints<'a>(table: &'a Table, column: &str) -> &'a [Constraint] {
 
 #[test]
 fn integer_conditions_map_to_typed_constraints() {
-    let query = parse_query(
-        "SELECT col_a, col_b FROM t WHERE col_a > 5 OR col_a = 10 AND col_b = 5",
-    )
-    .expect("query should parse");
+    let query =
+        parse_query("SELECT col_a, col_b FROM t WHERE col_a > 5 OR col_a = 10 AND col_b = 5")
+            .expect("query should parse");
     let mut table = Table::new(
         vec![
             Column::new("col_a", ColumnType::Int),
@@ -105,7 +104,8 @@ fn unknown_column_returns_error_without_mutating_schema() {
 
 #[test]
 fn unsupported_column_type_returns_error() {
-    let query = parse_query("SELECT col_a FROM t WHERE col_a = 'value'").expect("query should parse");
+    let query =
+        parse_query("SELECT col_a FROM t WHERE col_a = 'value'").expect("query should parse");
     let mut table = Table::new(vec![Column::new("col_a", ColumnType::String)], 12)
         .expect("table schema should be valid");
 
