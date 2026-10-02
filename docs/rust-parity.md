@@ -41,6 +41,10 @@ asserted by Go generator tests.
 | `internals/table/table_test.go::TestTable_AllColumnTypesUseArrowStorage` | `src/table/tests.rs::all_column_types_use_arrow_storage` | TASK-5 | exact |
 
 
+The three generator parity cases are covered in TASK-7 by `src/generator.rs`. They validate
+constraint satisfaction, deterministic seeded output, arbitrary row counts, and explicit errors
+without requiring Rust to reproduce Go `math/rand` samples.
+
 The constraint-mapping portion exercised by the three interop full-query tests is covered in
 TASK-6 by `src/interop/tests.rs`. Their generator-dependent end-to-end behavior remains assigned
 to TASK-8.
