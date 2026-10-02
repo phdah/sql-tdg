@@ -4,8 +4,8 @@ use crate::{IntConstraint, Interval};
 
 use super::SolverError;
 
-const DEFAULT_MIN: i32 = -1_000_000;
-const DEFAULT_MAX: i32 = 1_000_000;
+const DEFAULT_MIN: i32 = i32::MIN;
+const DEFAULT_MAX: i32 = i32::MAX;
 
 /// Allowed integer values represented as inclusive, non-overlapping intervals.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,8 +95,12 @@ impl IntDomain {
             let width_i64 = i64::from(interval.max()) - i64::from(interval.min()) + 1;
             let width = usize::try_from(width_i64).expect("valid interval width fits usize");
             if remaining < width {
-                let offset = i32::try_from(remaining).expect("domain offset fits i32");
-                return Ok(interval.min() + offset);
+                let offset = i64::try_from(remaining).map_err(|_| {
+                    SolverError::ValueIndexOutOfRange { index, value_count }
+                })?;
+                let value = i64::from(interval.min()) + offset;
+                return i32::try_from(value)
+                    .map_err(|_| SolverError::ValueIndexOutOfRange { index, value_count });
             }
             remaining -= width;
         }
@@ -188,33 +192,33 @@ mod tests {
             (IntConstraint::Equal(3), vec![(3, 3)], 3, 3),
             (
                 IntConstraint::NotEqual(3),
-                vec![(-1_000_000, 2), (4, 1_000_000)],
-                -1_000_000,
-                1_000_000,
+                vec![(i32::MIN, 2), (4, i32::MAX)],
+                i32::MIN,
+                i32::MAX,
             ),
             (
                 IntConstraint::LessThan(3),
-                vec![(-1_000_000, 2)],
-                -1_000_000,
+                vec![(i32::MIN, 2)],
+                i32::MIN,
                 2,
             ),
             (
                 IntConstraint::LessThanOrEqual(3),
-                vec![(-1_000_000, 3)],
-                -1_000_000,
+                vec![(i32::MIN, 3)],
+                i32::MIN,
                 3,
             ),
             (
                 IntConstraint::GreaterThan(3),
-                vec![(4, 1_000_000)],
+                vec![(4, i32::MAX)],
                 4,
-                1_000_000,
+                i32::MAX,
             ),
             (
                 IntConstraint::GreaterThanOrEqual(3),
-                vec![(3, 1_000_000)],
+                vec![(3, i32::MAX)],
                 3,
-                1_000_000,
+                i32::MAX,
             ),
         ];
 
@@ -231,6 +235,16 @@ mod tests {
             assert_eq!(domain.total_min(), expected_min);
             assert_eq!(domain.total_max(), expected_max);
         }
+    }
+
+    #[test]
+    fn default_domain_spans_full_signed_range() {
+        let domain = IntDomain::new();
+
+        assert_eq!(domain.total_min(), i32::MIN);
+        assert_eq!(domain.total_max(), i32::MAX);
+        assert_eq!(domain.value_at(0), Ok(i32::MIN));
+        assert_eq!(domain.value_at(domain.value_count() - 1), Ok(i32::MAX));
     }
 
     #[test]

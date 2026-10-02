@@ -2,30 +2,55 @@
 
 > SQL Query Test Data Generator
 
-Go from a SQL query, to test data that fulfills the conditions of the query. Take this
-query:
+sql-tdg is a Rust library that generates Arrow-backed test data satisfying the supported
+conditions of a SQL query.
+
+Given this query:
 
 ```sql
 select
     a,
     b
 from table
-    where a > 10
+where a > 10
 ```
 
-For this query to return any data, the column `a`, need to have values `> 10`. The `TDG`
-class can help you do this.
-
-By providing only a `query` and the `schema`, data matching the queries condition will be
-produced.
+and a schema containing an integer column `a`, sql-tdg narrows the column domain so generated
+values satisfy `a > 10`.
 
 ## Quick start
 
-Follow the guide found in the
-[example](https://github.com/phdah/sql-tdg/tree/main/python_poc/examples) directory.
+The project currently exposes a library API and has no CLI entry point.
 
-## Rust rewrite
+```rust
+use sql_tdg::{Column, ColumnType, Generator, Table, apply_conditions, parse_query};
 
-The active implementation is currently Go. The planned incremental rewrite to Rust is
-documented in [docs/rust-rewrite.md](docs/rust-rewrite.md) and tracked in the local
-Backlog.md board under the Rust rewrite milestone.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let query = parse_query("SELECT a FROM table WHERE a > 10")?;
+    let mut table = Table::new(vec![Column::new("a", ColumnType::Int)], 10)?;
+
+    apply_conditions(&query, &mut table)?;
+    Generator::new().generate(&mut table, 42)?;
+    table.build_ints();
+
+    let values = table.get_ints("a")?.expect("integer column should be built");
+    assert!(values.iter().all(|value| *value > 10));
+
+    Ok(())
+}
+```
+
+Supported generation domains currently include integers, booleans, and timestamps. Unsupported
+SQL constructs, operators, or generation types return explicit errors rather than silently
+producing data that may violate the query.
+
+The original Python proof of concept remains under `python_poc/` as frozen reference material and
+is not part of the active implementation.
+
+## Verification
+
+Run the complete Rust verification suite with:
+
+```console
+make rust-checks
+```
