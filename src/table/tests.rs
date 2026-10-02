@@ -340,7 +340,9 @@ fn build_behavior_is_independent_per_type() {
     table.build_ints();
 
     assert_eq!(
-        table.get_ints("int_col").expect("integer getter should work"),
+        table
+            .get_ints("int_col")
+            .expect("integer getter should work"),
         Some(vec![1])
     );
     assert_eq!(
