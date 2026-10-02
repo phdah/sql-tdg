@@ -23,3 +23,9 @@ produced.
 
 Follow the guide found in the
 [example](https://github.com/phdah/sql-tdg/tree/main/python_poc/examples) directory.
+
+## Rust rewrite
+
+The active implementation is currently Go. The planned incremental rewrite to Rust is
+documented in [docs/rust-rewrite.md](docs/rust-rewrite.md) and tracked in the local
+Backlog.md board under the Rust rewrite milestone.
