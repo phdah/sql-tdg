@@ -1,24 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Run the python test script
-make -C python_poc
-EXIT=$?
-
-# Check if the script succeeded
-if [ $EXIT -ne 0 ]; then
-    echo "ERROR: Pre-push checks failed. Push aborted."
-    exit 1
-fi
-
-# Run the go test script
-make -C .
-EXIT=$?
-
-# Check if the script succeeded
-if [ $EXIT -ne 0 ]; then
-    echo "ERROR: Pre-push checks failed. Push aborted."
-    exit 1
-fi
+make rust-checks
 
 echo "All checks passed. Proceeding with push."
-exit 0
