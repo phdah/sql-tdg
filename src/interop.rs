@@ -80,7 +80,10 @@ impl fmt::Display for InteropError {
                 write!(formatter, "invalid boolean {value:?} for column {column:?}")
             }
             Self::InvalidTimestamp { column, value, .. } => {
-                write!(formatter, "invalid timestamp {value:?} for column {column:?}")
+                write!(
+                    formatter,
+                    "invalid timestamp {value:?} for column {column:?}"
+                )
             }
             Self::UnsupportedColumnType {
                 column,
@@ -135,17 +138,18 @@ pub fn apply_conditions(query: &QueryIR, table: &mut Table) -> Result<(), Intero
     }
 
     for (column_name, constraint) in mapped {
-        let column = table
-            .schema_column_mut(&column_name)
-            .ok_or_else(|| InteropError::UnknownColumn {
-                column: column_name.clone(),
-            })?;
-        column
-            .add_constraint(constraint)
-            .map_err(|source| InteropError::ConstraintTypeMismatch {
+        let column =
+            table
+                .schema_column_mut(&column_name)
+                .ok_or_else(|| InteropError::UnknownColumn {
+                    column: column_name.clone(),
+                })?;
+        column.add_constraint(constraint).map_err(|source| {
+            InteropError::ConstraintTypeMismatch {
                 column: column_name,
                 source,
-            })?;
+            }
+        })?;
     }
 
     Ok(())
@@ -158,13 +162,14 @@ fn make_constraint(
 ) -> Result<Constraint, InteropError> {
     match column_type {
         ColumnType::Int => {
-            let value = condition
-                .right()
-                .parse::<i32>()
-                .map_err(|_| InteropError::InvalidInteger {
-                    column: column.to_owned(),
-                    value: condition.right().to_owned(),
-                })?;
+            let value =
+                condition
+                    .right()
+                    .parse::<i32>()
+                    .map_err(|_| InteropError::InvalidInteger {
+                        column: column.to_owned(),
+                        value: condition.right().to_owned(),
+                    })?;
             let constraint = match condition.operator() {
                 ConditionOperator::Equal => IntConstraint::Equal(value),
                 ConditionOperator::NotEqual => IntConstraint::NotEqual(value),
