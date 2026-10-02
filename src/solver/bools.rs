@@ -23,10 +23,10 @@ impl BoolDomain {
             BoolConstraint::IsFalse => false,
         };
 
-        if let Some(existing) = self.required {
-            if existing != requested {
-                return Err(SolverError::UnsatisfiableDomain);
-            }
+        if let Some(existing) = self.required
+            && existing != requested
+        {
+            return Err(SolverError::UnsatisfiableDomain);
         }
 
         self.required = Some(requested);
