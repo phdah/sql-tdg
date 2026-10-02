@@ -498,9 +498,11 @@ fn is_supported_binary_operator(operator: &BinaryOperator) -> bool {
 
 fn lower_conditions(expression: &Expr, out: &mut Vec<ConditionIR>) -> Result<(), ParserError> {
     match expression {
-        Expr::BinaryOp { left, op, right }
-            if matches!(op, BinaryOperator::And | BinaryOperator::Or) =>
-        {
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::And | BinaryOperator::Or,
+            right,
+        } => {
             lower_conditions(left, out)?;
             lower_conditions(right, out)
         }
@@ -601,7 +603,7 @@ fn plain_table_name(table: &TableFactor, joined: bool) -> Result<String, ParserE
             .split('.')
             .next()
             .map(str::to_owned)
-            .ok_or_else(|| ParserError::UnsupportedTable(rendered))
+            .ok_or(ParserError::UnsupportedTable(rendered))
     } else {
         Ok(rendered)
     }
