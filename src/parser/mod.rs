@@ -249,11 +249,15 @@ impl fmt::Display for ParserError {
             Self::UnsupportedStatement(statement) => {
                 write!(formatter, "unsupported SQL statement: {statement}")
             }
-            Self::UnsupportedQuery(clause) => {\n                write!(formatter, "unsupported query clause: {clause}")\n            }
+            Self::UnsupportedQuery(clause) => {
+                write!(formatter, "unsupported query clause: {clause}")
+            }
             Self::UnsupportedProjection(projection) => {
                 write!(formatter, "unsupported projection: {projection}")
             }
-            Self::UnsupportedTable(table) => {\n                write!(formatter, "unsupported table reference: {table}")\n            }
+            Self::UnsupportedTable(table) => {
+                write!(formatter, "unsupported table reference: {table}")
+            }
             Self::UnsupportedJoin(join) => write!(formatter, "unsupported join: {join}"),
             Self::UnsupportedJoinConstraint(constraint) => {
                 write!(formatter, "unsupported join constraint: {constraint}")
@@ -261,7 +265,9 @@ impl fmt::Display for ParserError {
             Self::UnsupportedExpression(expression) => {
                 write!(formatter, "unsupported expression: {expression}")
             }
-            Self::UnsupportedSyntax(syntax) => {\n                write!(formatter, "unsupported SQL syntax: {syntax}")\n            }
+            Self::UnsupportedSyntax(syntax) => {
+                write!(formatter, "unsupported SQL syntax: {syntax}")
+            }
         }
     }
 }
@@ -272,8 +278,8 @@ impl Error for ParserError {}
 pub fn parse_query(sql: &str) -> Result<QueryIR, ParserError> {
     let (normalized_sql, natural_joins) = normalize_natural_joins(sql)?;
     let dialect = GenericDialect {};
-    let mut statements =
-        Parser::parse_sql(&dialect, &normalized_sql).map_err(|error| ParserError::Syntax(error.to_string()))?;
+    let mut statements = Parser::parse_sql(&dialect, &normalized_sql)
+        .map_err(|error| ParserError::Syntax(error.to_string()))?;
 
     if statements.len() != 1 {
         return Err(ParserError::ExpectedSingleStatement {
@@ -492,7 +498,9 @@ fn is_supported_binary_operator(operator: &BinaryOperator) -> bool {
 
 fn lower_conditions(expression: &Expr, out: &mut Vec<ConditionIR>) -> Result<(), ParserError> {
     match expression {
-        Expr::BinaryOp { left, op, right }\n            if matches!(op, BinaryOperator::And | BinaryOperator::Or) =>\n        {
+        Expr::BinaryOp { left, op, right }
+            if matches!(op, BinaryOperator::And | BinaryOperator::Or) =>
+        {
             lower_conditions(left, out)?;
             lower_conditions(right, out)
         }
