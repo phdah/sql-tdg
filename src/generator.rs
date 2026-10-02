@@ -239,13 +239,12 @@ impl ColumnPlan {
             }
             GenerationDomain::Timestamp(domain) => {
                 let index = sample_index(rng, domain.value_count(), &self.name)?;
-                let value =
-                    domain
-                        .value_at(index)
-                        .map_err(|source| GeneratorError::Solver {
-                            column: self.name.clone(),
-                            source,
-                        })?;
+                let value = domain
+                    .value_at(index)
+                    .map_err(|source| GeneratorError::Solver {
+                        column: self.name.clone(),
+                        source,
+                    })?;
                 Ok(TableValue::Timestamp(value))
             }
             GenerationDomain::Bool(domain) => Ok(TableValue::Bool(domain.value())),
