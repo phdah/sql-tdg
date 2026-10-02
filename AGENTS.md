@@ -92,6 +92,12 @@ names; no stutter (`table.Table` is fine, `table.TableSchema` is not). Every exp
 identifier has a doc comment starting with its name. Each package has a `// Package x ...`
 comment describing its responsibility. Use comments to explain *why*, not *what*.
 
+**Current-state comments** Source comments and API documentation describe only the current
+design, behavior, invariants, and rationale. Never explain code by referring to a previous
+implementation, migration, rewrite, legacy behavior, historical state, or what the code used to
+do. History belongs in version control and task records, not in source comments. Write every
+comment so it remains correct if all prior implementations and migration context disappear.
+
 **Minimize dependency footprint** The standard library, participle, and testify should
 cover most needs. Confirm with the user before adding a module. Keep `go.mod` tidy with
 `go mod tidy`; direct dependencies must not be marked `// indirect`.
