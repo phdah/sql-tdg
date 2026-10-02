@@ -27,5 +27,6 @@ The Python proof of concept remains frozen.
 - [ ] Rust CI created in TASK-1 remains mandatory and delegates verification to the Makefile.
 - [ ] Go-only CI is removed.
 - [ ] Makefile targets and the pre-push hook use the Rust toolchain as the active implementation.
+- [ ] The default integer domain uses the full signed range: `i32::MIN..=i32::MAX`, while timestamps remain `0..=i32::MAX`.
 - [ ] Active Go implementation files, go.mod, and go.sum are removed.
 - [ ] The repository is green after the Go removal.
