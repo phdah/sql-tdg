@@ -18,6 +18,9 @@ Rust CI is mandatory in this first task. As soon as there is Rust code to test, 
 must verify formatting, Clippy, and tests so no later migration task can introduce unchecked
 Rust code.
 
+The GitHub workflow delegates Rust verification to the root Makefile so local and CI execution
+use the same commands.
+
 Do not port every Rust test up front as a permanently failing suite. Port tests together with each
 migration slice so failures stay localized.
 
@@ -26,9 +29,10 @@ migration slice so failures stay localized.
 - [x] A root Rust crate is initialized without removing the Go module.
 - [x] Repository tooling can run both Go and Rust tests.
 - [x] A Rust pull-request workflow is added in this task, not deferred to later migration work.
-- [x] Rust CI runs `cargo fmt --all -- --check`.
-- [x] Rust CI runs `cargo clippy --all-targets --all-features -- -D warnings`.
-- [x] Rust CI runs `cargo test --all-targets --all-features`.
+- [x] Rust CI calls `make rust-checks` rather than duplicating Cargo commands in workflow YAML.
+- [x] `make rust-checks` runs `cargo fmt --all -- --check`.
+- [x] `make rust-checks` runs `cargo clippy --all-targets --all-features -- -D warnings`.
+- [x] `make rust-checks` runs `cargo test --all-targets --all-features`.
 - [x] Existing Go CI remains enabled so pull requests verify both implementations during migration.
 - [x] Existing Go tests are catalogued in a parity matrix with a planned Rust counterpart.
 - [x] The parity contract distinguishes exact behavioral parity from seeded-generator determinism.
