@@ -151,9 +151,7 @@ impl ColumnBuilder {
     fn new(column_type: ColumnType) -> Self {
         match column_type {
             ColumnType::Int => Self::Int(Int32Builder::new()),
-            ColumnType::Timestamp => {
-                Self::Timestamp(TimestampMicrosecondBuilder::new())
-            }
+            ColumnType::Timestamp => Self::Timestamp(TimestampMicrosecondBuilder::new()),
             ColumnType::Bool => Self::Bool(BooleanBuilder::new()),
             ColumnType::String => Self::String(StringBuilder::new()),
         }
@@ -209,13 +207,7 @@ impl Table {
 
         let fields = schema
             .iter()
-            .map(|column| {
-                Field::new(
-                    column.name(),
-                    arrow_data_type(column.column_type()),
-                    false,
-                )
-            })
+            .map(|column| Field::new(column.name(), arrow_data_type(column.column_type()), false))
             .collect::<Vec<_>>();
 
         Ok(Self {
@@ -350,9 +342,7 @@ impl Table {
     }
 
     /// Returns all integer columns keyed by schema column name.
-    pub fn get_all_ints(
-        &self,
-    ) -> Result<BTreeMap<String, Option<Vec<i32>>>, TableError> {
+    pub fn get_all_ints(&self) -> Result<BTreeMap<String, Option<Vec<i32>>>, TableError> {
         let mut result = BTreeMap::new();
         for column in &self.schema {
             if column.column_type() == ColumnType::Int {
@@ -363,21 +353,16 @@ impl Table {
     }
 
     /// Returns the built timestamp values for one column, or None before finalization.
-    pub fn get_timestamps(
-        &self,
-        column: &str,
-    ) -> Result<Option<Vec<DateTime<Utc>>>, TableError> {
-        let array =
-            self.typed_array::<TimestampMicrosecondArray>(column, ColumnType::Timestamp)?;
+    pub fn get_timestamps(&self, column: &str) -> Result<Option<Vec<DateTime<Utc>>>, TableError> {
+        let array = self.typed_array::<TimestampMicrosecondArray>(column, ColumnType::Timestamp)?;
         array
             .map(|array| {
                 array
                     .iter()
                     .map(|value| {
-                        let micros =
-                            value.ok_or_else(|| TableError::UnexpectedNull {
-                                column: column.to_owned(),
-                            })?;
+                        let micros = value.ok_or_else(|| TableError::UnexpectedNull {
+                            column: column.to_owned(),
+                        })?;
                         datetime_from_micros(column, micros)
                     })
                     .collect()
@@ -410,9 +395,7 @@ impl Table {
     }
 
     /// Returns all boolean columns keyed by schema column name.
-    pub fn get_all_bools(
-        &self,
-    ) -> Result<BTreeMap<String, Option<Vec<bool>>>, TableError> {
+    pub fn get_all_bools(&self) -> Result<BTreeMap<String, Option<Vec<bool>>>, TableError> {
         let mut result = BTreeMap::new();
         for column in &self.schema {
             if column.column_type() == ColumnType::Bool {
@@ -423,10 +406,7 @@ impl Table {
     }
 
     /// Returns the built string values for one column, or None before finalization.
-    pub fn get_strings(
-        &self,
-        column: &str,
-    ) -> Result<Option<Vec<String>>, TableError> {
+    pub fn get_strings(&self, column: &str) -> Result<Option<Vec<String>>, TableError> {
         let array = self.typed_array::<StringArray>(column, ColumnType::String)?;
         array
             .map(|array| {
@@ -445,16 +425,11 @@ impl Table {
     }
 
     /// Returns all string columns keyed by schema column name.
-    pub fn get_all_strings(
-        &self,
-    ) -> Result<BTreeMap<String, Option<Vec<String>>>, TableError> {
+    pub fn get_all_strings(&self) -> Result<BTreeMap<String, Option<Vec<String>>>, TableError> {
         let mut result = BTreeMap::new();
         for column in &self.schema {
             if column.column_type() == ColumnType::String {
-                result.insert(
-                    column.name().to_owned(),
-                    self.get_strings(column.name())?,
-                );
+                result.insert(column.name().to_owned(), self.get_strings(column.name())?);
             }
         }
         Ok(result)
@@ -477,11 +452,7 @@ impl Table {
         }
     }
 
-    fn typed_array<T>(
-        &self,
-        column: &str,
-        requested: ColumnType,
-    ) -> Result<Option<&T>, TableError>
+    fn typed_array<T>(&self, column: &str, requested: ColumnType) -> Result<Option<&T>, TableError>
     where
         T: Array + 'static,
     {
@@ -514,10 +485,7 @@ impl Table {
             .transpose()
     }
 
-    fn sort_built_type(
-        &mut self,
-        column_type: ColumnType,
-    ) -> Result<(), TableError> {
+    fn sort_built_type(&mut self, column_type: ColumnType) -> Result<(), TableError> {
         for storage in self.columns.values_mut() {
             if storage.column_type != column_type {
                 continue;
@@ -526,10 +494,9 @@ impl Table {
             let Some(array) = &storage.array else {
                 continue;
             };
-            let sorted =
-                sort(array.as_ref(), None).map_err(|error| TableError::Arrow {
-                    message: error.to_string(),
-                })?;
+            let sorted = sort(array.as_ref(), None).map_err(|error| TableError::Arrow {
+                message: error.to_string(),
+            })?;
             storage.array = Some(sorted);
         }
         Ok(())
@@ -539,18 +506,13 @@ impl Table {
 fn arrow_data_type(column_type: ColumnType) -> DataType {
     match column_type {
         ColumnType::Int => DataType::Int32,
-        ColumnType::Timestamp => {
-            DataType::Timestamp(TimeUnit::Microsecond, None)
-        }
+        ColumnType::Timestamp => DataType::Timestamp(TimeUnit::Microsecond, None),
         ColumnType::Bool => DataType::Boolean,
         ColumnType::String => DataType::Utf8,
     }
 }
 
-fn collect_non_null<T, I>(
-    values: I,
-    column: &str,
-) -> Result<Vec<T>, TableError>
+fn collect_non_null<T, I>(values: I, column: &str) -> Result<Vec<T>, TableError>
 where
     I: IntoIterator<Item = Option<T>>,
 {
@@ -564,18 +526,14 @@ where
         .collect()
 }
 
-fn datetime_from_micros(
-    column: &str,
-    micros: i64,
-) -> Result<DateTime<Utc>, TableError> {
+fn datetime_from_micros(column: &str, micros: i64) -> Result<DateTime<Utc>, TableError> {
     let seconds = micros.div_euclid(1_000_000);
-    let micros_remainder =
-        u32::try_from(micros.rem_euclid(1_000_000)).map_err(|_| {
-            TableError::TimestampOutOfRange {
-                column: column.to_owned(),
-                micros,
-            }
-        })?;
+    let micros_remainder = u32::try_from(micros.rem_euclid(1_000_000)).map_err(|_| {
+        TableError::TimestampOutOfRange {
+            column: column.to_owned(),
+            micros,
+        }
+    })?;
     let nanos =
         micros_remainder
             .checked_mul(1_000)
@@ -584,10 +542,8 @@ fn datetime_from_micros(
                 micros,
             })?;
 
-    DateTime::<Utc>::from_timestamp(seconds, nanos).ok_or_else(|| {
-        TableError::TimestampOutOfRange {
-            column: column.to_owned(),
-            micros,
-        }
+    DateTime::<Utc>::from_timestamp(seconds, nanos).ok_or_else(|| TableError::TimestampOutOfRange {
+        column: column.to_owned(),
+        micros,
     })
 }
