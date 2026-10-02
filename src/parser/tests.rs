@@ -1,6 +1,4 @@
-use super::{
-    ConditionIR, ConditionOperator, JoinIR, JoinKind, ParserError, parse_query,
-};
+use super::{ConditionIR, ConditionOperator, JoinIR, JoinKind, ParserError, parse_query};
 
 fn condition(left: &str, operator: ConditionOperator, right: &str) -> ConditionIR {
     ConditionIR::comparison(left.to_owned(), operator, right.to_owned())
@@ -28,11 +26,7 @@ fn query_parsing() {
             JoinIR {
                 kind: JoinKind::Left,
                 table: "u".to_owned(),
-                conditions: vec![condition(
-                    "t.x",
-                    ConditionOperator::Equal,
-                    "u.p"
-                )],
+                conditions: vec![condition("t.x", ConditionOperator::Equal, "u.p")],
             },
             JoinIR {
                 kind: JoinKind::Inner,
@@ -45,20 +39,12 @@ fn query_parsing() {
             JoinIR {
                 kind: JoinKind::Cross,
                 table: "t".to_owned(),
-                conditions: vec![condition(
-                    "t.a",
-                    ConditionOperator::GreaterThan,
-                    "t.l"
-                )],
+                conditions: vec![condition("t.a", ConditionOperator::GreaterThan, "t.l")],
             },
             JoinIR {
                 kind: JoinKind::NaturalInner,
                 table: "t".to_owned(),
-                conditions: vec![condition(
-                    "t.a",
-                    ConditionOperator::GreaterThan,
-                    "t.l"
-                )],
+                conditions: vec![condition("t.a", ConditionOperator::GreaterThan, "t.l")],
             },
         ]
     );
@@ -69,11 +55,7 @@ fn query_parsing() {
             condition("y", ConditionOperator::Equal, "10"),
             condition("t", ConditionOperator::Boolean, "true"),
             condition("x", ConditionOperator::Equal, "10"),
-            condition(
-                "t",
-                ConditionOperator::Equal,
-                r#""2025-06-19""#
-            ),
+            condition("t", ConditionOperator::Equal, r#""2025-06-19""#),
         ]
     );
 }
@@ -134,10 +116,7 @@ fn unsupported_join_constraint_returns_error() {
     let error =
         parse_query("SELECT x FROM t JOIN u USING (x)").expect_err("USING should not be lowered");
 
-    assert!(matches!(
-        error,
-        ParserError::UnsupportedJoinConstraint(_)
-    ));
+    assert!(matches!(error, ParserError::UnsupportedJoinConstraint(_)));
 }
 
 #[test]
