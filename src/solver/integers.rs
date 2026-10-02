@@ -95,9 +95,8 @@ impl IntDomain {
             let width_i64 = i64::from(interval.max()) - i64::from(interval.min()) + 1;
             let width = usize::try_from(width_i64).expect("valid interval width fits usize");
             if remaining < width {
-                let offset = i64::try_from(remaining).map_err(|_| {
-                    SolverError::ValueIndexOutOfRange { index, value_count }
-                })?;
+                let offset = i64::try_from(remaining)
+                    .map_err(|_| SolverError::ValueIndexOutOfRange { index, value_count })?;
                 let value = i64::from(interval.min()) + offset;
                 return i32::try_from(value)
                     .map_err(|_| SolverError::ValueIndexOutOfRange { index, value_count });
@@ -196,12 +195,7 @@ mod tests {
                 i32::MIN,
                 i32::MAX,
             ),
-            (
-                IntConstraint::LessThan(3),
-                vec![(i32::MIN, 2)],
-                i32::MIN,
-                2,
-            ),
+            (IntConstraint::LessThan(3), vec![(i32::MIN, 2)], i32::MIN, 2),
             (
                 IntConstraint::LessThanOrEqual(3),
                 vec![(i32::MIN, 3)],
