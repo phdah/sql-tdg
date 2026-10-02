@@ -88,20 +88,15 @@ The Rust implementation should prefer typed enums and concrete values over a dir
 of Go interfaces and `any`. Unsupported SQL, operators, and column types must still fail
 explicitly rather than being silently ignored.
 
-Likely dependency categories are:
-
-- a Rust SQL parser that can be lowered into the existing project IR,
-- Apache Arrow Rust crates,
-- a deterministic RNG abstraction,
-- date/time parsing support.
-
-Exact crates and versions should be selected in the bootstrap task rather than fixed by this
-planning change.
+Dependency choices are tracked in [rust-dependencies.md](rust-dependencies.md). TASK-1 adds no
+third-party crate because the bootstrap needs none; later tasks add only the selected dependency
+when it becomes necessary.
 
 ## Parity contract
 
 Parity means preserving externally meaningful behavior, not reproducing every Go implementation
-detail.
+detail. The complete Go-to-Rust test mapping lives in
+[rust-parity.md](rust-parity.md).
 
 Exact parity is appropriate for:
 
@@ -140,13 +135,8 @@ tooling, and create a parity matrix mapping every existing Go test to its Rust c
 Keep the Rust suite green from the first commit.
 
 The first task must also add mandatory pull-request CI for Rust immediately, before substantive
-porting begins. The workflow must run:
-
-```console
-cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets --all-features
-```
+porting begins. The workflow must call `make rust-checks`; the Makefile owns the Cargo commands
+for formatting, Clippy, and tests so local and CI verification are identical.
 
 Existing Go CI remains active during the migration, so both implementations are continuously
 verified until cutover.
@@ -186,14 +176,25 @@ the first major cross-component integration slice.
 Connect solver domains to Arrow-backed table generation. Make seeded generation deterministic and
 race-free. Return errors rather than panicking on invalid row counts or unsupported column types.
 
-### 8. End-to-end parity and cutover
+### 8. Validate end-to-end Go/Rust parity
 
-Port the full-query tests, run Go and Rust parity together, then make Rust the only active
-implementation. Remove the Go module only after the Rust suite covers the required behavior.
+Port the full-query tests and build a repeatable parity harness that runs the same representative
+inputs through both implementations. Compare deterministic behavior directly and compare generator
+behavior by semantics, constraint satisfaction, and Rust determinism rather than requiring Rust to
+reproduce Go `math/rand` samples.
+
+This task is an explicit acceptance gate. The user must also run representative inputs through the
+Go and Rust applications interactively, one after another, and accept the observed parity. The Go
+implementation remains present and runnable throughout this task.
+
+### 9. Cut over to Rust and remove Go
+
+Only after TASK-8 is complete and accepted, make Rust the sole active implementation.
 
 At cutover:
 
 - remove the Go-only CI path while keeping the Rust CI introduced in the bootstrap task,
+- keep Rust verification delegated through the Makefile,
 - update the Makefile and pre-push hook so Rust is the default active implementation,
 - simplify `AGENTS.md` from dual-language migration guidance to Rust-only conventions,
 - update the README,
@@ -208,6 +209,7 @@ table first lets the final migration steps exercise real end-to-end behavior rat
 
 ## Completion criterion
 
-The rewrite is complete when the Rust implementation is the sole active implementation, all
-ported parity tests pass, unsupported paths remain explicit, seeded generation is deterministic,
-and the repository tooling/documentation no longer assumes Go.
+The rewrite is complete only after TASK-8 has demonstrated and received explicit acceptance for
+end-to-end Go/Rust parity, and TASK-9 has then removed the Go implementation. At that point Rust is
+the sole active implementation, unsupported paths remain explicit, seeded generation is
+deterministic, and repository tooling/documentation no longer assumes Go.
