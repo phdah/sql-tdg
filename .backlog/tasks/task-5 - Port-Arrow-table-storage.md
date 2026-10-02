@@ -1,7 +1,7 @@
 ---
 id: TASK-5
 title: Port Arrow table storage
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-02'
 labels: []
@@ -19,10 +19,10 @@ implementation as long as observable table behavior remains equivalent.
 
 ## Acceptance Criteria
 
-- [ ] Integer, timestamp, boolean, and string columns use Arrow-backed storage.
-- [ ] Append validates column existence and value type.
-- [ ] Finalization/build behavior is covered for every supported column type.
-- [ ] Typed getters preserve schema column identity and values.
-- [ ] Wipe resets built arrays and builders safely for reuse.
-- [ ] Integer and timestamp sorting preserve current observable behavior.
-- [ ] Rust table tests cover every current Go table expectation before the task is complete.
+- [x] Integer, timestamp, boolean, and string columns use Arrow-backed storage.
+- [x] Append validates column existence and value type.
+- [x] Finalization/build behavior is covered for every supported column type.
+- [x] Typed getters preserve schema column identity and values.
+- [x] Wipe resets built arrays and builders safely for reuse.
+- [x] Integer and timestamp sorting preserve current observable behavior.
+- [x] Rust table tests cover every current Go table expectation before the task is complete.
