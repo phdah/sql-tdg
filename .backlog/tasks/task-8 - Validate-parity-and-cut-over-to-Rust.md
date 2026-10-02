@@ -24,6 +24,9 @@ The Python proof of concept remains frozen.
 - [ ] Seeded Rust generation is deterministic and all generated rows satisfy supported constraints.
 - [ ] Unsupported behavior remains explicit rather than being silently accepted.
 - [ ] Rust becomes the implementation described by README.md and AGENTS.md.
-- [ ] CI, Makefile targets, and the pre-push hook use the Rust toolchain.
+- [ ] AGENTS.md is simplified from dual-language migration guidance to Rust-only guidance.
+- [ ] Rust CI created in TASK-1 remains mandatory with formatting, Clippy, and tests.
+- [ ] Go-only CI is removed after parity is complete.
+- [ ] Makefile targets and the pre-push hook use the Rust toolchain.
 - [ ] Active Go implementation files, go.mod, and go.sum are removed.
 - [ ] The repository is green after the Go removal.
