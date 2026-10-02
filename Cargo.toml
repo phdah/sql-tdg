@@ -1,0 +1,9 @@
+[package]
+name = "sql-tdg"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Generate test data that satisfies SQL query conditions"
+
+[lib]
+path = "src/lib.rs"

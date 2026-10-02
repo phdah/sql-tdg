@@ -88,20 +88,15 @@ The Rust implementation should prefer typed enums and concrete values over a dir
 of Go interfaces and `any`. Unsupported SQL, operators, and column types must still fail
 explicitly rather than being silently ignored.
 
-Likely dependency categories are:
-
-- a Rust SQL parser that can be lowered into the existing project IR,
-- Apache Arrow Rust crates,
-- a deterministic RNG abstraction,
-- date/time parsing support.
-
-Exact crates and versions should be selected in the bootstrap task rather than fixed by this
-planning change.
+Dependency choices are tracked in [rust-dependencies.md](rust-dependencies.md). TASK-1 adds no
+third-party crate because the bootstrap needs none; later tasks add only the selected dependency
+when it becomes necessary.
 
 ## Parity contract
 
 Parity means preserving externally meaningful behavior, not reproducing every Go implementation
-detail.
+detail. The complete Go-to-Rust test mapping lives in
+[rust-parity.md](rust-parity.md).
 
 Exact parity is appropriate for:
 

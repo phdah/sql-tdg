@@ -1,7 +1,7 @@
 ---
 id: TASK-1
 title: Bootstrap Rust and parity harness
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-02'
 labels: []
@@ -23,14 +23,14 @@ migration slice so failures stay localized.
 
 ## Acceptance Criteria
 
-- [ ] A root Rust crate is initialized without removing the Go module.
-- [ ] Repository tooling can run both Go and Rust tests.
-- [ ] A Rust pull-request workflow is added in this task, not deferred to later migration work.
-- [ ] Rust CI runs `cargo fmt --all -- --check`.
-- [ ] Rust CI runs `cargo clippy --all-targets --all-features -- -D warnings`.
-- [ ] Rust CI runs `cargo test --all-targets --all-features`.
-- [ ] Existing Go CI remains enabled so pull requests verify both implementations during migration.
-- [ ] Existing Go tests are catalogued in a parity matrix with a planned Rust counterpart.
-- [ ] The parity contract distinguishes exact behavioral parity from seeded-generator determinism.
-- [ ] Required Rust dependencies are selected deliberately and documented.
-- [ ] The initial Rust suite is green.
+- [x] A root Rust crate is initialized without removing the Go module.
+- [x] Repository tooling can run both Go and Rust tests.
+- [x] A Rust pull-request workflow is added in this task, not deferred to later migration work.
+- [x] Rust CI runs `cargo fmt --all -- --check`.
+- [x] Rust CI runs `cargo clippy --all-targets --all-features -- -D warnings`.
+- [x] Rust CI runs `cargo test --all-targets --all-features`.
+- [x] Existing Go CI remains enabled so pull requests verify both implementations during migration.
+- [x] Existing Go tests are catalogued in a parity matrix with a planned Rust counterpart.
+- [x] The parity contract distinguishes exact behavioral parity from seeded-generator determinism.
+- [x] Required Rust dependencies are selected deliberately and documented.
+- [x] The initial Rust suite is green.
