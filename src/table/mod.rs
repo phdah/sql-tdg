@@ -179,6 +179,9 @@ impl ColumnStorage {
     }
 }
 
+/// Built timestamp columns keyed by schema column name.
+pub type TimestampColumns = BTreeMap<String, Option<Vec<DateTime<Utc>>>>;
+
 /// Arrow-backed table with one builder and optional finalized array per schema column.
 pub struct Table {
     schema: Vec<Column>,
@@ -371,9 +374,7 @@ impl Table {
     }
 
     /// Returns all timestamp columns keyed by schema column name.
-    pub fn get_all_timestamps(
-        &self,
-    ) -> Result<BTreeMap<String, Option<Vec<DateTime<Utc>>>>, TableError> {
+    pub fn get_all_timestamps(&self) -> Result<TimestampColumns, TableError> {
         let mut result = BTreeMap::new();
         for column in &self.schema {
             if column.column_type() == ColumnType::Timestamp {
