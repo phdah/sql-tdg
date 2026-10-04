@@ -33,49 +33,44 @@ impl TestCaseMetadata {
         protocol: ProtocolSnapshot,
         relations: Vec<GeneratedRelation>,
     ) -> Result<Self, TestCaseError> {
-        Self::new_with_generator_version(
-            env!("CARGO_PKG_VERSION"),
+        Self::validate(Self {
+            generator_version: env!("CARGO_PKG_VERSION").to_owned(),
             workload,
             target,
             boundary,
-            dialect,
+            dialect: dialect.into(),
             seed,
             protocol,
             relations,
-        )
+        })
     }
 
-    fn new_with_generator_version(
-        generator_version: impl Into<String>,
-        workload: WorkloadIdentity,
-        target: TestTarget,
-        boundary: GenerationBoundary,
-        dialect: impl Into<String>,
-        seed: u64,
-        protocol: ProtocolSnapshot,
-        mut relations: Vec<GeneratedRelation>,
-    ) -> Result<Self, TestCaseError> {
-        let generator_version = required_string(generator_version, "generator version")?;
-        let dialect = required_string(dialect, "dialect")?;
-        if relations.is_empty() {
+    fn validate(mut metadata: Self) -> Result<Self, TestCaseError> {
+        metadata.generator_version =
+            required_string(metadata.generator_version, "generator version")?;
+        metadata.dialect = required_string(metadata.dialect, "dialect")?;
+        if metadata.relations.is_empty() {
             return Err(TestCaseError::EmptyCollection {
                 field: "generated relations",
             });
         }
 
-        relations.sort_by(|left, right| left.relation().cmp(right.relation()));
-        let relation_names = relations
+        metadata
+            .relations
+            .sort_by(|left, right| left.relation().cmp(right.relation()));
+        let relation_names = metadata
+            .relations
             .iter()
             .map(|relation| relation.relation().to_owned())
             .collect::<Vec<_>>();
         reject_duplicates(&relation_names)?;
 
-        if boundary.kind() == BoundaryKind::IntermediateRelations {
+        if metadata.boundary.kind() == BoundaryKind::IntermediateRelations {
             let generated = relation_names
                 .iter()
                 .map(String::as_str)
                 .collect::<BTreeSet<_>>();
-            for relation in boundary.relations() {
+            for relation in metadata.boundary.relations() {
                 if !generated.contains(relation.as_str()) {
                     return Err(TestCaseError::MissingBoundaryRelation {
                         relation: relation.clone(),
@@ -84,16 +79,7 @@ impl TestCaseMetadata {
             }
         }
 
-        Ok(Self {
-            generator_version,
-            workload,
-            target,
-            boundary,
-            dialect,
-            seed,
-            protocol,
-            relations,
-        })
+        Ok(metadata)
     }
 
     /// Returns the sql-tdg version that created the test case.
@@ -264,7 +250,7 @@ impl TestCaseMetadata {
             )));
         }
 
-        Self::new_with_generator_version(
+        Self::validate(Self {
             generator_version,
             workload,
             target,
@@ -273,6 +259,6 @@ impl TestCaseMetadata {
             seed,
             protocol,
             relations,
-        )
+        })
     }
 }
