@@ -1,21 +1,19 @@
 //! SQL Semantic Protocol integration and protocol-driven test-data generation.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
 use sql_semantic_protocol::{
-    AnalysisBundle, ComposedSemantics, ConfiguredSqlInput, DataType, DatasetRef, LiteralExpression,
-    LiteralType, LiteralValue, RelationCatalog, RelationSchema, SetMode, SqlInput, ValueDomain,
-    analyze_configured_inputs_with_catalog, dialect_from_name,
+    AnalysisBundle, ComposedSemantics, ConfiguredSqlInput, DataType, DatasetRef, RelationCatalog,
+    RelationSchema, SqlInput, ValueDomain, analyze_configured_inputs_with_catalog,
+    dialect_from_name,
 };
 
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
-use crate::solver::{BoolDomain, IntDomain, SolverError, TimestampDomain, parse_time};
+use crate::protocol_value::{build_array, candidates, is_supported};
+use crate::solver::SolverError;
 use crate::table::{Table, TableError};
-use crate::types::{
-    BoolConstraint, Column, ColumnType, IntConstraint, Interval, TimestampConstraint,
-};
 
 /// Explicit selection of one terminal protocol outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -441,13 +439,12 @@ pub fn generate_from_bundle(
             }
         })?;
 
-        let mut columns = Vec::with_capacity(schema.columns().len());
         let mut plans = Vec::with_capacity(schema.columns().len());
 
         for schema_column in schema.columns() {
-            let column_type =
-                map_column_type(relation, schema_column.name(), schema_column.data_type())?;
-            columns.push(Column::new(schema_column.name(), column_type));
+            is_supported(schema_column.data_type()).map_err(|_| {
+                unsupported_source_type(relation, schema_column.name(), schema_column.data_type())
+            })?;
 
             let domain =
                 find_column_domain(semantics.column_domains(), relation, schema_column.name())?;
@@ -460,18 +457,35 @@ pub fn generate_from_bundle(
             plans.push(ColumnPlan::new(schema_column.name(), generation_domain));
         }
 
-        let mut table =
-            Table::new(columns, rows).map_err(|source| ProtocolGenerationError::Table {
-                relation: relation.clone(),
-                source,
-            })?;
-        Generator::new()
-            .generate_plans(&mut table, seed, &plans)
+        let generated = Generator::new()
+            .generate_protocol_values(rows, seed, &plans)
             .map_err(|source| ProtocolGenerationError::Generator {
                 relation: relation.clone(),
                 source,
             })?;
-        table.build_all();
+
+        let arrays = schema
+            .columns()
+            .iter()
+            .zip(generated)
+            .map(|(schema_column, values)| {
+                build_array(schema_column.data_type(), &values).map_err(|message| {
+                    ProtocolGenerationError::UnsupportedDomain {
+                        relation: relation.clone(),
+                        column: schema_column.name().to_owned(),
+                        message,
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let table =
+            Table::from_protocol_arrays(schema.columns(), rows, arrays).map_err(|source| {
+                ProtocolGenerationError::Table {
+                    relation: relation.clone(),
+                    source,
+                }
+            })?;
         tables.insert(relation.clone(), table);
     }
 
@@ -580,272 +594,47 @@ fn find_column_domain<'a>(
     }
 }
 
-fn map_column_type(
-    relation: &str,
-    column: &str,
-    data_type: &DataType,
-) -> Result<ColumnType, ProtocolGenerationError> {
-    match data_type {
-        DataType::SignedInteger { bits } if bits.is_none_or(|bits| bits <= 32) => {
-            Ok(ColumnType::Int)
-        }
-        DataType::Boolean => Ok(ColumnType::Bool),
-        DataType::Timestamp { .. } => Ok(ColumnType::Timestamp),
-        DataType::String { .. } => Ok(ColumnType::String),
-        _ => Err(unsupported_source_type(relation, column, data_type)),
-    }
-}
-
 fn map_domain(
     relation: &str,
     column: &str,
     data_type: &DataType,
     domain: Option<&ValueDomain>,
 ) -> Result<GenerationDomain, ProtocolGenerationError> {
-    let Some(domain) = domain else {
-        return unbounded_domain(relation, column, data_type);
-    };
-
     match domain {
-        ValueDomain::Unbounded => unbounded_domain(relation, column, data_type),
-        ValueDomain::Empty => Err(ProtocolGenerationError::EmptyDomain {
+        Some(ValueDomain::Empty) => Err(ProtocolGenerationError::EmptyDomain {
             relation: relation.to_owned(),
             column: column.to_owned(),
         }),
-        ValueDomain::Unknown(unknown) => Err(ProtocolGenerationError::UnknownDomain {
+        Some(ValueDomain::Unknown(unknown)) => Err(ProtocolGenerationError::UnknownDomain {
             relation: relation.to_owned(),
             column: column.to_owned(),
             reason: unknown.reason().to_owned(),
         }),
-        ValueDomain::Ranges(ranges) => match data_type {
-            DataType::SignedInteger { bits } if bits.is_none_or(|bits| bits <= 32) => {
-                let intervals = ranges
-                    .ranges()
-                    .iter()
-                    .map(|range| integer_interval(relation, column, range))
-                    .collect::<Result<Vec<_>, _>>()?;
-                IntDomain::from_intervals(intervals)
-                    .map(GenerationDomain::Int)
-                    .map_err(|source| ProtocolGenerationError::Solver {
-                        relation: relation.to_owned(),
-                        column: column.to_owned(),
-                        source,
-                    })
-            }
-            DataType::Timestamp { .. } => {
-                let intervals = ranges
-                    .ranges()
-                    .iter()
-                    .map(|range| timestamp_interval(relation, column, range))
-                    .collect::<Result<Vec<_>, _>>()?;
-                TimestampDomain::from_intervals(intervals)
-                    .map(GenerationDomain::Timestamp)
-                    .map_err(|source| ProtocolGenerationError::Solver {
-                        relation: relation.to_owned(),
-                        column: column.to_owned(),
-                        source,
-                    })
-            }
-            DataType::Boolean | DataType::String { .. } => {
-                Err(ProtocolGenerationError::UnsupportedDomain {
-                    relation: relation.to_owned(),
-                    column: column.to_owned(),
-                    message: "ordered ranges are unsupported for this source datatype".to_owned(),
-                })
-            }
-            _ => Err(unsupported_source_type(relation, column, data_type)),
-        },
-        ValueDomain::Set(set) => {
-            map_set_domain(relation, column, data_type, set.mode(), set.values())
-        }
-        _ => Err(ProtocolGenerationError::UnsupportedDomain {
+        Some(domain) => generic_generation_domain(relation, column, data_type, Some(domain)),
+        None => generic_generation_domain(relation, column, data_type, None),
+    }
+}
+
+fn generic_generation_domain(
+    relation: &str,
+    column: &str,
+    data_type: &DataType,
+    domain: Option<&ValueDomain>,
+) -> Result<GenerationDomain, ProtocolGenerationError> {
+    let values = candidates(data_type, domain).map_err(|message| {
+        ProtocolGenerationError::UnsupportedDomain {
             relation: relation.to_owned(),
             column: column.to_owned(),
-            message: "unsupported future protocol domain variant".to_owned(),
-        }),
+            message,
+        }
+    })?;
+    if values.is_empty() {
+        return Err(ProtocolGenerationError::EmptyDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+        });
     }
-}
-
-fn unbounded_domain(
-    relation: &str,
-    column: &str,
-    data_type: &DataType,
-) -> Result<GenerationDomain, ProtocolGenerationError> {
-    match data_type {
-        DataType::SignedInteger { bits } if bits.is_none_or(|bits| bits <= 32) => {
-            Ok(GenerationDomain::Int(IntDomain::new()))
-        }
-        DataType::Timestamp { .. } => Ok(GenerationDomain::Timestamp(TimestampDomain::new())),
-        DataType::Boolean => Ok(GenerationDomain::Bool(BoolDomain::new())),
-        DataType::String { .. } => Ok(GenerationDomain::String(vec![String::new()])),
-        _ => Err(unsupported_source_type(relation, column, data_type)),
-    }
-}
-
-fn map_set_domain(
-    relation: &str,
-    column: &str,
-    data_type: &DataType,
-    mode: SetMode,
-    values: &[LiteralExpression],
-) -> Result<GenerationDomain, ProtocolGenerationError> {
-    match data_type {
-        DataType::SignedInteger { bits } if bits.is_none_or(|bits| bits <= 32) => {
-            let mut parsed = values
-                .iter()
-                .map(|value| integer_literal(relation, column, value))
-                .collect::<Result<Vec<_>, _>>()?;
-            parsed.sort_unstable();
-            parsed.dedup();
-
-            match mode {
-                SetMode::Include => {
-                    if parsed.is_empty() {
-                        return Err(ProtocolGenerationError::EmptyDomain {
-                            relation: relation.to_owned(),
-                            column: column.to_owned(),
-                        });
-                    }
-                    let intervals = parsed
-                        .into_iter()
-                        .map(|value| Interval::new(value, value).expect("equal bounds are valid"))
-                        .collect();
-                    IntDomain::from_intervals(intervals)
-                        .map(GenerationDomain::Int)
-                        .map_err(|source| ProtocolGenerationError::Solver {
-                            relation: relation.to_owned(),
-                            column: column.to_owned(),
-                            source,
-                        })
-                }
-                SetMode::Exclude => {
-                    let mut domain = IntDomain::new();
-                    for value in parsed {
-                        domain
-                            .apply(IntConstraint::NotEqual(value))
-                            .map_err(|source| ProtocolGenerationError::Solver {
-                                relation: relation.to_owned(),
-                                column: column.to_owned(),
-                                source,
-                            })?;
-                    }
-                    Ok(GenerationDomain::Int(domain))
-                }
-            }
-        }
-        DataType::Timestamp { .. } => {
-            let mut parsed = values
-                .iter()
-                .map(|value| timestamp_literal(relation, column, value))
-                .collect::<Result<Vec<_>, _>>()?;
-            parsed.sort_unstable();
-            parsed.dedup();
-
-            match mode {
-                SetMode::Include => {
-                    if parsed.is_empty() {
-                        return Err(ProtocolGenerationError::EmptyDomain {
-                            relation: relation.to_owned(),
-                            column: column.to_owned(),
-                        });
-                    }
-                    let intervals = parsed
-                        .into_iter()
-                        .map(|value| Interval::new(value, value).expect("equal bounds are valid"))
-                        .collect();
-                    TimestampDomain::from_intervals(intervals)
-                        .map(GenerationDomain::Timestamp)
-                        .map_err(|source| ProtocolGenerationError::Solver {
-                            relation: relation.to_owned(),
-                            column: column.to_owned(),
-                            source,
-                        })
-                }
-                SetMode::Exclude => {
-                    let mut domain = TimestampDomain::new();
-                    for value in parsed {
-                        domain
-                            .apply(TimestampConstraint::NotEqual(value))
-                            .map_err(|source| ProtocolGenerationError::Solver {
-                                relation: relation.to_owned(),
-                                column: column.to_owned(),
-                                source,
-                            })?;
-                    }
-                    Ok(GenerationDomain::Timestamp(domain))
-                }
-            }
-        }
-        DataType::Boolean => {
-            let values = values
-                .iter()
-                .map(|value| boolean_literal(relation, column, value))
-                .collect::<Result<BTreeSet<_>, _>>()?;
-            let allowed = [false, true]
-                .into_iter()
-                .filter(|candidate| match mode {
-                    SetMode::Include => values.contains(candidate),
-                    SetMode::Exclude => !values.contains(candidate),
-                })
-                .collect::<Vec<_>>();
-
-            match allowed.as_slice() {
-                [] => Err(ProtocolGenerationError::EmptyDomain {
-                    relation: relation.to_owned(),
-                    column: column.to_owned(),
-                }),
-                [required] => {
-                    let mut domain = BoolDomain::new();
-                    domain
-                        .apply(if *required {
-                            BoolConstraint::IsTrue
-                        } else {
-                            BoolConstraint::IsFalse
-                        })
-                        .map_err(|source| ProtocolGenerationError::Solver {
-                            relation: relation.to_owned(),
-                            column: column.to_owned(),
-                            source,
-                        })?;
-                    Ok(GenerationDomain::Bool(domain))
-                }
-                [false, true] => Ok(GenerationDomain::Bool(BoolDomain::new())),
-                _ => unreachable!("boolean domain has exactly two possible values"),
-            }
-        }
-        DataType::String { .. } => {
-            let values = values
-                .iter()
-                .map(|value| string_literal(relation, column, value))
-                .collect::<Result<BTreeSet<_>, _>>()?;
-
-            match mode {
-                SetMode::Include => {
-                    if values.is_empty() {
-                        return Err(ProtocolGenerationError::EmptyDomain {
-                            relation: relation.to_owned(),
-                            column: column.to_owned(),
-                        });
-                    }
-                    Ok(GenerationDomain::String(values.into_iter().collect()))
-                }
-                SetMode::Exclude => {
-                    for candidate in ["", "a", "value", "sql-tdg"] {
-                        if !values.contains(candidate) {
-                            return Ok(GenerationDomain::String(vec![candidate.to_owned()]));
-                        }
-                    }
-                    Err(ProtocolGenerationError::UnsupportedDomain {
-                        relation: relation.to_owned(),
-                        column: column.to_owned(),
-                        message: "could not choose a deterministic string outside exclusion set"
-                            .to_owned(),
-                    })
-                }
-            }
-        }
-        _ => Err(unsupported_source_type(relation, column, data_type)),
-    }
+    Ok(GenerationDomain::Values(values))
 }
 
 fn unsupported_source_type(
@@ -856,212 +645,16 @@ fn unsupported_source_type(
     ProtocolGenerationError::UnsupportedSourceType {
         relation: relation.to_owned(),
         column: column.to_owned(),
-        data_type: data_type.kind().to_owned(),
+        data_type: protocol_type_name(data_type),
     }
 }
 
-fn integer_interval(
-    relation: &str,
-    column: &str,
-    range: &sql_semantic_protocol::ValueRange,
-) -> Result<Interval, ProtocolGenerationError> {
-    let min = match range.lower() {
-        None => i32::MIN,
-        Some(bound) => {
-            let value = integer_literal(relation, column, bound.value())?;
-            if bound.inclusive() {
-                value
-            } else {
-                value
-                    .checked_add(1)
-                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                        relation: relation.to_owned(),
-                        column: column.to_owned(),
-                    })?
-            }
+fn protocol_type_name(data_type: &DataType) -> String {
+    match data_type {
+        DataType::Custom { name, modifiers } if modifiers.is_empty() => format!("custom:{name}"),
+        DataType::Custom { name, modifiers } => {
+            format!("custom:{name}({})", modifiers.join(","))
         }
-    };
-    let max = match range.upper() {
-        None => i32::MAX,
-        Some(bound) => {
-            let value = integer_literal(relation, column, bound.value())?;
-            if bound.inclusive() {
-                value
-            } else {
-                value
-                    .checked_sub(1)
-                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                        relation: relation.to_owned(),
-                        column: column.to_owned(),
-                    })?
-            }
-        }
-    };
-
-    Interval::new(min, max).map_err(|_| ProtocolGenerationError::EmptyDomain {
-        relation: relation.to_owned(),
-        column: column.to_owned(),
-    })
-}
-
-fn timestamp_interval(
-    relation: &str,
-    column: &str,
-    range: &sql_semantic_protocol::ValueRange,
-) -> Result<Interval, ProtocolGenerationError> {
-    let min = match range.lower() {
-        None => 0,
-        Some(bound) => {
-            let value = timestamp_literal(relation, column, bound.value())?;
-            if bound.inclusive() {
-                value
-            } else {
-                value
-                    .checked_add(1)
-                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                        relation: relation.to_owned(),
-                        column: column.to_owned(),
-                    })?
-            }
-        }
-    };
-    let max = match range.upper() {
-        None => i32::MAX,
-        Some(bound) => {
-            let value = timestamp_literal(relation, column, bound.value())?;
-            if bound.inclusive() {
-                value
-            } else {
-                value
-                    .checked_sub(1)
-                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                        relation: relation.to_owned(),
-                        column: column.to_owned(),
-                    })?
-            }
-        }
-    };
-
-    Interval::new(min, max).map_err(|_| ProtocolGenerationError::EmptyDomain {
-        relation: relation.to_owned(),
-        column: column.to_owned(),
-    })
-}
-
-fn integer_literal(
-    relation: &str,
-    column: &str,
-    literal: &LiteralExpression,
-) -> Result<i32, ProtocolGenerationError> {
-    if literal.literal_type() != LiteralType::Integer {
-        return Err(invalid_literal(
-            relation,
-            column,
-            format!("expected integer literal, got {:?}", literal.literal_type()),
-        ));
-    }
-
-    match literal.value() {
-        LiteralValue::Number(value) => value.parse::<i32>().map_err(|_| {
-            invalid_literal(
-                relation,
-                column,
-                format!("integer {value:?} is outside i32"),
-            )
-        }),
-        _ => Err(invalid_literal(
-            relation,
-            column,
-            "integer literal does not carry numeric payload".to_owned(),
-        )),
-    }
-}
-
-fn timestamp_literal(
-    relation: &str,
-    column: &str,
-    literal: &LiteralExpression,
-) -> Result<i32, ProtocolGenerationError> {
-    if !matches!(
-        literal.literal_type(),
-        LiteralType::String | LiteralType::Date | LiteralType::Timestamp
-    ) {
-        return Err(invalid_literal(
-            relation,
-            column,
-            format!(
-                "expected string, date, or timestamp literal, got {:?}",
-                literal.literal_type()
-            ),
-        ));
-    }
-
-    match literal.value() {
-        LiteralValue::Text(value) => {
-            parse_time(value).map_err(|source| ProtocolGenerationError::Solver {
-                relation: relation.to_owned(),
-                column: column.to_owned(),
-                source,
-            })
-        }
-        _ => Err(invalid_literal(
-            relation,
-            column,
-            "timestamp literal does not carry text payload".to_owned(),
-        )),
-    }
-}
-
-fn boolean_literal(
-    relation: &str,
-    column: &str,
-    literal: &LiteralExpression,
-) -> Result<bool, ProtocolGenerationError> {
-    if literal.literal_type() != LiteralType::Boolean {
-        return Err(invalid_literal(
-            relation,
-            column,
-            format!("expected boolean literal, got {:?}", literal.literal_type()),
-        ));
-    }
-
-    match literal.value() {
-        LiteralValue::Boolean(value) => Ok(*value),
-        _ => Err(invalid_literal(
-            relation,
-            column,
-            "boolean literal does not carry boolean payload".to_owned(),
-        )),
-    }
-}
-
-fn string_literal(
-    relation: &str,
-    column: &str,
-    literal: &LiteralExpression,
-) -> Result<String, ProtocolGenerationError> {
-    if literal.literal_type() != LiteralType::String {
-        return Err(invalid_literal(
-            relation,
-            column,
-            format!("expected string literal, got {:?}", literal.literal_type()),
-        ));
-    }
-
-    match literal.value() {
-        LiteralValue::Text(value) => Ok(value.clone()),
-        _ => Err(invalid_literal(
-            relation,
-            column,
-            "string literal does not carry text payload".to_owned(),
-        )),
-    }
-}
-
-fn invalid_literal(relation: &str, column: &str, message: String) -> ProtocolGenerationError {
-    ProtocolGenerationError::InvalidLiteral {
-        relation: relation.to_owned(),
-        column: column.to_owned(),
-        message,
+        _ => data_type.kind().to_owned(),
     }
 }

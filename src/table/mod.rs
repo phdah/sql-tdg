@@ -14,7 +14,9 @@ use arrow_array::{
 use arrow_ord::sort::sort;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use chrono::{DateTime, Utc};
+use sql_semantic_protocol::{DataType as ProtocolDataType, SchemaColumn};
 
+use crate::protocol_value::arrow_data_type as protocol_arrow_data_type;
 use crate::types::{Column, ColumnType};
 
 #[cfg(test)]
@@ -103,6 +105,32 @@ pub enum TableError {
         /// Stored Unix microseconds.
         micros: i64,
     },
+    /// A canonical protocol datatype has no lossless Arrow representation here.
+    UnsupportedProtocolType {
+        /// Canonical protocol datatype kind or identity.
+        data_type: String,
+    },
+    /// Protocol-backed table construction received the wrong number of arrays.
+    SchemaArrayMismatch {
+        /// Number of schema columns.
+        columns: usize,
+        /// Number of supplied arrays.
+        arrays: usize,
+    },
+    /// A built Arrow array does not match the canonical protocol datatype.
+    ProtocolArrayTypeMismatch {
+        /// Column name.
+        column: String,
+        /// Expected Arrow datatype.
+        expected: String,
+        /// Actual Arrow datatype.
+        actual: String,
+    },
+    /// Extended protocol columns require protocol-aware construction.
+    ProtocolSchemaRequired {
+        /// Column name.
+        column: String,
+    },
     /// An Arrow compute operation failed.
     Arrow {
         /// Arrow error message.
@@ -133,6 +161,25 @@ impl fmt::Display for TableError {
                 formatter,
                 "timestamp {micros} microseconds in column {column:?} is outside supported range"
             ),
+            Self::UnsupportedProtocolType { data_type } => {
+                write!(formatter, "unsupported protocol datatype {data_type}")
+            }
+            Self::SchemaArrayMismatch { columns, arrays } => write!(
+                formatter,
+                "protocol schema has {columns} columns but {arrays} arrays were supplied"
+            ),
+            Self::ProtocolArrayTypeMismatch {
+                column,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "column {column:?} expects Arrow type {expected}, got {actual}"
+            ),
+            Self::ProtocolSchemaRequired { column } => write!(
+                formatter,
+                "extended column {column:?} requires protocol-aware table construction"
+            ),
             Self::Arrow { message } => write!(formatter, "arrow operation failed: {message}"),
         }
     }
@@ -145,6 +192,7 @@ enum ColumnBuilder {
     Timestamp(TimestampMicrosecondBuilder),
     Bool(BooleanBuilder),
     String(StringBuilder),
+    Extended,
 }
 
 impl ColumnBuilder {
@@ -154,6 +202,7 @@ impl ColumnBuilder {
             ColumnType::Timestamp => Self::Timestamp(TimestampMicrosecondBuilder::new()),
             ColumnType::Bool => Self::Bool(BooleanBuilder::new()),
             ColumnType::String => Self::String(StringBuilder::new()),
+            ColumnType::Extended => Self::Extended,
         }
     }
 }
@@ -170,6 +219,14 @@ impl ColumnStorage {
             column_type,
             builder: ColumnBuilder::new(column_type),
             array: None,
+        }
+    }
+
+    fn from_array(column_type: ColumnType, array: ArrayRef) -> Self {
+        Self {
+            column_type,
+            builder: ColumnBuilder::new(column_type),
+            array: Some(array),
         }
     }
 
@@ -195,6 +252,11 @@ impl Table {
     pub fn new(schema: Vec<Column>, rows: usize) -> Result<Self, TableError> {
         let mut columns = BTreeMap::new();
         for column in &schema {
+            if column.column_type() == ColumnType::Extended {
+                return Err(TableError::ProtocolSchemaRequired {
+                    column: column.name().to_owned(),
+                });
+            }
             if columns
                 .insert(
                     column.name().to_owned(),
@@ -212,6 +274,62 @@ impl Table {
             .iter()
             .map(|column| Field::new(column.name(), arrow_data_type(column.column_type()), false))
             .collect::<Vec<_>>();
+
+        Ok(Self {
+            dim: Dim {
+                rows,
+                cols: schema.len(),
+            },
+            schema,
+            arrow_schema: Schema::new(fields),
+            columns,
+        })
+    }
+
+    /// Creates a table from arrays generated from canonical protocol datatypes.
+    pub(crate) fn from_protocol_arrays(
+        protocol_columns: &[SchemaColumn],
+        rows: usize,
+        arrays: Vec<ArrayRef>,
+    ) -> Result<Self, TableError> {
+        if protocol_columns.len() != arrays.len() {
+            return Err(TableError::SchemaArrayMismatch {
+                columns: protocol_columns.len(),
+                arrays: arrays.len(),
+            });
+        }
+
+        let mut schema = Vec::with_capacity(protocol_columns.len());
+        let mut fields = Vec::with_capacity(protocol_columns.len());
+        let mut columns = BTreeMap::new();
+
+        for (protocol_column, array) in protocol_columns.iter().zip(arrays) {
+            let expected = protocol_arrow_data_type(protocol_column.data_type())
+                .map_err(|data_type| TableError::UnsupportedProtocolType { data_type })?;
+            if array.data_type() != &expected {
+                return Err(TableError::ProtocolArrayTypeMismatch {
+                    column: protocol_column.name().to_owned(),
+                    expected: expected.to_string(),
+                    actual: array.data_type().to_string(),
+                });
+            }
+
+            let column_type = legacy_column_type(protocol_column.data_type());
+            let name = protocol_column.name().to_owned();
+            if columns
+                .insert(name.clone(), ColumnStorage::from_array(column_type, array))
+                .is_some()
+            {
+                return Err(TableError::DuplicateColumn { column: name });
+            }
+
+            fields.push(Field::new(
+                protocol_column.name(),
+                expected,
+                protocol_column_is_nullable(protocol_column.data_type()),
+            ));
+            schema.push(Column::new(protocol_column.name(), column_type));
+        }
 
         Ok(Self {
             dim: Dim {
@@ -334,6 +452,17 @@ impl Table {
         self.build_timestamps();
         self.build_bools();
         self.build_strings();
+    }
+
+    /// Returns the built Arrow array for one column, or None before finalization.
+    pub fn array(&self, column: &str) -> Result<Option<&dyn Array>, TableError> {
+        let storage = self
+            .columns
+            .get(column)
+            .ok_or_else(|| TableError::UnknownColumn {
+                column: column.to_owned(),
+            })?;
+        Ok(storage.array.as_deref())
     }
 
     /// Returns the built integer values for one column, or None before finalization.
@@ -510,7 +639,24 @@ fn arrow_data_type(column_type: ColumnType) -> DataType {
         ColumnType::Timestamp => DataType::Timestamp(TimeUnit::Microsecond, None),
         ColumnType::Bool => DataType::Boolean,
         ColumnType::String => DataType::Utf8,
+        ColumnType::Extended => DataType::Null,
     }
+}
+
+fn legacy_column_type(data_type: &ProtocolDataType) -> ColumnType {
+    match data_type {
+        ProtocolDataType::SignedInteger { bits: Some(32) } => ColumnType::Int,
+        ProtocolDataType::Boolean => ColumnType::Bool,
+        ProtocolDataType::Timestamp { precision } if precision.is_none_or(|value| value <= 6) => {
+            ColumnType::Timestamp
+        }
+        ProtocolDataType::String { .. } => ColumnType::String,
+        _ => ColumnType::Extended,
+    }
+}
+
+fn protocol_column_is_nullable(data_type: &ProtocolDataType) -> bool {
+    matches!(data_type, ProtocolDataType::Nullable(_))
 }
 
 fn collect_non_null<T, I>(values: I, column: &str) -> Result<Vec<T>, TableError>

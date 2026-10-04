@@ -22,6 +22,7 @@ semantics should cause verification to fail unless the new result is explicitly 
 ## Acceptance Criteria
 
 - [ ] Generated Arrow tables can be materialized into DuckDB with exact supported types and qualified relation names.
+- [ ] Arrow-to-DuckDB round-trip tests prove every TASK-12 datatype supported by both systems preserves type and value semantics.
 - [ ] A fresh deterministic database can be reproduced from the same test-case metadata and seed.
 - [ ] The execution harness can run ordered multi-statement raw SQL workloads against the generated database.
 - [ ] The harness can capture and persist an approved expected result for each selected outcome.

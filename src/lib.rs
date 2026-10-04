@@ -4,6 +4,7 @@
 
 pub mod generator;
 pub mod protocol;
+mod protocol_value;
 pub mod solver;
 pub mod table;
 pub mod test_case;

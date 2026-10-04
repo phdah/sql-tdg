@@ -1,12 +1,13 @@
 ---
 id: m-2
-title: "Complete CLI SQL test-data workflow"
+title: "Release sql-tdg 1.0.0"
 ---
 
 ## Description
 
 Turn sql-tdg into a complete command-line workflow for generating deterministic, feature-rich SQL
-test data and executing real SQL workloads against it.
+test data and executing real SQL workloads against it, then ship that complete workflow as the
+first stable `1.0.0` release.
 
 The milestone covers both raw SQL workloads and full dbt Core projects using DuckDB as the initial
 execution engine. Generated datasets must include rows that satisfy the selected semantics and rows
@@ -21,6 +22,7 @@ SQL Semantic Protocol remains the sole semantic boundary. If a required matching
 relationship, or layer semantic is not represented by the protocol, extend the protocol upstream
 rather than reparsing SQL or deriving a second SQL semantic model inside sql-tdg.
 
-The milestone is complete when the CLI can create a deterministic DuckDB-backed test case, execute
-advanced raw SQL and a representative dbt project, compare results against an approved expected
-output, and fail when a query change alters observable behavior.
+The milestone is complete only when the CLI can create a deterministic DuckDB-backed test case,
+execute advanced raw SQL and a representative dbt project, compare results against an approved
+expected output, fail when a query change alters observable behavior, and the resulting stable
+product has been released as `v1.0.0` on GitHub and published to crates.io.

@@ -17,6 +17,8 @@ pub enum ColumnType {
     Bool,
     /// UTF-8 string values.
     String,
+    /// Canonical protocol datatype represented directly by Arrow storage.
+    Extended,
 }
 
 impl ColumnType {
@@ -27,6 +29,7 @@ impl ColumnType {
             Self::Timestamp => "timestamp",
             Self::Bool => "bool",
             Self::String => "string",
+            Self::Extended => "extended",
         }
     }
 }
