@@ -12,7 +12,8 @@ pub mod types;
 
 pub use generator::{Generator, GeneratorError};
 pub use protocol::{
-    GeneratedData, OutcomeSelector, ProtocolGenerationError, generate_from_bundle,
+    GeneratedData, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError,
+    generate_classified_from_bundle, generate_classified_from_sql, generate_from_bundle,
     generate_from_sql,
 };
 pub use solver::{
