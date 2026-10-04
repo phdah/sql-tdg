@@ -720,3 +720,34 @@ fn non_equality_relationship_is_an_explicit_error() {
         ProtocolGenerationError::UnsupportedRelationship { .. }
     ));
 }
+
+
+#[test]
+fn relational_subquery_predicates_are_explicit_errors() {
+    let schemas = [
+        schema("orders", &[("id", "INTEGER"), ("customer_id", "INTEGER")]),
+        schema("line_items", &[("order_id", "INTEGER")]),
+        schema("customers", &[("id", "INTEGER")]),
+    ];
+
+    for sql in [
+        "SELECT o.id
+         FROM orders AS o
+         WHERE EXISTS (
+             SELECT 1 FROM line_items AS li WHERE li.order_id = o.id
+         )",
+        "SELECT o.id
+         FROM orders AS o
+         WHERE o.customer_id IN (
+             SELECT c.id FROM customers AS c
+         )",
+    ] {
+        let error = generate_from_sql(sql, "generic", &schemas, ROWS, SEED)
+            .expect_err("unsupported relational subquery must not be ignored");
+
+        assert!(matches!(
+            error,
+            ProtocolGenerationError::UnsupportedRelationship { .. }
+        ));
+    }
+}
