@@ -77,6 +77,27 @@ fn protocol_ranges_preserve_inclusive_exclusive_bounds_and_exclusions() {
 }
 
 #[test]
+fn protocol_set_domain_is_consumed_directly() {
+    let generated = generate_from_sql(
+        "SELECT col_a FROM t WHERE col_a IN (1, 3, 5)",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect("set-domain generation should succeed");
+
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+
+    assert!(values.iter().all(|value| [1, 3, 5].contains(value)));
+}
+
+#[test]
 fn protocol_driven_boolean_generation() {
     let generated = generate_from_sql(
         "SELECT enabled FROM t WHERE enabled = true",
@@ -230,6 +251,26 @@ fn missing_source_schema_is_an_explicit_error() {
         error,
         ProtocolGenerationError::MissingSourceSchema {
             relation: "t".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn constrained_column_missing_from_source_schema_is_an_explicit_error() {
+    let error = generate_from_sql(
+        "SELECT col_a FROM t WHERE required_col = 10",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect_err("a constrained column cannot be silently omitted from schema");
+
+    assert_eq!(
+        error,
+        ProtocolGenerationError::MissingSchemaColumn {
+            relation: "t".to_owned(),
+            column: "required_col".to_owned(),
         }
     );
 }
