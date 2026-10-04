@@ -167,10 +167,7 @@ impl TestCaseMetadata {
         }
         records.push(record("dialect", &encode_string(&self.dialect)));
         records.push(record("seed", &self.seed.to_string()));
-        records.push(record(
-            "protocol",
-            &encode_string(self.protocol.document()),
-        ));
+        records.push(record("protocol", &encode_string(self.protocol.document())));
         records.push(record("relation_count", &self.relations.len().to_string()));
         for relation in &self.relations {
             records.push(format!(
@@ -206,16 +203,11 @@ impl TestCaseMetadata {
         let target = TestTarget::new(target_kind, target_identifier)?;
 
         let boundary_kind = BoundaryKind::parse(next_value(&mut lines, "boundary_kind")?)?;
-        let boundary_count = parse_count(
-            next_value(&mut lines, "boundary_count")?,
-            "boundary_count",
-        )?;
+        let boundary_count =
+            parse_count(next_value(&mut lines, "boundary_count")?, "boundary_count")?;
         let mut boundary_relations = Vec::with_capacity(boundary_count);
         for _ in 0..boundary_count {
-            boundary_relations.push(decode_string(next_value(
-                &mut lines,
-                "boundary_relation",
-            )?)?);
+            boundary_relations.push(decode_string(next_value(&mut lines, "boundary_relation")?)?);
         }
         let boundary = match boundary_kind {
             BoundaryKind::PhysicalSources => {
@@ -234,10 +226,8 @@ impl TestCaseMetadata {
         let dialect = decode_string(next_value(&mut lines, "dialect")?)?;
         let seed = parse_u64(next_value(&mut lines, "seed")?, "seed")?;
         let protocol = ProtocolSnapshot::new(decode_string(next_value(&mut lines, "protocol")?)?)?;
-        let relation_count = parse_count(
-            next_value(&mut lines, "relation_count")?,
-            "relation_count",
-        )?;
+        let relation_count =
+            parse_count(next_value(&mut lines, "relation_count")?, "relation_count")?;
         let mut relations = Vec::with_capacity(relation_count);
         for _ in 0..relation_count {
             let line = lines
