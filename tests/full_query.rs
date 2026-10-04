@@ -3,8 +3,9 @@ use sql_semantic_protocol::{
     dialect_from_name,
 };
 use sql_tdg::{
-    DataType, OutcomeSelector, ProtocolGenerationError, RelationSchema, SchemaColumn,
-    generate_from_bundle, generate_from_sql, to_timestamp,
+    DataType, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError, RelationSchema,
+    SchemaColumn, generate_classified_from_sql, generate_from_bundle, generate_from_sql,
+    to_timestamp,
 };
 
 const ROWS: usize = 12;
@@ -332,4 +333,192 @@ fn unsupported_custom_source_type_is_not_coerced() {
             data_type: "custom:vendor_money(42)".to_owned(),
         }
     );
+}
+
+#[test]
+fn classified_generation_produces_matching_and_rejected_range_witnesses() {
+    let counts = GenerationRowCounts::new(5, 7).expect("test row counts should be valid");
+    let generated = generate_classified_from_sql(
+        "SELECT col_a FROM t WHERE col_a >= 4 AND col_a < 8 AND col_a != 6",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        counts,
+        SEED,
+    )
+    .expect("classified range generation should succeed");
+
+    assert_eq!(generated.row_counts(), counts);
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+    let (matching, rejected) = values.split_at(counts.matching());
+
+    assert!(
+        matching
+            .iter()
+            .all(|value| (4..8).contains(value) && *value != 6)
+    );
+    assert!(
+        rejected
+            .iter()
+            .all(|value| !(4..8).contains(value) || *value == 6)
+    );
+}
+
+#[test]
+fn rejected_column_selection_and_values_are_seeded() {
+    let counts = GenerationRowCounts::new(4, 12).expect("test row counts should be valid");
+    let schemas = [schema("t", &[("col_a", "INTEGER"), ("enabled", "BOOLEAN")])];
+    let sql = "SELECT col_a, enabled FROM t WHERE col_a BETWEEN 4 AND 8 AND enabled = true";
+
+    let first = generate_classified_from_sql(sql, "generic", &schemas, counts, SEED)
+        .expect("classified generation should succeed");
+    let second = generate_classified_from_sql(sql, "generic", &schemas, counts, SEED)
+        .expect("classified generation should repeat");
+
+    let first_table = first.table("t").expect("source table should exist");
+    let second_table = second.table("t").expect("source table should exist");
+    let first_ints = first_table
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+    let second_ints = second_table
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+    let first_bools = first_table
+        .get_bools("enabled")
+        .expect("boolean column should be readable")
+        .expect("boolean column should be built");
+    let second_bools = second_table
+        .get_bools("enabled")
+        .expect("boolean column should be readable")
+        .expect("boolean column should be built");
+
+    assert_eq!(first_ints, second_ints);
+    assert_eq!(first_bools, second_bools);
+
+    for (value, enabled) in first_ints[counts.matching()..]
+        .iter()
+        .zip(&first_bools[counts.matching()..])
+    {
+        assert!(!(4..=8).contains(value) || !enabled);
+    }
+}
+
+#[test]
+fn finite_string_and_boolean_domains_have_rejected_witnesses() {
+    let counts = GenerationRowCounts::new(3, 5).expect("test row counts should be valid");
+
+    let strings = generate_classified_from_sql(
+        "SELECT status FROM t WHERE status IN ('ready', 'done')",
+        "generic",
+        &[schema("t", &[("status", "TEXT")])],
+        counts,
+        SEED,
+    )
+    .expect("finite string domain should be complementable");
+    let statuses = strings
+        .table("t")
+        .expect("source table should exist")
+        .get_strings("status")
+        .expect("string column should be readable")
+        .expect("string column should be built");
+    let (matching, rejected) = statuses.split_at(counts.matching());
+
+    assert!(
+        matching
+            .iter()
+            .all(|value| value == "ready" || value == "done")
+    );
+    assert!(
+        rejected
+            .iter()
+            .all(|value| value != "ready" && value != "done")
+    );
+
+    let booleans = generate_classified_from_sql(
+        "SELECT enabled FROM t WHERE enabled = true",
+        "generic",
+        &[schema("t", &[("enabled", "BOOLEAN")])],
+        counts,
+        SEED,
+    )
+    .expect("boolean domain should be complementable");
+    let enabled = booleans
+        .table("t")
+        .expect("source table should exist")
+        .get_bools("enabled")
+        .expect("boolean column should be readable")
+        .expect("boolean column should be built");
+
+    assert!(enabled[..counts.matching()].iter().all(|value| *value));
+    assert!(enabled[counts.matching()..].iter().all(|value| !*value));
+}
+
+#[test]
+fn nullable_domain_can_use_null_as_a_rejected_witness() {
+    let nullable_int = RelationSchema::new(
+        "t",
+        vec![
+            SchemaColumn::new(
+                "value",
+                DataType::Nullable(Box::new(DataType::SignedInteger { bits: Some(32) })),
+            )
+            .expect("nullable datatype should be valid schema metadata"),
+        ],
+    )
+    .expect("schema should be valid");
+    let counts = GenerationRowCounts::new(2, 4).expect("test row counts should be valid");
+
+    let generated = generate_classified_from_sql(
+        "SELECT value FROM t WHERE value IS NOT NULL",
+        "generic",
+        &[nullable_int],
+        counts,
+        SEED,
+    )
+    .expect("nullable domain should be complementable");
+    let array = generated
+        .table("t")
+        .expect("source table should exist")
+        .array("value")
+        .expect("column should be readable")
+        .expect("column should be built");
+
+    assert!((0..counts.matching()).all(|index| !array.is_null(index)));
+    assert!((counts.matching()..counts.total()).all(|index| array.is_null(index)));
+}
+
+#[test]
+fn unbounded_domain_cannot_claim_rejected_rows() {
+    let counts = GenerationRowCounts::new(1, 1).expect("test row counts should be valid");
+    let error = generate_classified_from_sql(
+        "SELECT col_a FROM t",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        counts,
+        SEED,
+    )
+    .expect_err("an unbounded domain has no guaranteed rejection witness");
+
+    assert_eq!(
+        error,
+        ProtocolGenerationError::NoRejectableColumn {
+            relation: "t".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn rejected_ratio_resolves_to_deterministic_counts() {
+    let counts = GenerationRowCounts::from_rejected_ratio(10, 0.3).expect("ratio should be valid");
+
+    assert_eq!(counts.matching(), 7);
+    assert_eq!(counts.rejected(), 3);
+    assert_eq!(counts.total(), 10);
+    assert!(GenerationRowCounts::from_rejected_ratio(10, 1.1).is_err());
 }

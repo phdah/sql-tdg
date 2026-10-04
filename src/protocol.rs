@@ -11,7 +11,7 @@ use sql_semantic_protocol::{
 };
 
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
-use crate::protocol_value::{build_array, candidates, is_supported};
+use crate::protocol_value::{build_array, candidates, is_supported, rejected_candidates};
 use crate::solver::SolverError;
 use crate::table::{Table, TableError};
 
@@ -24,9 +24,84 @@ pub enum OutcomeSelector {
     AnonymousLayer(String),
 }
 
+/// Matching and deliberately rejected rows generated for each relation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GenerationRowCounts {
+    matching: usize,
+    rejected: usize,
+}
+
+impl GenerationRowCounts {
+    /// Creates explicit matching and rejected row counts.
+    pub fn new(matching: usize, rejected: usize) -> Result<Self, ProtocolGenerationError> {
+        matching.checked_add(rejected).ok_or_else(|| {
+            ProtocolGenerationError::InvalidRowConfiguration {
+                message: "matching and rejected row counts overflow usize".to_owned(),
+            }
+        })?;
+        Ok(Self { matching, rejected })
+    }
+
+    /// Creates an all-matching row configuration.
+    pub const fn matching_only(rows: usize) -> Self {
+        Self {
+            matching: rows,
+            rejected: 0,
+        }
+    }
+
+    /// Splits a total row count using a rejected-row ratio in the inclusive range 0.0..=1.0.
+    ///
+    /// The rejected count is rounded to the nearest whole row and the remainder is matching.
+    pub fn from_rejected_ratio(
+        total_rows: usize,
+        rejected_ratio: f64,
+    ) -> Result<Self, ProtocolGenerationError> {
+        if !rejected_ratio.is_finite() || !(0.0..=1.0).contains(&rejected_ratio) {
+            return Err(ProtocolGenerationError::InvalidRowConfiguration {
+                message: format!(
+                    "rejected row ratio must be finite and between 0.0 and 1.0, got {rejected_ratio}"
+                ),
+            });
+        }
+
+        let total = u64::try_from(total_rows).map_err(|_| {
+            ProtocolGenerationError::InvalidRowConfiguration {
+                message: "total row count cannot be represented as u64".to_owned(),
+            }
+        })?;
+        if total > (1_u64 << 53) {
+            return Err(ProtocolGenerationError::InvalidRowConfiguration {
+                message:
+                    "ratio-based row counts are limited to integers exactly representable by f64"
+                        .to_owned(),
+            });
+        }
+
+        let rejected = ((total as f64) * rejected_ratio).round() as usize;
+        Self::new(total_rows - rejected, rejected)
+    }
+
+    /// Returns the number of rows sampled inside every supplied scalar domain.
+    pub const fn matching(self) -> usize {
+        self.matching
+    }
+
+    /// Returns the number of rows with one deliberately violated scalar domain.
+    pub const fn rejected(self) -> usize {
+        self.rejected
+    }
+
+    /// Returns the total number of generated rows.
+    pub const fn total(self) -> usize {
+        self.matching + self.rejected
+    }
+}
+
 /// Arrow-backed generated source tables keyed by canonical relation identity.
 pub struct GeneratedData {
     tables: BTreeMap<String, Table>,
+    row_counts: GenerationRowCounts,
 }
 
 impl fmt::Debug for GeneratedData {
@@ -34,6 +109,7 @@ impl fmt::Debug for GeneratedData {
         formatter
             .debug_struct("GeneratedData")
             .field("relations", &self.tables.keys().collect::<Vec<_>>())
+            .field("row_counts", &self.row_counts)
             .finish()
     }
 }
@@ -47,6 +123,11 @@ impl GeneratedData {
     /// Return one generated source table.
     pub fn table(&self, relation: &str) -> Option<&Table> {
         self.tables.get(relation)
+    }
+
+    /// Return the matching and deliberately rejected row counts for each generated relation.
+    pub const fn row_counts(&self) -> GenerationRowCounts {
+        self.row_counts
     }
 }
 
@@ -151,6 +232,16 @@ pub enum ProtocolGenerationError {
         column: String,
         /// Canonical protocol datatype.
         data_type: String,
+    },
+    /// Requested matching/rejected row counts or ratio are invalid.
+    InvalidRowConfiguration {
+        /// Explanation of the invalid configuration.
+        message: String,
+    },
+    /// Rejected rows were requested but a relation has no safely complementable scalar domain.
+    NoRejectableColumn {
+        /// Canonical source relation identity.
+        relation: String,
     },
     /// The protocol domain shape is not supported for the declared source type.
     UnsupportedDomain {
@@ -274,6 +365,13 @@ impl fmt::Display for ProtocolGenerationError {
                 formatter,
                 "unsupported source datatype {data_type} for {relation}.{column}"
             ),
+            Self::InvalidRowConfiguration { message } => {
+                write!(formatter, "invalid row configuration: {message}")
+            }
+            Self::NoRejectableColumn { relation } => write!(
+                formatter,
+                "relation {relation:?} has no constrained scalar column with a safe complement domain"
+            ),
             Self::UnsupportedDomain {
                 relation,
                 column,
@@ -315,12 +413,29 @@ impl Error for ProtocolGenerationError {
     }
 }
 
-/// Analyze SQL through SQL Semantic Protocol and generate source tables for its terminal outcome.
+/// Analyze SQL through SQL Semantic Protocol and generate matching source rows.
 pub fn generate_from_sql(
     sql: &str,
     dialect_name: &str,
     source_schemas: &[RelationSchema],
     rows: usize,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    generate_classified_from_sql(
+        sql,
+        dialect_name,
+        source_schemas,
+        GenerationRowCounts::matching_only(rows),
+        seed,
+    )
+}
+
+/// Analyze SQL through SQL Semantic Protocol and generate classified source rows.
+pub fn generate_classified_from_sql(
+    sql: &str,
+    dialect_name: &str,
+    source_schemas: &[RelationSchema],
+    row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
     let dialect = dialect_from_name(dialect_name).ok_or_else(|| {
@@ -347,14 +462,29 @@ pub fn generate_from_sql(
             }
         })?;
 
-    generate_from_bundle(&bundle, None, rows, seed)
+    generate_classified_from_bundle(&bundle, None, row_counts, seed)
 }
 
-/// Generate source tables from one explicitly resolved terminal outcome in a protocol bundle.
+/// Generate matching source rows from one explicitly resolved terminal outcome in a protocol bundle.
 pub fn generate_from_bundle(
     bundle: &AnalysisBundle,
     selector: Option<&OutcomeSelector>,
     rows: usize,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    generate_classified_from_bundle(
+        bundle,
+        selector,
+        GenerationRowCounts::matching_only(rows),
+        seed,
+    )
+}
+
+/// Generate classified source rows from one explicitly resolved terminal outcome in a protocol bundle.
+pub fn generate_classified_from_bundle(
+    bundle: &AnalysisBundle,
+    selector: Option<&OutcomeSelector>,
+    row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
     let (layer_id, outcome_description) = select_terminal_layer(bundle, selector)?;
@@ -454,11 +584,36 @@ pub fn generate_from_bundle(
                 schema_column.data_type(),
                 domain,
             )?;
-            plans.push(ColumnPlan::new(schema_column.name(), generation_domain));
+            let rejected_domain = if row_counts.rejected() == 0 {
+                None
+            } else {
+                map_rejected_domain(
+                    relation,
+                    schema_column.name(),
+                    schema_column.data_type(),
+                    domain,
+                )?
+            };
+            plans.push(ColumnPlan::new(
+                schema_column.name(),
+                generation_domain,
+                rejected_domain,
+            ));
+        }
+
+        if row_counts.rejected() > 0 && !plans.iter().any(ColumnPlan::is_rejectable) {
+            return Err(ProtocolGenerationError::NoRejectableColumn {
+                relation: relation.clone(),
+            });
         }
 
         let generated = Generator::new()
-            .generate_protocol_values(rows, seed, &plans)
+            .generate_classified_protocol_values(
+                row_counts.matching(),
+                row_counts.rejected(),
+                seed,
+                &plans,
+            )
             .map_err(|source| ProtocolGenerationError::Generator {
                 relation: relation.clone(),
                 source,
@@ -479,17 +634,15 @@ pub fn generate_from_bundle(
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let table =
-            Table::from_protocol_arrays(schema.columns(), rows, arrays).map_err(|source| {
-                ProtocolGenerationError::Table {
-                    relation: relation.clone(),
-                    source,
-                }
+        let table = Table::from_protocol_arrays(schema.columns(), row_counts.total(), arrays)
+            .map_err(|source| ProtocolGenerationError::Table {
+                relation: relation.clone(),
+                source,
             })?;
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables })
+    Ok(GeneratedData { tables, row_counts })
 }
 
 fn select_terminal_layer(
@@ -612,6 +765,48 @@ fn map_domain(
         }),
         Some(domain) => generic_generation_domain(relation, column, data_type, Some(domain)),
         None => generic_generation_domain(relation, column, data_type, None),
+    }
+}
+
+fn map_rejected_domain(
+    relation: &str,
+    column: &str,
+    data_type: &DataType,
+    domain: Option<&ValueDomain>,
+) -> Result<Option<GenerationDomain>, ProtocolGenerationError> {
+    let Some(domain) = domain else {
+        return Ok(None);
+    };
+
+    match domain {
+        ValueDomain::Empty => {
+            return Err(ProtocolGenerationError::EmptyDomain {
+                relation: relation.to_owned(),
+                column: column.to_owned(),
+            });
+        }
+        ValueDomain::Unknown(unknown) => {
+            return Err(ProtocolGenerationError::UnknownDomain {
+                relation: relation.to_owned(),
+                column: column.to_owned(),
+                reason: unknown.reason().to_owned(),
+            });
+        }
+        _ => {}
+    }
+
+    let values = rejected_candidates(data_type, domain).map_err(|message| {
+        ProtocolGenerationError::UnsupportedDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+            message: format!("cannot derive rejected values: {message}"),
+        }
+    })?;
+
+    if values.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(GenerationDomain::Values(values)))
     }
 }
 

@@ -197,6 +197,253 @@ pub(crate) fn candidates(
     }
 }
 
+pub(crate) fn rejected_candidates(
+    data_type: &DataType,
+    domain: &ValueDomain,
+) -> Result<Vec<ProtocolValue>, String> {
+    match data_type {
+        DataType::Nullable(inner) => nullable_rejected_candidates(inner, domain),
+        _ => non_null_rejected_candidates(data_type, domain),
+    }
+}
+
+fn nullable_rejected_candidates(
+    inner: &DataType,
+    domain: &ValueDomain,
+) -> Result<Vec<ProtocolValue>, String> {
+    match domain {
+        ValueDomain::Unbounded | ValueDomain::Empty => Ok(Vec::new()),
+        ValueDomain::Unknown(unknown) => Err(unknown.reason().to_owned()),
+        ValueDomain::Set(set) => match set.mode() {
+            SetMode::Include => {
+                let includes_null = set
+                    .values()
+                    .iter()
+                    .any(|literal| matches!(literal.value(), LiteralValue::Null));
+                let included = set
+                    .values()
+                    .iter()
+                    .filter(|literal| !matches!(literal.value(), LiteralValue::Null))
+                    .map(|literal| value_from_literal(inner, literal))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut values = Vec::new();
+                if !includes_null {
+                    values.push(ProtocolValue::Null);
+                }
+                if let Ok(value) = non_excluded_value(inner, &included) {
+                    push_unique(&mut values, value);
+                }
+                Ok(values)
+            }
+            SetMode::Exclude => {
+                let mut values = Vec::new();
+                for literal in set.values() {
+                    let value = if matches!(literal.value(), LiteralValue::Null) {
+                        ProtocolValue::Null
+                    } else {
+                        value_from_literal(inner, literal)?
+                    };
+                    push_unique(&mut values, value);
+                }
+                Ok(values)
+            }
+        },
+        ValueDomain::Ranges(ranges) => {
+            let mut values = vec![ProtocolValue::Null];
+            for value in range_rejected_candidates(inner, ranges.ranges())? {
+                push_unique(&mut values, value);
+            }
+            Ok(values)
+        }
+        _ => Err("unsupported protocol value-domain variant".to_owned()),
+    }
+}
+
+fn non_null_rejected_candidates(
+    data_type: &DataType,
+    domain: &ValueDomain,
+) -> Result<Vec<ProtocolValue>, String> {
+    match domain {
+        ValueDomain::Unbounded | ValueDomain::Empty => Ok(Vec::new()),
+        ValueDomain::Unknown(unknown) => Err(unknown.reason().to_owned()),
+        ValueDomain::Set(set) => match set.mode() {
+            SetMode::Include => {
+                let included = set
+                    .values()
+                    .iter()
+                    .filter(|literal| !matches!(literal.value(), LiteralValue::Null))
+                    .map(|literal| value_from_literal(data_type, literal))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(non_excluded_value(data_type, &included)
+                    .ok()
+                    .into_iter()
+                    .collect())
+            }
+            SetMode::Exclude => {
+                let mut values = Vec::new();
+                for literal in set
+                    .values()
+                    .iter()
+                    .filter(|literal| !matches!(literal.value(), LiteralValue::Null))
+                {
+                    push_unique(&mut values, value_from_literal(data_type, literal)?);
+                }
+                Ok(values)
+            }
+        },
+        ValueDomain::Ranges(ranges) => range_rejected_candidates(data_type, ranges.ranges()),
+        _ => Err("unsupported protocol value-domain variant".to_owned()),
+    }
+}
+
+fn range_rejected_candidates(
+    data_type: &DataType,
+    ranges: &[sql_semantic_protocol::ValueRange],
+) -> Result<Vec<ProtocolValue>, String> {
+    let mut values = Vec::new();
+
+    for candidate in default_values(data_type)? {
+        if value_is_representable(data_type, &candidate)?
+            && !value_in_any_range(&candidate, ranges, data_type)?
+        {
+            push_unique(&mut values, candidate);
+        }
+    }
+
+    for range in ranges {
+        if let Some(lower) = range.lower() {
+            let lower_value = value_from_literal(data_type, lower.value())?;
+            let candidate = if lower.inclusive() {
+                step_value(&lower_value, false)
+            } else {
+                Some(lower_value)
+            };
+            if let Some(candidate) = candidate
+                && value_is_representable(data_type, &candidate)?
+                && !value_in_any_range(&candidate, ranges, data_type)?
+            {
+                push_unique(&mut values, candidate);
+            }
+        }
+
+        if let Some(upper) = range.upper() {
+            let upper_value = value_from_literal(data_type, upper.value())?;
+            let candidate = if upper.inclusive() {
+                step_value(&upper_value, true)
+            } else {
+                Some(upper_value)
+            };
+            if let Some(candidate) = candidate
+                && value_is_representable(data_type, &candidate)?
+                && !value_in_any_range(&candidate, ranges, data_type)?
+            {
+                push_unique(&mut values, candidate);
+            }
+        }
+    }
+
+    Ok(values)
+}
+
+fn value_in_any_range(
+    value: &ProtocolValue,
+    ranges: &[sql_semantic_protocol::ValueRange],
+    data_type: &DataType,
+) -> Result<bool, String> {
+    for range in ranges {
+        if value_in_range(value, range, data_type)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn value_is_representable(data_type: &DataType, value: &ProtocolValue) -> Result<bool, String> {
+    match data_type {
+        DataType::Nullable(inner) => {
+            if matches!(value, ProtocolValue::Null) {
+                Ok(true)
+            } else {
+                value_is_representable(inner, value)
+            }
+        }
+        DataType::Decimal { precision, .. } => {
+            let ProtocolValue::Decimal128(value) = value else {
+                return Ok(false);
+            };
+            let limit = pow10_i128(precision.unwrap_or(38))?;
+            Ok(*value > -limit && *value < limit)
+        }
+        DataType::FloatingPoint { bits } => match bits.unwrap_or(64) {
+            0..=32 => Ok(matches!(
+                value,
+                ProtocolValue::Float32(bits) if f32::from_bits(*bits).is_finite()
+            )),
+            33..=64 => Ok(matches!(
+                value,
+                ProtocolValue::Float64(bits) if f64::from_bits(*bits).is_finite()
+            )),
+            _ => Ok(false),
+        },
+        DataType::String { length, fixed } => {
+            let ProtocolValue::String(value) = value else {
+                return Ok(false);
+            };
+            let width = value.chars().count() as u64;
+            Ok(if *fixed {
+                width == length.unwrap_or(width)
+            } else {
+                length.is_none_or(|length| width <= length)
+            })
+        }
+        DataType::Binary { length, fixed } => {
+            let ProtocolValue::Binary(value) = value else {
+                return Ok(false);
+            };
+            let width = value.len() as u64;
+            Ok(if *fixed {
+                width == length.unwrap_or(width)
+            } else {
+                length.is_none_or(|length| width <= length)
+            })
+        }
+        DataType::Time { precision } => {
+            if precision.is_none_or(|value| value <= 6) {
+                Ok(matches!(
+                    value,
+                    ProtocolValue::TimeMicroseconds(value)
+                        if (0..=86_399_999_999).contains(value)
+                ))
+            } else if precision.is_some_and(|value| value <= 9) {
+                Ok(matches!(
+                    value,
+                    ProtocolValue::TimeNanoseconds(value)
+                        if (0..=86_399_999_999_999).contains(value)
+                ))
+            } else {
+                Ok(false)
+            }
+        }
+        DataType::Uuid => Ok(matches!(value, ProtocolValue::Binary(value) if value.len() == 16)),
+        DataType::Enum { values } => Ok(matches!(
+            value,
+            ProtocolValue::String(value)
+                if values.iter().any(|member| member.name() == value)
+        )),
+        DataType::Set { values } => Ok(matches!(
+            value,
+            ProtocolValue::String(value) if values.iter().any(|member| member == value)
+        )),
+        _ => Ok(build_array(data_type, std::slice::from_ref(value)).is_ok()),
+    }
+}
+
+fn push_unique(values: &mut Vec<ProtocolValue>, value: ProtocolValue) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
+}
+
 fn nullable_candidates(
     inner: &DataType,
     domain: Option<&ValueDomain>,
@@ -577,16 +824,154 @@ fn non_excluded_value(
             .find(|value| !excludes.contains(value))
             .ok_or_else(|| "boolean exclusion removes every value".to_owned());
     }
+    if matches!(data_type, DataType::String { .. }) {
+        return non_excluded_string(data_type, excludes);
+    }
+    if matches!(data_type, DataType::Binary { .. }) {
+        return non_excluded_binary(data_type, excludes);
+    }
+    if matches!(data_type, DataType::Uuid) {
+        return non_excluded_fixed_binary(16, excludes, "UUID");
+    }
+    if matches!(data_type, DataType::Json) {
+        for index in 0..=excludes.len().saturating_add(1) {
+            let candidate = ProtocolValue::String(index.to_string());
+            if !excludes.contains(&candidate) {
+                return Ok(candidate);
+            }
+        }
+        return Err("JSON exclusion leaves no generated alternative".to_owned());
+    }
 
-    let mut value = representative_non_null_value(data_type)?;
-    for _ in 0..excludes.len().saturating_add(2) {
-        if !excludes.contains(&value) {
+    for candidate in default_values(data_type)? {
+        if !excludes.contains(&candidate) && value_is_representable(data_type, &candidate)? {
+            return Ok(candidate);
+        }
+    }
+
+    let start = representative_non_null_value(data_type)?;
+    for up in [true, false] {
+        let mut value = start.clone();
+        for _ in 0..excludes.len().saturating_add(2) {
+            if !excludes.contains(&value) && value_is_representable(data_type, &value)? {
+                return Ok(value);
+            }
+            let Some(next) = step_value(&value, up) else {
+                break;
+            };
+            if !value_is_representable(data_type, &next)? {
+                break;
+            }
+            value = next;
+        }
+    }
+
+    Err("excluded domain has no representable alternative".to_owned())
+}
+
+fn non_excluded_string(
+    data_type: &DataType,
+    excludes: &[ProtocolValue],
+) -> Result<ProtocolValue, String> {
+    let DataType::String { length, fixed } = data_type else {
+        return Err("expected string datatype".to_owned());
+    };
+    let width = if *fixed {
+        usize::try_from(length.unwrap_or(1))
+            .map_err(|_| "fixed string length is too large".to_owned())?
+    } else {
+        usize::from(length.unwrap_or(1) > 0)
+    };
+
+    if width == 0 {
+        let candidate = ProtocolValue::String(String::new());
+        return (!excludes.contains(&candidate))
+            .then_some(candidate)
+            .ok_or_else(|| "string exclusion removes every representable value".to_owned());
+    }
+
+    for index in 0..=excludes.len().saturating_add(1) {
+        let character = indexed_scalar(index)
+            .ok_or_else(|| "string exclusion search exceeded Unicode scalar values".to_owned())?;
+        let value = if *fixed {
+            character.to_string().repeat(width)
+        } else {
+            character.to_string()
+        };
+        let candidate = ProtocolValue::String(value);
+        if !excludes.contains(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    Err("string exclusion leaves no generated alternative".to_owned())
+}
+
+fn indexed_scalar(index: usize) -> Option<char> {
+    let offset = u32::try_from(index).ok()?;
+    let code = 0x21_u32.checked_add(offset)?;
+    let code = if code >= 0xD800 {
+        code.checked_add(0x800)?
+    } else {
+        code
+    };
+    char::from_u32(code)
+}
+
+fn non_excluded_binary(
+    data_type: &DataType,
+    excludes: &[ProtocolValue],
+) -> Result<ProtocolValue, String> {
+    let DataType::Binary { length, fixed } = data_type else {
+        return Err("expected binary datatype".to_owned());
+    };
+    let max_width = usize::try_from(length.unwrap_or(std::mem::size_of::<usize>() as u64))
+        .map_err(|_| "binary length is too large".to_owned())?;
+
+    if *fixed {
+        return non_excluded_fixed_binary(max_width, excludes, "binary");
+    }
+
+    for width in 0..=max_width.min(std::mem::size_of::<usize>()) {
+        if let Ok(value) = non_excluded_fixed_binary(width, excludes, "binary") {
             return Ok(value);
         }
-        value = step_value(&value, true)
-            .ok_or_else(|| "excluded domain has no representable alternative".to_owned())?;
     }
-    Err("excluded domain has no representable alternative".to_owned())
+
+    Err("binary exclusion leaves no generated alternative".to_owned())
+}
+
+fn non_excluded_fixed_binary(
+    width: usize,
+    excludes: &[ProtocolValue],
+    label: &str,
+) -> Result<ProtocolValue, String> {
+    for index in 0..=excludes.len().saturating_add(1) {
+        let Some(bytes) = counter_bytes(index, width) else {
+            break;
+        };
+        let candidate = ProtocolValue::Binary(bytes);
+        if !excludes.contains(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "{label} exclusion removes every generated alternative"
+    ))
+}
+
+fn counter_bytes(index: usize, width: usize) -> Option<Vec<u8>> {
+    if width == 0 {
+        return (index == 0).then(Vec::new);
+    }
+
+    let mut remaining = index;
+    let mut bytes = vec![0; width];
+    for byte in bytes.iter_mut().rev() {
+        *byte = (remaining & 0xff) as u8;
+        remaining >>= 8;
+    }
+    (remaining == 0).then_some(bytes)
 }
 
 fn signed_defaults(bits: u16) -> Result<Vec<ProtocolValue>, String> {
