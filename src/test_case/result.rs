@@ -42,10 +42,7 @@ pub struct QueryResult {
 
 impl QueryResult {
     /// Creates a result after validating every row against the declared column count.
-    pub fn new(
-        columns: Vec<ResultColumn>,
-        rows: Vec<Vec<String>>,
-    ) -> Result<Self, TestCaseError> {
+    pub fn new(columns: Vec<ResultColumn>, rows: Vec<Vec<String>>) -> Result<Self, TestCaseError> {
         let expected = columns.len();
         for (row_index, row) in rows.iter().enumerate() {
             if row.len() != expected {
