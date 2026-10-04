@@ -178,7 +178,7 @@ impl fmt::Display for ProtocolGenerationError {
             }
             Self::NoTerminalOutcome => {
                 formatter.write_str("protocol bundle has no terminal outcome")
-            },
+            }
             Self::AmbiguousTerminalOutcome { candidates } => write!(
                 formatter,
                 "protocol bundle has multiple terminal outcomes; select one explicitly: {}",
