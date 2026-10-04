@@ -335,7 +335,6 @@ fn unsupported_custom_source_type_is_not_coerced() {
     );
 }
 
-
 #[test]
 fn classified_generation_produces_matching_and_rejected_range_witnesses() {
     let counts = GenerationRowCounts::new(5, 7).expect("test row counts should be valid");
@@ -372,10 +371,7 @@ fn classified_generation_produces_matching_and_rejected_range_witnesses() {
 #[test]
 fn rejected_column_selection_and_values_are_seeded() {
     let counts = GenerationRowCounts::new(4, 12).expect("test row counts should be valid");
-    let schemas = [schema(
-        "t",
-        &[("col_a", "INTEGER"), ("enabled", "BOOLEAN")],
-    )];
+    let schemas = [schema("t", &[("col_a", "INTEGER"), ("enabled", "BOOLEAN")])];
     let sql = "SELECT col_a, enabled FROM t WHERE col_a BETWEEN 4 AND 8 AND enabled = true";
 
     let first = generate_classified_from_sql(sql, "generic", &schemas, counts, SEED)
@@ -519,8 +515,7 @@ fn unbounded_domain_cannot_claim_rejected_rows() {
 
 #[test]
 fn rejected_ratio_resolves_to_deterministic_counts() {
-    let counts =
-        GenerationRowCounts::from_rejected_ratio(10, 0.3).expect("ratio should be valid");
+    let counts = GenerationRowCounts::from_rejected_ratio(10, 0.3).expect("ratio should be valid");
 
     assert_eq!(counts.matching(), 7);
     assert_eq!(counts.rejected(), 3);
