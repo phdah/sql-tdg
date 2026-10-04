@@ -171,9 +171,14 @@ impl fmt::Display for ProtocolGenerationError {
             }
             Self::Analysis { message } => write!(formatter, "protocol analysis failed: {message}"),
             Self::InvalidSchemaMetadata { message } => {
-                write!(formatter, "invalid protocol source schema metadata: {message}")
+                write!(
+                    formatter,
+                    "invalid protocol source schema metadata: {message}"
+                )
             }
-            Self::NoTerminalOutcome => formatter.write_str("protocol bundle has no terminal outcome"),
+            Self::NoTerminalOutcome => {
+                formatter.write_str("protocol bundle has no terminal outcome")
+            },
             Self::AmbiguousTerminalOutcome { candidates } => write!(
                 formatter,
                 "protocol bundle has multiple terminal outcomes; select one explicitly: {}",
@@ -183,17 +188,26 @@ impl fmt::Display for ProtocolGenerationError {
                 write!(formatter, "unknown terminal outcome {selector}")
             }
             Self::MissingOutcomeLayer { outcome } => {
-                write!(formatter, "terminal outcome {outcome} has no transformation layer")
+                write!(
+                    formatter,
+                    "terminal outcome {outcome} has no transformation layer"
+                )
             }
             Self::UnresolvedComposition { layer_id, reason } => write!(
                 formatter,
                 "terminal layer {layer_id} has unresolved composed semantics: {reason}"
             ),
             Self::MissingSourceSchema { relation } => {
-                write!(formatter, "missing source schema metadata for relation {relation:?}")
+                write!(
+                    formatter,
+                    "missing source schema metadata for relation {relation:?}"
+                )
             }
             Self::AmbiguousColumnDomain { column } => {
-                write!(formatter, "column domain {column:?} cannot be mapped unambiguously")
+                write!(
+                    formatter,
+                    "column domain {column:?} cannot be mapped unambiguously"
+                )
             }
             Self::UnknownDomain {
                 relation,
@@ -204,7 +218,10 @@ impl fmt::Display for ProtocolGenerationError {
                 "protocol domain for {relation}.{column} is unknown: {reason}"
             ),
             Self::EmptyDomain { relation, column } => {
-                write!(formatter, "protocol domain for {relation}.{column} is empty")
+                write!(
+                    formatter,
+                    "protocol domain for {relation}.{column} is empty"
+                )
             }
             Self::InvalidLiteral {
                 relation,
@@ -232,12 +249,21 @@ impl fmt::Display for ProtocolGenerationError {
             ),
             Self::Solver {
                 relation, column, ..
-            } => write!(formatter, "could not prepare domain for {relation}.{column}"),
+            } => write!(
+                formatter,
+                "could not prepare domain for {relation}.{column}"
+            ),
             Self::Table { relation, .. } => {
-                write!(formatter, "could not construct table for relation {relation:?}")
+                write!(
+                    formatter,
+                    "could not construct table for relation {relation:?}"
+                )
             }
             Self::Generator { relation, .. } => {
-                write!(formatter, "could not generate table for relation {relation:?}")
+                write!(
+                    formatter,
+                    "could not generate table for relation {relation:?}"
+                )
             }
         }
     }
@@ -262,10 +288,11 @@ pub fn generate_from_sql(
     rows: usize,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
-    let dialect =
-        dialect_from_name(dialect_name).ok_or_else(|| ProtocolGenerationError::UnsupportedDialect {
+    let dialect = dialect_from_name(dialect_name).ok_or_else(|| {
+        ProtocolGenerationError::UnsupportedDialect {
             dialect: dialect_name.to_owned(),
-        })?;
+        }
+    })?;
     let input = SqlInput::inline(sql);
     let configured = [ConfiguredSqlInput::new(
         "input-0001",
@@ -278,11 +305,12 @@ pub fn generate_from_sql(
             message: error.to_string(),
         }
     })?;
-    let bundle = analyze_configured_inputs_with_catalog(&configured, &catalog).map_err(|error| {
-        ProtocolGenerationError::Analysis {
-            message: error.to_string(),
-        }
-    })?;
+    let bundle =
+        analyze_configured_inputs_with_catalog(&configured, &catalog).map_err(|error| {
+            ProtocolGenerationError::Analysis {
+                message: error.to_string(),
+            }
+        })?;
 
     generate_from_bundle(&bundle, None, rows, seed)
 }
@@ -326,12 +354,11 @@ pub fn generate_from_bundle(
 
     let mut tables = BTreeMap::new();
     for relation in semantics.dependencies() {
-        let schema = schemas
-            .get(relation.as_str())
-            .copied()
-            .ok_or_else(|| ProtocolGenerationError::MissingSourceSchema {
+        let schema = schemas.get(relation.as_str()).copied().ok_or_else(|| {
+            ProtocolGenerationError::MissingSourceSchema {
                 relation: relation.clone(),
-            })?;
+            }
+        })?;
 
         let mut columns = Vec::with_capacity(schema.columns().len());
         let mut plans = Vec::with_capacity(schema.columns().len());
@@ -356,10 +383,11 @@ pub fn generate_from_bundle(
             plans.push(ColumnPlan::new(schema_column.name(), generation_domain));
         }
 
-        let mut table = Table::new(columns, rows).map_err(|source| ProtocolGenerationError::Table {
-            relation: relation.clone(),
-            source,
-        })?;
+        let mut table =
+            Table::new(columns, rows).map_err(|source| ProtocolGenerationError::Table {
+                relation: relation.clone(),
+                source,
+            })?;
         Generator::new()
             .generate_plans(&mut table, seed, &plans)
             .map_err(|source| ProtocolGenerationError::Generator {
@@ -390,7 +418,10 @@ fn select_terminal_layer(
             [only] => *only,
             _ => {
                 return Err(ProtocolGenerationError::AmbiguousTerminalOutcome {
-                    candidates: finals.iter().map(|outcome| describe_outcome(outcome)).collect(),
+                    candidates: finals
+                        .iter()
+                        .map(|outcome| describe_outcome(outcome))
+                        .collect(),
                 });
             }
         },
@@ -621,13 +652,13 @@ fn map_set_domain(
                 SetMode::Exclude => {
                     let mut domain = IntDomain::new();
                     for value in parsed {
-                        domain.apply(IntConstraint::NotEqual(value)).map_err(|source| {
-                            ProtocolGenerationError::Solver {
+                        domain
+                            .apply(IntConstraint::NotEqual(value))
+                            .map_err(|source| ProtocolGenerationError::Solver {
                                 relation: relation.to_owned(),
                                 column: column.to_owned(),
                                 source,
-                            }
-                        })?;
+                            })?;
                     }
                     Ok(GenerationDomain::Int(domain))
                 }
@@ -772,10 +803,12 @@ fn integer_interval(
             if bound.inclusive() {
                 value
             } else {
-                value.checked_add(1).ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                    relation: relation.to_owned(),
-                    column: column.to_owned(),
-                })?
+                value
+                    .checked_add(1)
+                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
+                        relation: relation.to_owned(),
+                        column: column.to_owned(),
+                    })?
             }
         }
     };
@@ -786,10 +819,12 @@ fn integer_interval(
             if bound.inclusive() {
                 value
             } else {
-                value.checked_sub(1).ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                    relation: relation.to_owned(),
-                    column: column.to_owned(),
-                })?
+                value
+                    .checked_sub(1)
+                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
+                        relation: relation.to_owned(),
+                        column: column.to_owned(),
+                    })?
             }
         }
     };
@@ -812,10 +847,12 @@ fn timestamp_interval(
             if bound.inclusive() {
                 value
             } else {
-                value.checked_add(1).ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                    relation: relation.to_owned(),
-                    column: column.to_owned(),
-                })?
+                value
+                    .checked_add(1)
+                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
+                        relation: relation.to_owned(),
+                        column: column.to_owned(),
+                    })?
             }
         }
     };
@@ -826,10 +863,12 @@ fn timestamp_interval(
             if bound.inclusive() {
                 value
             } else {
-                value.checked_sub(1).ok_or_else(|| ProtocolGenerationError::EmptyDomain {
-                    relation: relation.to_owned(),
-                    column: column.to_owned(),
-                })?
+                value
+                    .checked_sub(1)
+                    .ok_or_else(|| ProtocolGenerationError::EmptyDomain {
+                        relation: relation.to_owned(),
+                        column: column.to_owned(),
+                    })?
             }
         }
     };
@@ -854,9 +893,13 @@ fn integer_literal(
     }
 
     match literal.value() {
-        LiteralValue::Number(value) => value
-            .parse::<i32>()
-            .map_err(|_| invalid_literal(relation, column, format!("integer {value:?} is outside i32"))),
+        LiteralValue::Number(value) => value.parse::<i32>().map_err(|_| {
+            invalid_literal(
+                relation,
+                column,
+                format!("integer {value:?} is outside i32"),
+            )
+        }),
         _ => Err(invalid_literal(
             relation,
             column,
@@ -870,20 +913,28 @@ fn timestamp_literal(
     column: &str,
     literal: &LiteralExpression,
 ) -> Result<i32, ProtocolGenerationError> {
-    if !matches!(literal.literal_type(), LiteralType::Date | LiteralType::Timestamp) {
+    if !matches!(
+        literal.literal_type(),
+        LiteralType::Date | LiteralType::Timestamp
+    ) {
         return Err(invalid_literal(
             relation,
             column,
-            format!("expected date or timestamp literal, got {:?}", literal.literal_type()),
+            format!(
+                "expected date or timestamp literal, got {:?}",
+                literal.literal_type()
+            ),
         ));
     }
 
     match literal.value() {
-        LiteralValue::Text(value) => parse_time(value).map_err(|source| ProtocolGenerationError::Solver {
-            relation: relation.to_owned(),
-            column: column.to_owned(),
-            source,
-        }),
+        LiteralValue::Text(value) => {
+            parse_time(value).map_err(|source| ProtocolGenerationError::Solver {
+                relation: relation.to_owned(),
+                column: column.to_owned(),
+                source,
+            })
+        }
         _ => Err(invalid_literal(
             relation,
             column,
@@ -938,11 +989,7 @@ fn string_literal(
     }
 }
 
-fn invalid_literal(
-    relation: &str,
-    column: &str,
-    message: String,
-) -> ProtocolGenerationError {
+fn invalid_literal(relation: &str, column: &str, message: String) -> ProtocolGenerationError {
     ProtocolGenerationError::InvalidLiteral {
         relation: relation.to_owned(),
         column: column.to_owned(),
