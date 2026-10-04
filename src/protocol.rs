@@ -12,9 +12,9 @@ use sql_semantic_protocol::{
 
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{build_array, candidates, is_supported};
-use crate::solver::{BoolDomain, IntDomain, SolverError};
+use crate::solver::{BoolDomain, IntDomain, SolverError, TimestampDomain, parse_time};
 use crate::table::{Table, TableError};
-use crate::types::{BoolConstraint, IntConstraint, Interval};
+use crate::types::{BoolConstraint, IntConstraint, Interval, TimestampConstraint};
 
 /// Explicit selection of one terminal protocol outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -617,7 +617,7 @@ fn map_domain(
             reason: unknown.reason().to_owned(),
         }),
         ValueDomain::Ranges(ranges) => match data_type {
-            DataType::SignedInteger { bits } if bits.is_none_or(|bits| bits <= 32) => {
+            DataType::SignedInteger { bits: Some(32) } => {
                 let intervals = ranges
                     .ranges()
                     .iter()
@@ -631,7 +631,7 @@ fn map_domain(
                         source,
                     })
             }
-            DataType::Timestamp { .. } => {
+            DataType::Timestamp { precision } if precision.is_none_or(|value| value == 0) => {
                 let intervals = ranges
                     .ranges()
                     .iter()
@@ -652,10 +652,18 @@ fn map_domain(
                     message: "ordered ranges are unsupported for this source datatype".to_owned(),
                 })
             }
-            _ => Err(unsupported_source_type(relation, column, data_type)),
+            _ => generic_generation_domain(relation, column, data_type, Some(domain)),
         },
-        ValueDomain::Set(set) => {
-            map_set_domain(relation, column, data_type, set.mode(), set.values())
+        ValueDomain::Set(set) => match data_type {
+            DataType::SignedInteger { bits: Some(32) }
+            | DataType::Boolean
+            | DataType::String {
+                fixed: false, ..
+            } => map_set_domain(relation, column, data_type, set.mode(), set.values()),
+            DataType::Timestamp { precision } if precision.is_none_or(|value| value == 0) => {
+                map_set_domain(relation, column, data_type, set.mode(), set.values())
+            }
+            _ => generic_generation_domain(relation, column, data_type, Some(domain)),
         }
         _ => Err(ProtocolGenerationError::UnsupportedDomain {
             relation: relation.to_owned(),
@@ -674,10 +682,14 @@ fn unbounded_domain(
         DataType::SignedInteger { bits } if bits.is_none_or(|bits| bits <= 32) => {
             Ok(GenerationDomain::Int(IntDomain::new()))
         }
-        DataType::Timestamp { .. } => Ok(GenerationDomain::Timestamp(TimestampDomain::new())),
+        DataType::Timestamp { precision } if precision.is_none_or(|value| value == 0) => {
+            Ok(GenerationDomain::Timestamp(TimestampDomain::new()))
+        }
         DataType::Boolean => Ok(GenerationDomain::Bool(BoolDomain::new())),
-        DataType::String { .. } => Ok(GenerationDomain::String(vec![String::new()])),
-        _ => Err(unsupported_source_type(relation, column, data_type)),
+        DataType::String { fixed: false, .. } => {
+            Ok(GenerationDomain::String(vec![String::new()]))
+        }
+        _ => generic_generation_domain(relation, column, data_type, None),
     }
 }
 
@@ -732,7 +744,7 @@ fn map_set_domain(
                 }
             }
         }
-        DataType::Timestamp { .. } => {
+        DataType::Timestamp { precision } if precision.is_none_or(|value| value == 0) => {
             let mut parsed = values
                 .iter()
                 .map(|value| timestamp_literal(relation, column, value))
@@ -847,6 +859,28 @@ fn map_set_domain(
     }
 }
 
+fn generic_generation_domain(
+    relation: &str,
+    column: &str,
+    data_type: &DataType,
+    domain: Option<&ValueDomain>,
+) -> Result<GenerationDomain, ProtocolGenerationError> {
+    let values = candidates(data_type, domain).map_err(|message| {
+        ProtocolGenerationError::UnsupportedDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+            message,
+        }
+    })?;
+    if values.is_empty() {
+        return Err(ProtocolGenerationError::EmptyDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+        });
+    }
+    Ok(GenerationDomain::Values(values))
+}
+
 fn unsupported_source_type(
     relation: &str,
     column: &str,
@@ -855,7 +889,17 @@ fn unsupported_source_type(
     ProtocolGenerationError::UnsupportedSourceType {
         relation: relation.to_owned(),
         column: column.to_owned(),
-        data_type: data_type.kind().to_owned(),
+        data_type: protocol_type_name(data_type),
+    }
+}
+
+fn protocol_type_name(data_type: &DataType) -> String {
+    match data_type {
+        DataType::Custom { name, modifiers } if modifiers.is_empty() => format!("custom:{name}"),
+        DataType::Custom { name, modifiers } => {
+            format!("custom:{name}({})", modifiers.join(","))
+        }
+        _ => data_type.kind().to_owned(),
     }
 }
 
