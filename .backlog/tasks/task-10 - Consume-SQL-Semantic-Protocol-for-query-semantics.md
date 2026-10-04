@@ -1,7 +1,7 @@
 ---
 id: TASK-10
 title: Consume SQL Semantic Protocol for query semantics
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-02'
 labels: []
@@ -29,11 +29,9 @@ selected outcome semantics. The protocol exposes every layer plus
 be selected.
 
 The protocol is still under active development. If generation requires semantic information that
-the protocol does not yet represent, extend or wait for the protocol contract rather than
-re-deriving that information from SQL inside sql-tdg. In particular, the current protocol exposes
-typed literals and value domains but does not yet represent a complete declared datatype schema
-for every unconstrained source column, so full schema inference may require an upstream protocol
-addition.
+the protocol does not yet represent, extend the protocol contract rather than re-deriving that
+information from SQL inside sql-tdg. TASK-10 is therefore also the consumer acceptance gate for
+SQL Semantic Protocol 1.0.0.
 
 ## Acceptance Criteria
 
@@ -51,3 +49,21 @@ addition.
 - [ ] Tests demonstrate lower and upper bounds, inclusive and exclusive bounds, excluded values, empty/contradictory domains, and terminal composed semantics.
 - [ ] README.md and AGENTS.md describe SQL Semantic Protocol as the semantic boundary and no longer describe sql-tdg as owning SQL parsing or semantic analysis.
 - [ ] `make rust-checks` remains green.
+
+
+## Protocol 1.0 release gate
+
+Consumer integration identified source-schema and datatype normalization as missing pieces in the
+pre-release protocol contract. They are implemented in `phdah/sql-semantic-protocol#31`.
+
+The required 1.0 contract now includes:
+
+- typed source relation schemas for unconstrained source columns
+- a recursive parser-independent canonical datatype model
+- dialect-specific datatype syntax normalized at the protocol boundary
+- explicit preservation of vendor/user-defined custom types
+- dialect lookup through the protocol crate so consumers do not depend directly on sqlparser
+
+TASK-10 remains In Progress until protocol PR #31 is merged and sql-tdg is switched from the
+pre-release branch dependency to the released 1.0.0 crate. Green consumer tests against #31 are
+the approval signal that the protocol contract itself is sufficient for 1.0.0.
