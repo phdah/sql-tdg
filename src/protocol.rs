@@ -679,12 +679,7 @@ fn generate_scalar_data(
 
     for relation in semantics.dependencies() {
         let schema = source_schema(schemas, relation)?;
-        let plans = prepare_relation_plans(
-            semantics,
-            relation,
-            schema,
-            row_counts.rejected() > 0,
-        )?;
+        let plans = prepare_relation_plans(semantics, relation, schema, row_counts.rejected() > 0)?;
 
         if row_counts.rejected() > 0 && !plans.iter().any(ColumnPlan::is_rejectable) {
             return Err(ProtocolGenerationError::NoRejectableColumn {
@@ -733,12 +728,10 @@ fn generate_relational_data(
         generated_by_relation.insert(relation.clone(), generated);
     }
 
-    let candidates_by_column =
-        relationship_candidates(semantics, schemas, relationships)?;
+    let candidates_by_column = relationship_candidates(semantics, schemas, relationships)?;
     let adjacency = relationship_adjacency(relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values =
-        choose_component_values(&candidates_by_column, &adjacency, &mut rng)?;
+    let matching_values = choose_component_values(&candidates_by_column, &adjacency, &mut rng)?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -814,8 +807,12 @@ fn prepare_relation_plans(
 
         let domain =
             find_column_domain(semantics.column_domains(), relation, schema_column.name())?;
-        let generation_domain =
-            map_domain(relation, schema_column.name(), schema_column.data_type(), domain)?;
+        let generation_domain = map_domain(
+            relation,
+            schema_column.name(),
+            schema_column.data_type(),
+            domain,
+        )?;
         let rejected_domain = if include_rejected_domains {
             map_rejected_domain(
                 relation,
@@ -916,10 +913,8 @@ fn collect_equality_relationships(
             collect_column_equalities(layer.id(), condition, &mut equalities)?;
 
             for (left_expression, right_expression) in equalities {
-                let left =
-                    resolve_relationship_column(bundle, layer, query, &left_expression)?;
-                let right =
-                    resolve_relationship_column(bundle, layer, query, &right_expression)?;
+                let left = resolve_relationship_column(bundle, layer, query, &left_expression)?;
+                let right = resolve_relationship_column(bundle, layer, query, &right_expression)?;
 
                 if left == right {
                     return Err(ProtocolGenerationError::UnsupportedRelationship {
@@ -936,8 +931,9 @@ fn collect_equality_relationships(
                 {
                     return Err(ProtocolGenerationError::UnsupportedRelationship {
                         layer_id: layer.id().to_owned(),
-                        message: "resolved relationship is outside the selected outcome dependencies"
-                            .to_owned(),
+                        message:
+                            "resolved relationship is outside the selected outcome dependencies"
+                                .to_owned(),
                     });
                 }
 
@@ -1020,7 +1016,8 @@ fn collect_column_equalities(
                 }
                 _ => Err(ProtocolGenerationError::UnsupportedRelationship {
                     layer_id: layer_id.to_owned(),
-                    message: "equality join must compare two protocol column expressions".to_owned(),
+                    message: "equality join must compare two protocol column expressions"
+                        .to_owned(),
                 }),
             }
         }
@@ -1032,8 +1029,8 @@ fn collect_column_equalities(
         }
         _ => Err(ProtocolGenerationError::UnsupportedRelationship {
             layer_id: layer_id.to_owned(),
-            message:
-                "join condition must be one or more column equalities combined with AND".to_owned(),
+            message: "join condition must be one or more column equalities combined with AND"
+                .to_owned(),
         }),
     }
 }
@@ -1049,9 +1046,7 @@ fn resolve_relationship_column(
         .graph()
         .edges()
         .iter()
-        .find(|edge| {
-            edge.consumer_layer_id() == layer.id() && edge.relation() == source_relation
-        })
+        .find(|edge| edge.consumer_layer_id() == layer.id() && edge.relation() == source_relation)
         .ok_or_else(|| ProtocolGenerationError::UnsupportedRelationship {
             layer_id: layer.id().to_owned(),
             message: format!(
@@ -1062,10 +1057,7 @@ fn resolve_relationship_column(
         })?;
 
     match edge.resolution() {
-        RelationResolution::External => Ok(RelationshipColumn::new(
-            edge.relation(),
-            column.name(),
-        )),
+        RelationResolution::External => Ok(RelationshipColumn::new(edge.relation(), column.name())),
         RelationResolution::Resolved => {
             let [producer_id] = edge.producer_layer_ids() else {
                 return Err(ProtocolGenerationError::UnsupportedRelationship {
@@ -1150,9 +1142,7 @@ fn source_relation_for_column<'a>(
         let matches = query
             .sources()
             .iter()
-            .filter(|source| {
-                source.alias() == Some(qualifier) || source.name() == qualifier
-            })
+            .filter(|source| source.alias() == Some(qualifier) || source.name() == qualifier)
             .collect::<Vec<_>>();
         return match matches.as_slice() {
             [source] => Ok(source.name()),
@@ -1237,11 +1227,8 @@ fn relationship_candidates(
 
     for column in columns {
         let data_type = relationship_data_type(schemas, &column)?;
-        let domain = find_column_domain(
-            semantics.column_domains(),
-            &column.relation,
-            &column.column,
-        )?;
+        let domain =
+            find_column_domain(semantics.column_domains(), &column.relation, &column.column)?;
         let values = candidates(data_type, domain)
             .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
                 relation: column.relation.clone(),
@@ -1310,12 +1297,11 @@ fn choose_component_values<R: Rng + ?Sized>(
         let Some(first) = component.first() else {
             continue;
         };
-        let mut common = candidates_by_column
-            .get(first)
-            .cloned()
-            .ok_or_else(|| ProtocolGenerationError::UnsatisfiableRelationship {
+        let mut common = candidates_by_column.get(first).cloned().ok_or_else(|| {
+            ProtocolGenerationError::UnsatisfiableRelationship {
                 relationship: first.describe(),
-            })?;
+            }
+        })?;
         common.retain(|value| {
             component.iter().skip(1).all(|column| {
                 candidates_by_column
@@ -1358,12 +1344,8 @@ fn relationship_witnesses<R: Rng + ?Sized>(
     let mut witnesses = Vec::new();
 
     for relationship in relationships {
-        let left_degree = adjacency
-            .get(&relationship.left)
-            .map_or(0, BTreeSet::len);
-        let right_degree = adjacency
-            .get(&relationship.right)
-            .map_or(0, BTreeSet::len);
+        let left_degree = adjacency.get(&relationship.left).map_or(0, BTreeSet::len);
+        let right_degree = adjacency.get(&relationship.right).map_or(0, BTreeSet::len);
 
         let candidate_column = if left_degree == 1 {
             Some(&relationship.left)
@@ -1435,14 +1417,15 @@ fn set_generated_value(
             column: column.column.clone(),
         }
     })?;
-    let slot = values.get_mut(row).ok_or_else(|| {
-        ProtocolGenerationError::InvalidRowConfiguration {
-            message: format!(
-                "generated row {row} is missing for relationship column {}",
-                column.describe()
-            ),
-        }
-    })?;
+    let slot =
+        values
+            .get_mut(row)
+            .ok_or_else(|| ProtocolGenerationError::InvalidRowConfiguration {
+                message: format!(
+                    "generated row {row} is missing for relationship column {}",
+                    column.describe()
+                ),
+            })?;
     *slot = value;
     Ok(())
 }
