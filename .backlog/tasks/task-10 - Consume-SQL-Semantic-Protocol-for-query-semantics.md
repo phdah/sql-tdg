@@ -1,7 +1,7 @@
 ---
 id: TASK-10
 title: Consume SQL Semantic Protocol for query semantics
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-02'
 labels: []
@@ -28,10 +28,9 @@ selected outcome semantics. The protocol exposes every layer plus
 `graph.components[].final_outcomes`; sql-tdg must not guess when more than one valid outcome could
 be selected.
 
-The protocol is still under active development. If generation requires semantic information that
-the protocol does not yet represent, extend the protocol contract rather than re-deriving that
-information from SQL inside sql-tdg. TASK-10 is therefore also the consumer acceptance gate for
-SQL Semantic Protocol 1.0.0.
+If generation requires semantic information that the protocol does not represent, extend the
+protocol contract rather than re-deriving that information from SQL inside sql-tdg. TASK-10 is
+therefore also the consumer acceptance gate for SQL Semantic Protocol 1.0.0.
 
 ## Acceptance Criteria
 
@@ -50,13 +49,12 @@ SQL Semantic Protocol 1.0.0.
 - [x] README.md and AGENTS.md describe SQL Semantic Protocol as the semantic boundary and no longer describe sql-tdg as owning SQL parsing or semantic analysis.
 - [x] `make rust-checks` remains green.
 
-
 ## Protocol 1.0 release gate
 
 Consumer integration identified source-schema and datatype normalization as missing pieces in the
 pre-release protocol contract. They are implemented in `phdah/sql-semantic-protocol#31`.
 
-The required 1.0 contract now includes:
+The required 1.0 contract includes:
 
 - typed source relation schemas for unconstrained source columns
 - a recursive parser-independent canonical datatype model
@@ -65,6 +63,5 @@ The required 1.0 contract now includes:
 - dialect lookup through the protocol crate so consumers do not depend directly on sqlparser
 - complete dbt artifact translation using manifest.json for semantics/identity and catalog.json for warehouse-introspected typed schemas
 
-TASK-10 remains In Progress until protocol PR #31 is merged and sql-tdg is switched from the
-pre-release branch dependency to the released 1.0.0 crate. Green consumer tests against #31 are
-the approval signal that the protocol contract itself is sufficient for 1.0.0.
+TASK-10 consumes the published `sql-semantic-protocol = "1.0.0"` crate. Green consumer CI against
+that registry release is the final approval signal for the protocol 1.0 contract.
