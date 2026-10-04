@@ -62,6 +62,12 @@ column outside its allowed protocol domain, and samples every other column norma
 otherwise insufficient domains fail explicitly when they cannot guarantee the requested
 classification.
 
+For supported inner equality relationships, multi-relation generation coordinates physical source
+keys using protocol join, graph, schema, and lineage metadata. Matching rows satisfy every connected
+equality relationship. Rejected relational rows deterministically break one safely isolatable
+relationship while keeping scalar domains and the remaining relationships valid. Relationship
+shapes that cannot guarantee those properties fail explicitly.
+
 Unknown or empty value domains, unresolved composition, missing source schemas, ambiguous terminal
 outcomes, and unsupported generation semantics are explicit errors. sql-tdg never reparses SQL as
 a fallback.
