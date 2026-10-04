@@ -276,7 +276,7 @@ fn constrained_column_missing_from_source_schema_is_an_explicit_error() {
 }
 
 #[test]
-fn unsupported_canonical_source_type_is_not_coerced() {
+fn canonical_array_source_type_is_generated_losslessly() {
     let array = RelationSchema::new(
         "t",
         vec![
@@ -286,20 +286,49 @@ fn unsupported_canonical_source_type_is_not_coerced() {
     )
     .expect("schema should be valid");
 
-    let error = generate_from_sql("SELECT items FROM t", "generic", &[array], ROWS, SEED)
-        .expect_err("array generation is not implemented");
+    let generated = generate_from_sql("SELECT items FROM t", "generic", &[array], ROWS, SEED)
+        .expect("array generation should succeed");
+    let table = generated.table("t").expect("source table should exist");
+    let values = table
+        .array("items")
+        .expect("array column should be readable")
+        .expect("array column should be built");
+
+    assert_eq!(
+        values.data_type(),
+        &arrow_schema::DataType::List(std::sync::Arc::new(
+            arrow_schema::Field::new_list_field(arrow_schema::DataType::Int32, false)
+        ))
+    );
+    assert_eq!(values.len(), ROWS);
+}
+
+#[test]
+fn unsupported_custom_source_type_is_not_coerced() {
+    let custom = RelationSchema::new(
+        "t",
+        vec![
+            SchemaColumn::new(
+                "value",
+                DataType::Custom {
+                    name: "vendor_money".to_owned(),
+                    modifiers: vec!["42".to_owned()],
+                },
+            )
+            .expect("custom datatype should be valid schema metadata"),
+        ],
+    )
+    .expect("schema should be valid");
+
+    let error = generate_from_sql("SELECT value FROM t", "generic", &[custom], ROWS, SEED)
+        .expect_err("unsupported custom type must fail explicitly");
 
     assert_eq!(
         error,
         ProtocolGenerationError::UnsupportedSourceType {
             relation: "t".to_owned(),
-            column: "items".to_owned(),
-            data_type: DataType::Array {
-                element: Some(Box::new(DataType::SignedInteger { bits: Some(32) })),
-                length: None,
-            }
-            .kind()
-            .to_owned(),
+            column: "value".to_owned(),
+            data_type: "custom:vendor_money(42)".to_owned(),
         }
     );
 }
