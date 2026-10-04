@@ -522,3 +522,211 @@ fn rejected_ratio_resolves_to_deterministic_counts() {
     assert_eq!(counts.total(), 10);
     assert!(GenerationRowCounts::from_rejected_ratio(10, 1.1).is_err());
 }
+
+
+#[test]
+fn relational_generation_coordinates_inner_join_keys_and_breaks_one_relationship() {
+    let counts = GenerationRowCounts::new(5, 7).expect("test row counts should be valid");
+    let schemas = [
+        schema(
+            "orders",
+            &[("customer_id", "INTEGER"), ("amount", "INTEGER")],
+        ),
+        schema(
+            "customers",
+            &[("id", "INTEGER"), ("active", "BOOLEAN")],
+        ),
+    ];
+    let generated = generate_classified_from_sql(
+        "SELECT o.customer_id, o.amount
+         FROM orders AS o
+         JOIN customers AS c ON o.customer_id = c.id
+         WHERE o.amount BETWEEN 10 AND 20 AND c.active = true",
+        "generic",
+        &schemas,
+        counts,
+        SEED,
+    )
+    .expect("relational generation should succeed");
+
+    let order_customer_ids = generated
+        .table("orders")
+        .expect("orders should exist")
+        .get_ints("customer_id")
+        .expect("customer_id should be readable")
+        .expect("customer_id should be built");
+    let customer_ids = generated
+        .table("customers")
+        .expect("customers should exist")
+        .get_ints("id")
+        .expect("id should be readable")
+        .expect("id should be built");
+    let amounts = generated
+        .table("orders")
+        .expect("orders should exist")
+        .get_ints("amount")
+        .expect("amount should be readable")
+        .expect("amount should be built");
+    let active = generated
+        .table("customers")
+        .expect("customers should exist")
+        .get_bools("active")
+        .expect("active should be readable")
+        .expect("active should be built");
+
+    for index in 0..counts.matching() {
+        assert_eq!(order_customer_ids[index], customer_ids[index]);
+    }
+    for index in counts.matching()..counts.total() {
+        assert_ne!(order_customer_ids[index], customer_ids[index]);
+    }
+    assert!(amounts.iter().all(|amount| (10..=20).contains(amount)));
+    assert!(active.iter().all(|value| *value));
+}
+
+#[test]
+fn relational_generation_resolves_intermediate_join_keys_to_physical_sources() {
+    let counts = GenerationRowCounts::new(4, 6).expect("test row counts should be valid");
+    let sql = "
+        CREATE VIEW stage_orders AS
+        SELECT customer_id, amount
+        FROM raw_orders
+        WHERE amount >= 10;
+
+        CREATE VIEW stage_customers AS
+        SELECT id, active
+        FROM raw_customers
+        WHERE active = true;
+
+        CREATE VIEW final_orders AS
+        SELECT o.customer_id
+        FROM stage_orders AS o
+        JOIN stage_customers AS c ON o.customer_id = c.id;
+    ";
+    let schemas = [
+        schema(
+            "raw_orders",
+            &[("customer_id", "INTEGER"), ("amount", "INTEGER")],
+        ),
+        schema(
+            "raw_customers",
+            &[("id", "INTEGER"), ("active", "BOOLEAN")],
+        ),
+    ];
+    let generated = generate_classified_from_sql(sql, "generic", &schemas, counts, SEED)
+        .expect("intermediate relationship should resolve through protocol lineage");
+
+    let order_customer_ids = generated
+        .table("raw_orders")
+        .expect("raw_orders should exist")
+        .get_ints("customer_id")
+        .expect("customer_id should be readable")
+        .expect("customer_id should be built");
+    let customer_ids = generated
+        .table("raw_customers")
+        .expect("raw_customers should exist")
+        .get_ints("id")
+        .expect("id should be readable")
+        .expect("id should be built");
+    let amounts = generated
+        .table("raw_orders")
+        .expect("raw_orders should exist")
+        .get_ints("amount")
+        .expect("amount should be readable")
+        .expect("amount should be built");
+    let active = generated
+        .table("raw_customers")
+        .expect("raw_customers should exist")
+        .get_bools("active")
+        .expect("active should be readable")
+        .expect("active should be built");
+
+    for index in 0..counts.matching() {
+        assert_eq!(order_customer_ids[index], customer_ids[index]);
+    }
+    for index in counts.matching()..counts.total() {
+        assert_ne!(order_customer_ids[index], customer_ids[index]);
+    }
+    assert!(amounts.iter().all(|amount| *amount >= 10));
+    assert!(active.iter().all(|value| *value));
+}
+
+#[test]
+fn composite_join_equalities_are_coordinated_together() {
+    let counts = GenerationRowCounts::new(3, 5).expect("test row counts should be valid");
+    let schemas = [
+        schema(
+            "orders",
+            &[("customer_id", "INTEGER"), ("region_id", "INTEGER")],
+        ),
+        schema(
+            "customers",
+            &[("id", "INTEGER"), ("region_id", "INTEGER")],
+        ),
+    ];
+    let generated = generate_classified_from_sql(
+        "SELECT o.customer_id
+         FROM orders AS o
+         JOIN customers AS c
+           ON o.customer_id = c.id AND o.region_id = c.region_id",
+        "generic",
+        &schemas,
+        counts,
+        SEED,
+    )
+    .expect("composite equality relationship should generate");
+
+    let orders = generated.table("orders").expect("orders should exist");
+    let customers = generated
+        .table("customers")
+        .expect("customers should exist");
+    let order_customer_ids = orders
+        .get_ints("customer_id")
+        .expect("customer_id should be readable")
+        .expect("customer_id should be built");
+    let order_regions = orders
+        .get_ints("region_id")
+        .expect("region_id should be readable")
+        .expect("region_id should be built");
+    let customer_ids = customers
+        .get_ints("id")
+        .expect("id should be readable")
+        .expect("id should be built");
+    let customer_regions = customers
+        .get_ints("region_id")
+        .expect("region_id should be readable")
+        .expect("region_id should be built");
+
+    for index in 0..counts.matching() {
+        assert_eq!(order_customer_ids[index], customer_ids[index]);
+        assert_eq!(order_regions[index], customer_regions[index]);
+    }
+    for index in counts.matching()..counts.total() {
+        assert!(
+            order_customer_ids[index] != customer_ids[index]
+                || order_regions[index] != customer_regions[index]
+        );
+    }
+}
+
+#[test]
+fn non_equality_relationship_is_an_explicit_error() {
+    let error = generate_from_sql(
+        "SELECT o.customer_id
+         FROM orders AS o
+         JOIN customers AS c ON o.customer_id < c.id",
+        "generic",
+        &[
+            schema("orders", &[("customer_id", "INTEGER")]),
+            schema("customers", &[("id", "INTEGER")]),
+        ],
+        ROWS,
+        SEED,
+    )
+    .expect_err("non-equality relationships must not be approximated");
+
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::UnsupportedRelationship { .. }
+    ));
+}
