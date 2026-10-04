@@ -358,10 +358,7 @@ fn value_in_any_range(
     Ok(false)
 }
 
-fn value_is_representable(
-    data_type: &DataType,
-    value: &ProtocolValue,
-) -> Result<bool, String> {
+fn value_is_representable(data_type: &DataType, value: &ProtocolValue) -> Result<bool, String> {
     match data_type {
         DataType::Nullable(inner) => {
             if matches!(value, ProtocolValue::Null) {
@@ -427,9 +424,7 @@ fn value_is_representable(
                 Ok(false)
             }
         }
-        DataType::Uuid => {
-            Ok(matches!(value, ProtocolValue::Binary(value) if value.len() == 16))
-        }
+        DataType::Uuid => Ok(matches!(value, ProtocolValue::Binary(value) if value.len() == 16)),
         DataType::Enum { values } => Ok(matches!(
             value,
             ProtocolValue::String(value)
