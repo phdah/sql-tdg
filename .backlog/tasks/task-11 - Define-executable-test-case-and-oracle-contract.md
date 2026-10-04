@@ -1,7 +1,7 @@
 ---
 id: TASK-11
 title: Define executable test-case and oracle contract
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-04'
 labels: []
@@ -25,15 +25,15 @@ or reinterpret the original SQL conditions.
 
 ## Acceptance Criteria
 
-- [ ] Define one library-owned test-case representation shared by the CLI and integration tests.
-- [ ] A test case records workload identity, selected target/layer boundary, dialect, deterministic seed, row counts, and generated relations.
-- [ ] A test case distinguishes matching and deliberately non-matching generated rows.
-- [ ] Expected query results are stored separately from the query under test so rerunning a changed query can detect changed behavior.
-- [ ] The expected-result contract defines deterministic comparison semantics, including row ordering when the SQL result is order-sensitive.
-- [ ] Re-approval/regeneration of expected results is an explicit action rather than an implicit side effect of verification.
-- [ ] The contract supports both raw SQL workloads and dbt project workloads without separate semantic models.
-- [ ] The contract supports testing from physical source relations or from selected intermediate relation boundaries.
-- [ ] All generation inputs come from normalized SQL Semantic Protocol output; sql-tdg does not inspect SQL syntax or reconstruct predicate logic.
-- [ ] Missing protocol information required for safe generation is treated as an upstream protocol blocker, not locally derived.
-- [ ] Unit tests cover serialization/reproducibility of the test-case metadata.
-- [ ] `make rust-checks` remains green.
+- [x] Define one library-owned test-case representation shared by the CLI and integration tests.
+- [x] A test case records workload identity, selected target/layer boundary, dialect, deterministic seed, row counts, and generated relations.
+- [x] A test case distinguishes matching and deliberately non-matching generated rows.
+- [x] Expected query results are stored separately from the query under test so rerunning a changed query can detect changed behavior.
+- [x] The expected-result contract defines deterministic comparison semantics, including row ordering when the SQL result is order-sensitive.
+- [x] Re-approval/regeneration of expected results is an explicit action rather than an implicit side effect of verification.
+- [x] The contract supports both raw SQL workloads and dbt project workloads without separate semantic models.
+- [x] The contract supports testing from physical source relations or from selected intermediate relation boundaries.
+- [x] All generation inputs come from normalized SQL Semantic Protocol output; sql-tdg does not inspect SQL syntax or reconstruct predicate logic.
+- [x] Missing protocol information required for safe generation is treated as an upstream protocol blocker, not locally derived.
+- [x] Unit tests cover serialization/reproducibility of the test-case metadata.
+- [x] `make rust-checks` remains green.
