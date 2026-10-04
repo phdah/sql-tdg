@@ -12,21 +12,23 @@ dependencies:
 
 ## Description
 
-Extend positive and negative generation across multiple relations so joins, correlated predicates,
-subqueries, set membership, and other relationship semantics are tested with coordinated data.
+Extend protocol-driven generation across multiple relations.
 
-Rows that should join or satisfy an EXISTS/IN-style relationship must have coordinated keys and
-values. Negative witnesses must break the relevant relationship deliberately while preserving other
-compatible constraints so the workload contains meaningful rows that should be excluded.
+SQL Semantic Protocol already owns join, lineage, dependency, and relationship semantics. sql-tdg
+only consumes those resolved relationships to coordinate generated values across tables. It must
+not inspect JOIN/EXISTS/IN syntax or derive its own relational semantics.
+
+Matching data satisfies the protocol-provided relationships. Deliberately non-matching data is
+created by selecting one protocol-provided relationship that can safely be broken and generating
+values outside that relationship while otherwise following the supplied generation constraints.
 
 ## Acceptance Criteria
 
-- [ ] Generate coordinated matching keys and values for supported inner/outer/semi-style join semantics represented by the protocol.
-- [ ] Generate deterministic non-matching join witnesses by breaking a selected relationship while keeping unrelated compatible constraints valid.
-- [ ] Support positive and negative witnesses for EXISTS, NOT EXISTS, IN, NOT IN, and correlated subquery semantics when represented by the protocol.
-- [ ] Support relation-level witnesses needed by INTERSECT, EXCEPT, UNION/UNION ALL, and DISTINCT test cases where meaningful.
+- [ ] Generate coordinated matching values for supported cross-relation relationships represented by the protocol.
+- [ ] Generate deterministic non-matching relation rows by breaking one selected protocol-provided relationship where doing so guarantees a non-match.
+- [ ] Multi-table generation uses protocol relation identities, schemas, domains, lineage, and relationship metadata directly.
 - [ ] Multi-table generation plans are deterministic and independent of unordered map/set iteration.
-- [ ] The generator never infers relationship semantics from SQL text.
-- [ ] Unknown or insufficient relationship semantics return explicit errors.
-- [ ] Tests cover multi-table matching and rejected rows and prove the expected relationship behavior by executing representative queries.
+- [ ] sql-tdg never infers join, subquery, set-membership, or other relational semantics from SQL text.
+- [ ] Unknown or insufficient protocol relationship semantics return explicit errors rather than triggering local semantic analysis.
+- [ ] Tests execute representative multi-table queries and prove matching and deliberately non-matching generated data behaves as classified.
 - [ ] `make rust-checks` remains green.
