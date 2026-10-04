@@ -49,12 +49,18 @@ The SQL convenience API delegates analysis to SQL Semantic Protocol and then con
 bundle exactly like `generate_from_bundle`. For bundles with more than one terminal outcome,
 callers must select an outcome explicitly rather than relying on an arbitrary default.
 
-The current Arrow generator implements signed integers up to 32 bits, booleans, timestamps, and
-strings. SQL Semantic Protocol exposes a broader canonical datatype model, including decimals,
-larger and unsigned integers, binary values, JSON/semi-structured documents, arrays, maps,
-structs, unions, enums, nullable values, and vendor-specific custom types. A source datatype that
-sql-tdg cannot represent exactly returns `UnsupportedSourceType`; it is never coerced to a weaker
-generation type.
+The Arrow-backed generator supports canonical protocol datatypes that it can represent losslessly,
+including signed and unsigned integers, floating-point and decimal values, temporal types, strings,
+binary values, nullable values, finite domains, arrays, maps, structs, and JSON-like storage. A
+source datatype that sql-tdg cannot represent exactly returns `UnsupportedSourceType`; it is never
+coerced to a weaker generation type.
+
+For negative test data, `GenerationRowCounts` can be passed to `generate_classified_from_sql` or
+`generate_classified_from_bundle`. Matching rows are emitted first. Each rejected row
+deterministically selects one constrained scalar column with a safe complement domain, samples that
+column outside its allowed protocol domain, and samples every other column normally. Unbounded or
+otherwise insufficient domains fail explicitly when they cannot guarantee the requested
+classification.
 
 Unknown or empty value domains, unresolved composition, missing source schemas, ambiguous terminal
 outcomes, and unsupported generation semantics are explicit errors. sql-tdg never reparses SQL as
