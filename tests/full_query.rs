@@ -1,5 +1,6 @@
 use sql_tdg::{
-    DataType, ProtocolGenerationError, RelationSchema, SchemaColumn, generate_from_sql, to_timestamp,
+    DataType, ProtocolGenerationError, RelationSchema, SchemaColumn, generate_from_sql,
+    to_timestamp,
 };
 
 const ROWS: usize = 12;
@@ -210,14 +211,8 @@ fn unsupported_canonical_source_type_is_not_coerced() {
     )
     .expect("schema should be valid");
 
-    let error = generate_from_sql(
-        "SELECT items FROM t",
-        "generic",
-        &[array],
-        ROWS,
-        SEED,
-    )
-    .expect_err("array generation is not implemented");
+    let error = generate_from_sql("SELECT items FROM t", "generic", &[array], ROWS, SEED)
+        .expect_err("array generation is not implemented");
 
     assert_eq!(
         error,
