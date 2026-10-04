@@ -11,11 +11,10 @@ use sql_semantic_protocol::{
 };
 
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
-use crate::solver::{BoolDomain, IntDomain, SolverError, TimestampDomain, parse_time};
+use crate::protocol_value::{build_array, candidates, is_supported};
+use crate::solver::{BoolDomain, IntDomain, SolverError};
 use crate::table::{Table, TableError};
-use crate::types::{
-    BoolConstraint, Column, ColumnType, IntConstraint, Interval, TimestampConstraint,
-};
+use crate::types::{BoolConstraint, IntConstraint, Interval};
 
 /// Explicit selection of one terminal protocol outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -441,13 +440,12 @@ pub fn generate_from_bundle(
             }
         })?;
 
-        let mut columns = Vec::with_capacity(schema.columns().len());
         let mut plans = Vec::with_capacity(schema.columns().len());
 
         for schema_column in schema.columns() {
-            let column_type =
-                map_column_type(relation, schema_column.name(), schema_column.data_type())?;
-            columns.push(Column::new(schema_column.name(), column_type));
+            is_supported(schema_column.data_type()).map_err(|_| {
+                unsupported_source_type(relation, schema_column.name(), schema_column.data_type())
+            })?;
 
             let domain =
                 find_column_domain(semantics.column_domains(), relation, schema_column.name())?;
@@ -460,18 +458,35 @@ pub fn generate_from_bundle(
             plans.push(ColumnPlan::new(schema_column.name(), generation_domain));
         }
 
-        let mut table =
-            Table::new(columns, rows).map_err(|source| ProtocolGenerationError::Table {
-                relation: relation.clone(),
-                source,
-            })?;
-        Generator::new()
-            .generate_plans(&mut table, seed, &plans)
+        let generated = Generator::new()
+            .generate_protocol_values(rows, seed, &plans)
             .map_err(|source| ProtocolGenerationError::Generator {
                 relation: relation.clone(),
                 source,
             })?;
-        table.build_all();
+
+        let arrays = schema
+            .columns()
+            .iter()
+            .zip(generated)
+            .map(|(schema_column, values)| {
+                build_array(schema_column.data_type(), &values).map_err(|message| {
+                    ProtocolGenerationError::UnsupportedDomain {
+                        relation: relation.clone(),
+                        column: schema_column.name().to_owned(),
+                        message,
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let table =
+            Table::from_protocol_arrays(schema.columns(), rows, arrays).map_err(|source| {
+                ProtocolGenerationError::Table {
+                    relation: relation.clone(),
+                    source,
+                }
+            })?;
         tables.insert(relation.clone(), table);
     }
 
@@ -577,22 +592,6 @@ fn find_column_domain<'a>(
         _ => Err(ProtocolGenerationError::AmbiguousColumnDomain {
             column: column.to_owned(),
         }),
-    }
-}
-
-fn map_column_type(
-    relation: &str,
-    column: &str,
-    data_type: &DataType,
-) -> Result<ColumnType, ProtocolGenerationError> {
-    match data_type {
-        DataType::SignedInteger { bits } if bits.is_none_or(|bits| bits <= 32) => {
-            Ok(ColumnType::Int)
-        }
-        DataType::Boolean => Ok(ColumnType::Bool),
-        DataType::Timestamp { .. } => Ok(ColumnType::Timestamp),
-        DataType::String { .. } => Ok(ColumnType::String),
-        _ => Err(unsupported_source_type(relation, column, data_type)),
     }
 }
 
