@@ -297,10 +297,6 @@ impl ColumnPlan {
                 Ok(TableValue::Timestamp(value))
             }
             GenerationDomain::Bool(domain) => Ok(TableValue::Bool(domain.value())),
-            GenerationDomain::String(values) => {
-                let index = sample_index(rng, values.len(), &self.name)?;
-                Ok(TableValue::String(values[index].clone()))
-            }
             GenerationDomain::Values(_) => Err(GeneratorError::ProtocolOnlyDomain {
                 column: self.name.clone(),
             }),
@@ -335,10 +331,6 @@ impl ColumnPlan {
                 ))
             }
             GenerationDomain::Bool(domain) => Ok(ProtocolValue::Boolean(domain.value())),
-            GenerationDomain::String(values) => {
-                let index = sample_index(rng, values.len(), &self.name)?;
-                Ok(ProtocolValue::String(values[index].clone()))
-            }
             GenerationDomain::Values(values) => {
                 let index = sample_index(rng, values.len(), &self.name)?;
                 Ok(values[index].clone())
@@ -352,7 +344,6 @@ pub(crate) enum GenerationDomain {
     Int(IntDomain),
     Timestamp(TimestampDomain),
     Bool(BoolDomain),
-    String(Vec<String>),
     Values(Vec<ProtocolValue>),
 }
 
