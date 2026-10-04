@@ -31,6 +31,15 @@ pub struct GeneratedData {
     tables: BTreeMap<String, Table>,
 }
 
+impl fmt::Debug for GeneratedData {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GeneratedData")
+            .field("relations", &self.tables.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
 impl GeneratedData {
     /// Return all generated source tables in deterministic relation order.
     pub fn tables(&self) -> &BTreeMap<String, Table> {
