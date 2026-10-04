@@ -16,8 +16,9 @@ Expand the Arrow-backed generator so realistic SQL and dbt workloads are not lim
 32-bit integer, boolean, timestamp, and string subset.
 
 Use the canonical datatype model supplied by SQL Semantic Protocol. Support every canonical type
-that can be represented losslessly by the chosen Arrow storage and DuckDB execution path. Types
-that still cannot be represented exactly must continue to fail explicitly.
+that can be represented losslessly by the Arrow storage boundary. Types that still cannot be
+represented exactly must continue to fail explicitly. DuckDB round-trip validation is owned by
+TASK-16 when the execution backend and dependency are introduced.
 
 ## Acceptance Criteria
 
@@ -28,7 +29,7 @@ that still cannot be represented exactly must continue to fail explicitly.
 - [ ] Enum and other finite-domain types generate only values allowed by their protocol representation.
 - [ ] Recursive types reuse the protocol datatype model rather than introducing a parallel local SQL datatype taxonomy.
 - [ ] Boundary and representative values are covered for every newly supported type.
-- [ ] Arrow-to-DuckDB round-trip tests prove generated values preserve type and value semantics.
+- [ ] Arrow storage tests prove generated values preserve the canonical protocol type and value semantics.
 - [ ] Unsupported vendor/custom types continue to return explicit errors naming the unsupported type.
 - [ ] Determinism holds for every newly supported type for a fixed seed.
 - [ ] `make rust-checks` remains green.
