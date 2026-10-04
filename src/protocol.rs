@@ -889,6 +889,7 @@ fn collect_equality_relationships(
         .filter(|layer| ancestor_ids.contains(layer.id()))
     {
         let query = query_for_layer(bundle, layer)?;
+        reject_unsupported_relational_predicates(layer.id(), query)?;
         for join in query.joins() {
             if join.kind() == JoinKind::Cross && join.condition().is_none() {
                 continue;
@@ -999,6 +1000,50 @@ fn query_for_layer<'a>(
             layer_id: layer.id().to_owned(),
             message: "relationship layer does not contain query semantics".to_owned(),
         }),
+    }
+}
+
+fn reject_unsupported_relational_predicates(
+    layer_id: &str,
+    query: &QueryStatement,
+) -> Result<(), ProtocolGenerationError> {
+    for predicate in [
+        query.predicates().where_predicate(),
+        query.predicates().having_predicate(),
+        query.predicates().qualify_predicate(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        reject_unsupported_relational_predicate(layer_id, predicate)?;
+    }
+
+    Ok(())
+}
+
+fn reject_unsupported_relational_predicate(
+    layer_id: &str,
+    predicate: &Predicate,
+) -> Result<(), ProtocolGenerationError> {
+    match predicate {
+        Predicate::Exists(_) => Err(ProtocolGenerationError::UnsupportedRelationship {
+            layer_id: layer_id.to_owned(),
+            message: "EXISTS/NOT EXISTS relationship semantics are not yet supported by relational witness generation"
+                .to_owned(),
+        }),
+        Predicate::InSubquery(_) => Err(ProtocolGenerationError::UnsupportedRelationship {
+            layer_id: layer_id.to_owned(),
+            message: "IN/NOT IN subquery relationship semantics are not yet supported by relational witness generation"
+                .to_owned(),
+        }),
+        Predicate::And(logical) | Predicate::Or(logical) => {
+            for operand in logical.operands() {
+                reject_unsupported_relational_predicate(layer_id, operand)?;
+            }
+            Ok(())
+        }
+        Predicate::Not(not) => reject_unsupported_relational_predicate(layer_id, not.operand()),
+        _ => Ok(()),
     }
 }
 
