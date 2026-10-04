@@ -13,7 +13,7 @@ pub use protocol::{
     GeneratedData, OutcomeSelector, ProtocolGenerationError, generate_from_bundle,
     generate_from_sql,
 };
-pub use sql_semantic_protocol::{RelationSchema, ScalarType, SchemaColumn};
+pub use sql_semantic_protocol::{DataType, RelationSchema, SchemaColumn};
 pub use solver::{
     BoolDomain, IntDomain, SolverError, TimestampDomain, from_unix, parse_time, to_date,
     to_timestamp,
