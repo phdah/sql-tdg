@@ -3,17 +3,17 @@
 #![forbid(unsafe_code)]
 
 pub mod generator;
-pub mod interop;
-pub mod parser;
+pub mod protocol;
 pub mod solver;
 pub mod table;
 pub mod types;
 
 pub use generator::{Generator, GeneratorError};
-pub use interop::{InteropError, apply_conditions};
-pub use parser::{
-    ConditionIR, ConditionOperator, JoinIR, JoinKind, ParserError, QueryIR, parse_query,
+pub use protocol::{
+    GeneratedData, OutcomeSelector, ProtocolGenerationError, generate_from_bundle,
+    generate_from_sql,
 };
+pub use sql_semantic_protocol::{RelationSchema, ScalarType, SchemaColumn};
 pub use solver::{
     BoolDomain, IntDomain, SolverError, TimestampDomain, from_unix, parse_time, to_date,
     to_timestamp,
