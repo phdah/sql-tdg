@@ -63,6 +63,7 @@ The required 1.0 contract now includes:
 - dialect-specific datatype syntax normalized at the protocol boundary
 - explicit preservation of vendor/user-defined custom types
 - dialect lookup through the protocol crate so consumers do not depend directly on sqlparser
+- complete dbt artifact translation using manifest.json for semantics/identity and catalog.json for warehouse-introspected typed schemas
 
 TASK-10 remains In Progress until protocol PR #31 is merged and sql-tdg is switched from the
 pre-release branch dependency to the released 1.0.0 crate. Green consumer tests against #31 are
