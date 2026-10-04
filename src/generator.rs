@@ -264,6 +264,10 @@ impl ColumnPlan {
                 Ok(TableValue::Timestamp(value))
             }
             GenerationDomain::Bool(domain) => Ok(TableValue::Bool(domain.value())),
+            GenerationDomain::String(values) => {
+                let index = sample_index(rng, values.len(), &self.name)?;
+                Ok(TableValue::String(values[index].clone()))
+            }
         }
     }
 }
@@ -273,6 +277,7 @@ pub(crate) enum GenerationDomain {
     Int(IntDomain),
     Timestamp(TimestampDomain),
     Bool(BoolDomain),
+    String(Vec<String>),
 }
 
 fn sample_index<R: Rng + ?Sized>(
