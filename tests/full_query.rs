@@ -523,7 +523,6 @@ fn rejected_ratio_resolves_to_deterministic_counts() {
     assert!(GenerationRowCounts::from_rejected_ratio(10, 1.1).is_err());
 }
 
-
 #[test]
 fn relational_generation_coordinates_inner_join_keys_and_breaks_one_relationship() {
     let counts = GenerationRowCounts::new(5, 7).expect("test row counts should be valid");
@@ -532,10 +531,7 @@ fn relational_generation_coordinates_inner_join_keys_and_breaks_one_relationship
             "orders",
             &[("customer_id", "INTEGER"), ("amount", "INTEGER")],
         ),
-        schema(
-            "customers",
-            &[("id", "INTEGER"), ("active", "BOOLEAN")],
-        ),
+        schema("customers", &[("id", "INTEGER"), ("active", "BOOLEAN")]),
     ];
     let generated = generate_classified_from_sql(
         "SELECT o.customer_id, o.amount
@@ -608,10 +604,7 @@ fn relational_generation_resolves_intermediate_join_keys_to_physical_sources() {
             "raw_orders",
             &[("customer_id", "INTEGER"), ("amount", "INTEGER")],
         ),
-        schema(
-            "raw_customers",
-            &[("id", "INTEGER"), ("active", "BOOLEAN")],
-        ),
+        schema("raw_customers", &[("id", "INTEGER"), ("active", "BOOLEAN")]),
     ];
     let generated = generate_classified_from_sql(sql, "generic", &schemas, counts, SEED)
         .expect("intermediate relationship should resolve through protocol lineage");
@@ -659,10 +652,7 @@ fn composite_join_equalities_are_coordinated_together() {
             "orders",
             &[("customer_id", "INTEGER"), ("region_id", "INTEGER")],
         ),
-        schema(
-            "customers",
-            &[("id", "INTEGER"), ("region_id", "INTEGER")],
-        ),
+        schema("customers", &[("id", "INTEGER"), ("region_id", "INTEGER")]),
     ];
     let generated = generate_classified_from_sql(
         "SELECT o.customer_id
