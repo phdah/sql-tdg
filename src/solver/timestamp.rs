@@ -24,6 +24,15 @@ impl TimestampDomain {
         }
     }
 
+    /// Creates a timestamp domain from inclusive Unix-second intervals.
+    pub(crate) fn from_intervals(intervals: Vec<crate::Interval>) -> Result<Self, SolverError> {
+        let seconds = IntDomain::from_intervals(intervals)?;
+        if seconds.total_min() < MIN_TIMESTAMP || seconds.total_max() > MAX_TIMESTAMP {
+            return Err(SolverError::UnsatisfiableDomain);
+        }
+        Ok(Self { seconds })
+    }
+
     /// Applies one timestamp constraint to the domain.
     pub fn apply(&mut self, constraint: TimestampConstraint) -> Result<(), SolverError> {
         self.seconds.apply(match constraint {
