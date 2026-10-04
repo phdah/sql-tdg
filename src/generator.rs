@@ -6,6 +6,7 @@ use std::fmt;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
 
+use crate::protocol_value::ProtocolValue;
 use crate::solver::{BoolDomain, IntDomain, SolverError, TimestampDomain};
 use crate::table::{Table, TableError, TableValue};
 use crate::types::{Column, ColumnType, Constraint};
@@ -48,6 +49,11 @@ pub enum GeneratorError {
         /// Number of allowed values in the domain.
         value_count: usize,
     },
+    /// A protocol-only generation domain was used through the legacy table path.
+    ProtocolOnlyDomain {
+        /// Column whose domain requires canonical protocol storage.
+        column: String,
+    },
     /// Appending a generated value to table storage failed.
     Table {
         /// Column receiving the generated value.
@@ -88,6 +94,9 @@ impl fmt::Display for GeneratorError {
                 formatter,
                 "column {column:?} domain with {value_count} values is too large to sample"
             ),
+            Self::ProtocolOnlyDomain { column } => {
+                write!(formatter, "column {column:?} requires protocol-aware generation")
+            }
             Self::Table { column, .. } => {
                 write!(
                     formatter,
@@ -153,6 +162,27 @@ impl Generator {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn generate_protocol_values(
+        &self,
+        rows: usize,
+        seed: u64,
+        plans: &[ColumnPlan],
+    ) -> Result<Vec<Vec<ProtocolValue>>, GeneratorError> {
+        let mut generated = plans
+            .iter()
+            .map(|_| Vec::with_capacity(rows))
+            .collect::<Vec<_>>();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        for _ in 0..rows {
+            for (values, plan) in generated.iter_mut().zip(plans) {
+                values.push(plan.sample_protocol(&mut rng)?);
+            }
+        }
+
+        Ok(generated)
     }
 }
 
@@ -230,10 +260,10 @@ impl ColumnPlan {
                 }
                 GenerationDomain::Bool(domain)
             }
-            ColumnType::String => {
+            ColumnType::String | ColumnType::Extended => {
                 return Err(GeneratorError::UnsupportedColumnType {
                     column: name,
-                    column_type: ColumnType::String,
+                    column_type: column.column_type(),
                 });
             }
         };
@@ -268,6 +298,46 @@ impl ColumnPlan {
                 let index = sample_index(rng, values.len(), &self.name)?;
                 Ok(TableValue::String(values[index].clone()))
             }
+            GenerationDomain::Values(_) => Err(GeneratorError::ProtocolOnlyDomain {
+                column: self.name.clone(),
+            }),
+        }
+    }
+
+    fn sample_protocol<R: Rng + ?Sized>(
+        &self,
+        rng: &mut R,
+    ) -> Result<ProtocolValue, GeneratorError> {
+        match &self.domain {
+            GenerationDomain::Int(domain) => {
+                let index = sample_index(rng, domain.value_count(), &self.name)?;
+                let value = domain
+                    .value_at(index)
+                    .map_err(|source| GeneratorError::Solver {
+                        column: self.name.clone(),
+                        source,
+                    })?;
+                Ok(ProtocolValue::Int32(value))
+            }
+            GenerationDomain::Timestamp(domain) => {
+                let index = sample_index(rng, domain.value_count(), &self.name)?;
+                let value = domain
+                    .value_at(index)
+                    .map_err(|source| GeneratorError::Solver {
+                        column: self.name.clone(),
+                        source,
+                    })?;
+                Ok(ProtocolValue::TimestampMicroseconds(value.timestamp_micros()))
+            }
+            GenerationDomain::Bool(domain) => Ok(ProtocolValue::Boolean(domain.value())),
+            GenerationDomain::String(values) => {
+                let index = sample_index(rng, values.len(), &self.name)?;
+                Ok(ProtocolValue::String(values[index].clone()))
+            }
+            GenerationDomain::Values(values) => {
+                let index = sample_index(rng, values.len(), &self.name)?;
+                Ok(values[index].clone())
+            }
         }
     }
 }
@@ -278,6 +348,7 @@ pub(crate) enum GenerationDomain {
     Timestamp(TimestampDomain),
     Bool(BoolDomain),
     String(Vec<String>),
+    Values(Vec<ProtocolValue>),
 }
 
 fn sample_index<R: Rng + ?Sized>(
