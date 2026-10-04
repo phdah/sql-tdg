@@ -54,6 +54,13 @@ pub enum GeneratorError {
         /// Column whose domain requires canonical protocol storage.
         column: String,
     },
+    /// Rejected rows were requested but no prepared column has a safe complement domain.
+    NoRejectableColumn,
+    /// A rejected sample was requested from a column without a complement domain.
+    NoRejectedDomain {
+        /// Column that cannot produce a rejected value.
+        column: String,
+    },
     /// Appending a generated value to table storage failed.
     Table {
         /// Column receiving the generated value.
@@ -98,6 +105,15 @@ impl fmt::Display for GeneratorError {
                 write!(
                     formatter,
                     "column {column:?} requires protocol-aware generation"
+                )
+            }
+            Self::NoRejectableColumn => {
+                formatter.write_str("no prepared column has a safely rejectable domain")
+            }
+            Self::NoRejectedDomain { column } => {
+                write!(
+                    formatter,
+                    "column {column:?} does not have a safely rejectable domain"
                 )
             }
             Self::Table { column, .. } => {
@@ -167,21 +183,49 @@ impl Generator {
         Ok(())
     }
 
-    pub(crate) fn generate_protocol_values(
+    pub(crate) fn generate_classified_protocol_values(
         &self,
-        rows: usize,
+        matching_rows: usize,
+        rejected_rows: usize,
         seed: u64,
         plans: &[ColumnPlan],
     ) -> Result<Vec<Vec<ProtocolValue>>, GeneratorError> {
+        let capacity = matching_rows.saturating_add(rejected_rows);
         let mut generated = plans
             .iter()
-            .map(|_| Vec::with_capacity(rows))
+            .map(|_| Vec::with_capacity(capacity))
             .collect::<Vec<_>>();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
-        for _ in 0..rows {
+        for _ in 0..matching_rows {
             for (values, plan) in generated.iter_mut().zip(plans) {
                 values.push(plan.sample_protocol(&mut rng)?);
+            }
+        }
+
+        let rejectable = plans
+            .iter()
+            .enumerate()
+            .filter_map(|(index, plan)| plan.is_rejectable().then_some(index))
+            .collect::<Vec<_>>();
+        if rejected_rows > 0 && rejectable.is_empty() {
+            return Err(GeneratorError::NoRejectableColumn);
+        }
+
+        for _ in 0..rejected_rows {
+            let selected_position = sample_index(&mut rng, rejectable.len(), "<rejected-column>")?;
+            let selected_column = rejectable
+                .get(selected_position)
+                .copied()
+                .ok_or(GeneratorError::NoRejectableColumn)?;
+
+            for (index, (values, plan)) in generated.iter_mut().zip(plans).enumerate() {
+                let value = if index == selected_column {
+                    plan.sample_rejected_protocol(&mut rng)?
+                } else {
+                    plan.sample_protocol(&mut rng)?
+                };
+                values.push(value);
             }
         }
 
@@ -193,14 +237,24 @@ impl Generator {
 pub(crate) struct ColumnPlan {
     name: String,
     domain: GenerationDomain,
+    rejected_domain: Option<GenerationDomain>,
 }
 
 impl ColumnPlan {
-    pub(crate) fn new(name: impl Into<String>, domain: GenerationDomain) -> Self {
+    pub(crate) fn new(
+        name: impl Into<String>,
+        domain: GenerationDomain,
+        rejected_domain: Option<GenerationDomain>,
+    ) -> Self {
         Self {
             name: name.into(),
             domain,
+            rejected_domain,
         }
+    }
+
+    pub(crate) const fn is_rejectable(&self) -> bool {
+        self.rejected_domain.is_some()
     }
 
     fn from_column(column: &Column) -> Result<Self, GeneratorError> {
@@ -271,7 +325,11 @@ impl ColumnPlan {
             }
         };
 
-        Ok(Self { name, domain })
+        Ok(Self {
+            name,
+            domain,
+            rejected_domain: None,
+        })
     }
 
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Result<TableValue, GeneratorError> {
@@ -307,34 +365,61 @@ impl ColumnPlan {
         &self,
         rng: &mut R,
     ) -> Result<ProtocolValue, GeneratorError> {
-        match &self.domain {
-            GenerationDomain::Int(domain) => {
-                let index = sample_index(rng, domain.value_count(), &self.name)?;
-                let value = domain
-                    .value_at(index)
-                    .map_err(|source| GeneratorError::Solver {
-                        column: self.name.clone(),
-                        source,
-                    })?;
-                Ok(ProtocolValue::Int32(value))
-            }
-            GenerationDomain::Timestamp(domain) => {
-                let index = sample_index(rng, domain.value_count(), &self.name)?;
-                let value = domain
-                    .value_at(index)
-                    .map_err(|source| GeneratorError::Solver {
-                        column: self.name.clone(),
-                        source,
-                    })?;
-                Ok(ProtocolValue::TimestampMicroseconds(
-                    value.timestamp_micros(),
-                ))
-            }
-            GenerationDomain::Bool(domain) => Ok(ProtocolValue::Boolean(domain.value())),
-            GenerationDomain::Values(values) => {
-                let index = sample_index(rng, values.len(), &self.name)?;
-                Ok(values[index].clone())
-            }
+        sample_protocol_domain(&self.domain, &self.name, rng)
+    }
+
+    fn sample_rejected_protocol<R: Rng + ?Sized>(
+        &self,
+        rng: &mut R,
+    ) -> Result<ProtocolValue, GeneratorError> {
+        let domain =
+            self.rejected_domain
+                .as_ref()
+                .ok_or_else(|| GeneratorError::NoRejectedDomain {
+                    column: self.name.clone(),
+                })?;
+        sample_protocol_domain(domain, &self.name, rng)
+    }
+}
+
+fn sample_protocol_domain<R: Rng + ?Sized>(
+    domain: &GenerationDomain,
+    column: &str,
+    rng: &mut R,
+) -> Result<ProtocolValue, GeneratorError> {
+    match domain {
+        GenerationDomain::Int(domain) => {
+            let index = sample_index(rng, domain.value_count(), column)?;
+            let value = domain
+                .value_at(index)
+                .map_err(|source| GeneratorError::Solver {
+                    column: column.to_owned(),
+                    source,
+                })?;
+            Ok(ProtocolValue::Int32(value))
+        }
+        GenerationDomain::Timestamp(domain) => {
+            let index = sample_index(rng, domain.value_count(), column)?;
+            let value = domain
+                .value_at(index)
+                .map_err(|source| GeneratorError::Solver {
+                    column: column.to_owned(),
+                    source,
+                })?;
+            Ok(ProtocolValue::TimestampMicroseconds(
+                value.timestamp_micros(),
+            ))
+        }
+        GenerationDomain::Bool(domain) => Ok(ProtocolValue::Boolean(domain.value())),
+        GenerationDomain::Values(values) => {
+            let index = sample_index(rng, values.len(), column)?;
+            let value = values
+                .get(index)
+                .cloned()
+                .ok_or_else(|| GeneratorError::EmptyDomain {
+                    column: column.to_owned(),
+                })?;
+            Ok(value)
         }
     }
 }
