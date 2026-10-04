@@ -34,11 +34,11 @@ pub struct GenerationRowCounts {
 impl GenerationRowCounts {
     /// Creates explicit matching and rejected row counts.
     pub fn new(matching: usize, rejected: usize) -> Result<Self, ProtocolGenerationError> {
-        matching
-            .checked_add(rejected)
-            .ok_or_else(|| ProtocolGenerationError::InvalidRowConfiguration {
+        matching.checked_add(rejected).ok_or_else(|| {
+            ProtocolGenerationError::InvalidRowConfiguration {
                 message: "matching and rejected row counts overflow usize".to_owned(),
-            })?;
+            }
+        })?;
         Ok(Self { matching, rejected })
     }
 
@@ -72,8 +72,9 @@ impl GenerationRowCounts {
         })?;
         if total > (1_u64 << 53) {
             return Err(ProtocolGenerationError::InvalidRowConfiguration {
-                message: "ratio-based row counts are limited to integers exactly representable by f64"
-                    .to_owned(),
+                message:
+                    "ratio-based row counts are limited to integers exactly representable by f64"
+                        .to_owned(),
             });
         }
 
@@ -633,13 +634,11 @@ pub fn generate_classified_from_bundle(
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let table =
-            Table::from_protocol_arrays(schema.columns(), row_counts.total(), arrays).map_err(
-                |source| ProtocolGenerationError::Table {
-                    relation: relation.clone(),
-                    source,
-                },
-            )?;
+        let table = Table::from_protocol_arrays(schema.columns(), row_counts.total(), arrays)
+            .map_err(|source| ProtocolGenerationError::Table {
+                relation: relation.clone(),
+                source,
+            })?;
         tables.insert(relation.clone(), table);
     }
 
