@@ -66,7 +66,10 @@ impl fmt::Display for TestCaseError {
             Self::EmptyField { field } => write!(formatter, "{field} must not be empty"),
             Self::EmptyCollection { field } => write!(formatter, "{field} must not be empty"),
             Self::DuplicateRelation { relation } => {
-                write!(formatter, "relation {relation:?} is declared more than once")
+                write!(
+                    formatter,
+                    "relation {relation:?} is declared more than once"
+                )
             }
             Self::MissingBoundaryRelation { relation } => write!(
                 formatter,
