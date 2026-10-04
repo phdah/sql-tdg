@@ -95,7 +95,10 @@ impl fmt::Display for GeneratorError {
                 "column {column:?} domain with {value_count} values is too large to sample"
             ),
             Self::ProtocolOnlyDomain { column } => {
-                write!(formatter, "column {column:?} requires protocol-aware generation")
+                write!(
+                    formatter,
+                    "column {column:?} requires protocol-aware generation"
+                )
             }
             Self::Table { column, .. } => {
                 write!(
@@ -327,7 +330,9 @@ impl ColumnPlan {
                         column: self.name.clone(),
                         source,
                     })?;
-                Ok(ProtocolValue::TimestampMicroseconds(value.timestamp_micros()))
+                Ok(ProtocolValue::TimestampMicroseconds(
+                    value.timestamp_micros(),
+                ))
             }
             GenerationDomain::Bool(domain) => Ok(ProtocolValue::Boolean(domain.value())),
             GenerationDomain::String(values) => {
