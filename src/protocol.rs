@@ -657,14 +657,14 @@ fn map_domain(
         ValueDomain::Set(set) => match data_type {
             DataType::SignedInteger { bits: Some(32) }
             | DataType::Boolean
-            | DataType::String {
-                fixed: false, ..
-            } => map_set_domain(relation, column, data_type, set.mode(), set.values()),
+            | DataType::String { fixed: false, .. } => {
+                map_set_domain(relation, column, data_type, set.mode(), set.values())
+            }
             DataType::Timestamp { precision } if precision.is_none_or(|value| value == 0) => {
                 map_set_domain(relation, column, data_type, set.mode(), set.values())
             }
             _ => generic_generation_domain(relation, column, data_type, Some(domain)),
-        }
+        },
         _ => Err(ProtocolGenerationError::UnsupportedDomain {
             relation: relation.to_owned(),
             column: column.to_owned(),
@@ -686,9 +686,7 @@ fn unbounded_domain(
             Ok(GenerationDomain::Timestamp(TimestampDomain::new()))
         }
         DataType::Boolean => Ok(GenerationDomain::Bool(BoolDomain::new())),
-        DataType::String { fixed: false, .. } => {
-            Ok(GenerationDomain::String(vec![String::new()]))
-        }
+        DataType::String { fixed: false, .. } => Ok(GenerationDomain::String(vec![String::new()])),
         _ => generic_generation_domain(relation, column, data_type, None),
     }
 }
