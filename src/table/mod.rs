@@ -229,13 +229,6 @@ impl Table {
         &self.schema
     }
 
-    /// Returns a mutable schema column by name for internal constraint application.
-    pub(crate) fn schema_column_mut(&mut self, column: &str) -> Option<&mut Column> {
-        self.schema
-            .iter_mut()
-            .find(|schema_column| schema_column.name() == column)
-    }
-
     /// Returns the Arrow schema derived from the project schema.
     pub fn arrow_schema(&self) -> &Schema {
         &self.arrow_schema

@@ -9,21 +9,26 @@ otherwise. This file holds project principles and Rust-specific conventions.
 
 The library flows in one direction through modules under `src/`:
 
-- `parser`: parses SQL with `sqlparser` and lowers third-party AST values into project-owned IR.
-- `interop`: maps parser IR onto typed constraints attached to table columns.
-- `solver`: narrows integer, boolean, and timestamp domains and exposes deterministic sampling
-  positions.
-- `generator`: samples solved domains from an injected deterministic random stream and appends
+- `protocol`: consumes SQL Semantic Protocol bundles, selects terminal composed semantics, maps
+  source schemas and value domains into generation plans, and exposes the SQL convenience API.
+- `solver`: represents the concrete value domains that sql-tdg can sample exactly.
+- `generator`: samples prepared domains from an injected deterministic random stream and appends
   values to table storage.
 - `table`: owns Arrow-backed typed columnar storage.
-- `types`: owns shared domain types, constraints, identifiers, and invariants.
+- `types`: owns sql-tdg generation types and invariants.
 
-Parser-library AST types stay inside the parser boundary. Downstream modules consume only
-project-owned types. Keep dependencies acyclic and do not reach across stages to bypass the
-intended boundary.
+SQL parsing, dialect handling, predicate-to-domain derivation, lineage, transformation graphs, and
+semantic composition belong exclusively to `sql-semantic-protocol`. sql-tdg must not depend
+directly on `sqlparser`, maintain a second SQL IR, inspect SQL text to recover missing semantics,
+or derive fallback constraints that the protocol did not provide.
+
+Protocol datatypes may be broader than sql-tdg's current Arrow generation support. Map only types
+that can be represented without semantic loss and return an explicit error for the rest. Extending
+generation support should consume the existing canonical protocol datatype rather than introducing
+a parallel datatype taxonomy.
 
 There is currently no CLI entry point. If a CLI is introduced, it must sit on top of the library
-pipeline and contain no parsing, solving, generation, or storage logic.
+pipeline and contain no semantic analysis, solving, generation, or storage logic.
 
 ## Guiding principles
 
@@ -31,8 +36,9 @@ pipeline and contain no parsing, solving, generation, or storage logic.
 supported query semantics. When a condition, operator, type, or SQL construct is unsupported,
 return an explicit error naming it. Never silently drop a condition.
 
-**Separation of concerns** Keep parsing, constraint mapping, solving, generation, and storage
-separate. A parser change should not leak third-party AST types into solver or table code.
+**Separation of concerns** Keep protocol consumption, solving, generation, and storage separate.
+Parser-specific AST values never belong in this repository. Protocol changes should be translated
+once at the protocol boundary and must not leak into solver or table code.
 
 **Library first, thin CLI** Core behavior belongs in importable library modules with small public
 APIs. Any application entry point should only translate I/O into library calls.
@@ -120,8 +126,9 @@ Run `cargo doc --no-deps` when public documentation changes.
 **Focused unit tests** Put private behavior beside the implementation in
 `#[cfg(test)] mod tests`.
 
-**SQL as the fixture** Parser and interop tests state SQL inline and assert on the resulting IR,
-constraints, or generated values.
+**SQL as the fixture** End-to-end tests may state SQL inline, but SQL is always analyzed through
+SQL Semantic Protocol. Tests assert protocol-driven generation behavior rather than local parser
+or interop representations.
 
 **Cover unsupported paths** Every intentionally unsupported operator, type, or construct should
 have a test asserting an explicit error.

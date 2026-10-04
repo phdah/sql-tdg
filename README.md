@@ -1,48 +1,64 @@
 # sql-tdg
 
-> SQL Query Test Data Generator
+> SQL Test Data Generator
 
-sql-tdg is a Rust library that generates Arrow-backed test data satisfying the supported
-conditions of a SQL query.
+sql-tdg is a Rust library that generates Arrow-backed source data satisfying semantics resolved by
+[SQL Semantic Protocol](https://github.com/phdah/sql-semantic-protocol).
 
-Given this query:
-
-```sql
-select
-    a,
-    b
-from table
-where a > 10
-```
-
-and a schema containing an integer column `a`, sql-tdg narrows the column domain so generated
-values satisfy `a > 10`.
+SQL Semantic Protocol is the sole SQL semantic boundary. sql-tdg does not parse SQL, derive
+predicate intervals, resolve dialects, or compose lineage itself. It consumes protocol
+`column_domains`, typed source schemas, terminal outcomes, and composed semantics and translates
+them into deterministic generation plans.
 
 ## Quick start
 
-The project currently exposes a library API and has no CLI entry point.
+The project exposes a library API and has no CLI entry point.
 
 ```rust
-use sql_tdg::{Column, ColumnType, Generator, Table, apply_conditions, parse_query};
+use sql_tdg::{RelationSchema, SchemaColumn, generate_from_sql};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let query = parse_query("SELECT a FROM table WHERE a > 10")?;
-    let mut table = Table::new(vec![Column::new("a", ColumnType::Int)], 10)?;
+    let schema = RelationSchema::new(
+        "orders",
+        vec![
+            SchemaColumn::from_sql_type("amount", "INTEGER", "postgresql")?,
+            SchemaColumn::from_sql_type("created_at", "TIMESTAMPTZ", "postgresql")?,
+        ],
+    )?;
 
-    apply_conditions(&query, &mut table)?;
-    Generator::new().generate(&mut table, 42)?;
-    table.build_ints();
+    let generated = generate_from_sql(
+        "SELECT amount FROM orders WHERE amount >= 10 AND amount < 20",
+        "postgresql",
+        &[schema],
+        100,
+        42,
+    )?;
 
-    let values = table.get_ints("a")?.expect("integer column should be built");
-    assert!(values.iter().all(|value| *value > 10));
+    let values = generated
+        .table("orders")
+        .expect("orders is a physical source")
+        .get_ints("amount")?
+        .expect("generated column is built");
 
+    assert!(values.iter().all(|value| (10..20).contains(value)));
     Ok(())
 }
 ```
 
-Supported generation domains currently include integers, booleans, and timestamps. Unsupported
-SQL constructs, operators, or generation types return explicit errors rather than silently
-producing data that may violate the query.
+The SQL convenience API delegates analysis to SQL Semantic Protocol and then consumes the returned
+bundle exactly like `generate_from_bundle`. For bundles with more than one terminal outcome,
+callers must select an outcome explicitly rather than relying on an arbitrary default.
+
+The current Arrow generator implements signed integers up to 32 bits, booleans, timestamps, and
+strings. SQL Semantic Protocol exposes a broader canonical datatype model, including decimals,
+larger and unsigned integers, binary values, JSON/semi-structured documents, arrays, maps,
+structs, unions, enums, nullable values, and vendor-specific custom types. A source datatype that
+sql-tdg cannot represent exactly returns `UnsupportedSourceType`; it is never coerced to a weaker
+generation type.
+
+Unknown or empty value domains, unresolved composition, missing source schemas, ambiguous terminal
+outcomes, and unsupported generation semantics are explicit errors. sql-tdg never reparses SQL as
+a fallback.
 
 The original Python proof of concept remains under `python_poc/` as frozen reference material and
 is not part of the active implementation.

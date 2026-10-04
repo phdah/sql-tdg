@@ -128,11 +128,20 @@ impl Generator {
             .iter()
             .map(ColumnPlan::from_column)
             .collect::<Result<Vec<_>, _>>()?;
+        self.generate_plans(table, seed, &plans)
+    }
+
+    pub(crate) fn generate_plans(
+        &self,
+        table: &mut Table,
+        seed: u64,
+        plans: &[ColumnPlan],
+    ) -> Result<(), GeneratorError> {
         let rows = table.dim().rows();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
         for _ in 0..rows {
-            for plan in &plans {
+            for plan in plans {
                 let value = plan.sample(&mut rng)?;
                 table
                     .append(&plan.name, value)
@@ -148,12 +157,19 @@ impl Generator {
 }
 
 #[derive(Debug, Clone)]
-struct ColumnPlan {
+pub(crate) struct ColumnPlan {
     name: String,
     domain: GenerationDomain,
 }
 
 impl ColumnPlan {
+    pub(crate) fn new(name: impl Into<String>, domain: GenerationDomain) -> Self {
+        Self {
+            name: name.into(),
+            domain,
+        }
+    }
+
     fn from_column(column: &Column) -> Result<Self, GeneratorError> {
         let name = column.name().to_owned();
         let domain = match column.column_type() {
@@ -248,15 +264,20 @@ impl ColumnPlan {
                 Ok(TableValue::Timestamp(value))
             }
             GenerationDomain::Bool(domain) => Ok(TableValue::Bool(domain.value())),
+            GenerationDomain::String(values) => {
+                let index = sample_index(rng, values.len(), &self.name)?;
+                Ok(TableValue::String(values[index].clone()))
+            }
         }
     }
 }
 
 #[derive(Debug, Clone)]
-enum GenerationDomain {
+pub(crate) enum GenerationDomain {
     Int(IntDomain),
     Timestamp(TimestampDomain),
     Bool(BoolDomain),
+    String(Vec<String>),
 }
 
 fn sample_index<R: Rng + ?Sized>(

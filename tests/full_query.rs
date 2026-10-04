@@ -1,135 +1,305 @@
+use sql_semantic_protocol::{
+    ConfiguredSqlInput, RelationCatalog, SqlInput, analyze_configured_inputs_with_catalog,
+    dialect_from_name,
+};
 use sql_tdg::{
-    Column, ColumnType, Generator, Table, apply_conditions, parse_query, to_date, to_timestamp,
+    DataType, OutcomeSelector, ProtocolGenerationError, RelationSchema, SchemaColumn,
+    generate_from_bundle, generate_from_sql, to_timestamp,
 };
 
 const ROWS: usize = 12;
 const SEED: u64 = 42;
 
-fn generate(query: &str, schema: Vec<Column>) -> Table {
-    let parsed = parse_query(query).expect("query should parse");
-    let mut table = Table::new(schema, ROWS).expect("table should be valid");
-
-    apply_conditions(&parsed, &mut table).expect("query conditions should map to the schema");
-    Generator::new()
-        .generate(&mut table, SEED)
-        .expect("generation should succeed");
-
-    table
+fn schema(relation: &str, columns: &[(&str, &str)]) -> RelationSchema {
+    RelationSchema::new(
+        relation,
+        columns
+            .iter()
+            .map(|(name, data_type)| {
+                SchemaColumn::from_sql_type(*name, data_type, "generic")
+                    .expect("test datatype should normalize")
+            })
+            .collect(),
+    )
+    .expect("test relation schema should be valid")
 }
 
 #[test]
-fn full_query_generator_ints() {
-    let mut single = generate(
+fn protocol_driven_integer_equality_generation() {
+    let generated = generate_from_sql(
         "SELECT col_a FROM t WHERE col_a = 10",
-        vec![Column::new("col_a", ColumnType::Int)],
-    );
-    single.build_ints();
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect("protocol-driven generation should succeed");
 
-    assert_eq!(
-        single
-            .get_ints("col_a")
-            .expect("integer column should be readable")
-            .expect("integer column should be built"),
-        vec![10; ROWS]
-    );
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
 
-    let mut multiple = generate(
-        "SELECT col_a, col_b FROM t WHERE col_a > 5 OR col_a = 10 AND col_b = 5",
-        vec![
-            Column::new("col_a", ColumnType::Int),
-            Column::new("col_b", ColumnType::Int),
-        ],
-    );
-    multiple.build_ints();
-
-    assert_eq!(
-        multiple
-            .get_ints("col_a")
-            .expect("integer column should be readable")
-            .expect("integer column should be built"),
-        vec![10; ROWS]
-    );
-    assert_eq!(
-        multiple
-            .get_ints("col_b")
-            .expect("integer column should be readable")
-            .expect("integer column should be built"),
-        vec![5; ROWS]
-    );
+    assert_eq!(values, vec![10; ROWS]);
 }
 
 #[test]
-fn full_query_generator_bool() {
-    let mut table = generate(
-        "SELECT col_a FROM t WHERE col_a",
-        vec![Column::new("col_a", ColumnType::Bool)],
-    );
-    table.build_bools();
+fn protocol_ranges_preserve_inclusive_exclusive_bounds_and_exclusions() {
+    let sql = "SELECT col_a FROM t WHERE col_a >= 4 AND col_a < 8 AND col_a != 6";
+    let schemas = [schema("t", &[("col_a", "INTEGER")])];
 
-    assert_eq!(
-        table
-            .get_bools("col_a")
-            .expect("boolean column should be readable")
-            .expect("boolean column should be built"),
-        vec![true; ROWS]
-    );
-}
-
-#[test]
-fn full_query_generator_timestamp() {
-    let cases = [
-        (
-            "SELECT col_a FROM t WHERE col_a = '2013-06-17'",
-            to_date("2013-06-17").expect("test date should be valid"),
-        ),
-        (
-            r#"SELECT col_a FROM t WHERE col_a = "2013-06-17T14:29:00Z""#,
-            to_timestamp("2013-06-17T14:29:00Z").expect("test timestamp should be valid"),
-        ),
-    ];
-
-    for (query, expected_seconds) in cases {
-        let mut table = generate(query, vec![Column::new("col_a", ColumnType::Timestamp)]);
-        table.build_timestamps();
-
-        let values = table
-            .get_timestamps("col_a")
-            .expect("timestamp column should be readable")
-            .expect("timestamp column should be built");
-
-        assert_eq!(values.len(), ROWS);
-        assert!(
-            values
-                .iter()
-                .all(|value| value.timestamp() == i64::from(expected_seconds))
-        );
-    }
-}
-
-#[test]
-fn full_query_seeded_generation_is_deterministic_and_satisfies_constraints() {
-    let query = "SELECT col_a FROM t WHERE col_a > 3 AND col_a < 100 AND col_a != 10";
-    let schema = vec![Column::new("col_a", ColumnType::Int)];
-
-    let mut first = generate(query, schema.clone());
-    let mut second = generate(query, schema);
-    first.build_ints();
-    second.build_ints();
+    let first =
+        generate_from_sql(sql, "generic", &schemas, ROWS, SEED).expect("generation should succeed");
+    let second =
+        generate_from_sql(sql, "generic", &schemas, ROWS, SEED).expect("generation should repeat");
 
     let first_values = first
+        .table("t")
+        .expect("source table should exist")
         .get_ints("col_a")
         .expect("integer column should be readable")
         .expect("integer column should be built");
     let second_values = second
+        .table("t")
+        .expect("source table should exist")
         .get_ints("col_a")
         .expect("integer column should be readable")
         .expect("integer column should be built");
 
     assert_eq!(first_values, second_values);
-    assert_eq!(first_values.len(), ROWS);
     assert!(
         first_values
             .iter()
-            .all(|value| *value > 3 && *value < 100 && *value != 10)
+            .all(|value| (4..8).contains(value) && *value != 6)
+    );
+}
+
+#[test]
+fn protocol_set_domain_is_consumed_directly() {
+    let generated = generate_from_sql(
+        "SELECT col_a FROM t WHERE col_a IN (1, 3, 5)",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect("set-domain generation should succeed");
+
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+
+    assert!(values.iter().all(|value| [1, 3, 5].contains(value)));
+}
+
+#[test]
+fn protocol_driven_boolean_generation() {
+    let generated = generate_from_sql(
+        "SELECT enabled FROM t WHERE enabled = true",
+        "generic",
+        &[schema("t", &[("enabled", "BOOLEAN")])],
+        ROWS,
+        SEED,
+    )
+    .expect("protocol-driven generation should succeed");
+
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_bools("enabled")
+        .expect("boolean column should be readable")
+        .expect("boolean column should be built");
+
+    assert_eq!(values, vec![true; ROWS]);
+}
+
+#[test]
+fn protocol_driven_timestamp_generation() {
+    let literal = "2013-06-17T14:29:00Z";
+    let generated = generate_from_sql(
+        &format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{literal}'"),
+        "generic",
+        &[schema("t", &[("created_at", "TIMESTAMP")])],
+        ROWS,
+        SEED,
+    )
+    .expect("protocol-driven generation should succeed");
+
+    let expected = i64::from(to_timestamp(literal).expect("test timestamp should be valid"));
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_timestamps("created_at")
+        .expect("timestamp column should be readable")
+        .expect("timestamp column should be built");
+
+    assert_eq!(values.len(), ROWS);
+    assert!(values.iter().all(|value| value.timestamp() == expected));
+}
+
+#[test]
+fn terminal_composed_semantics_drive_source_generation() {
+    let sql = "
+        CREATE VIEW stage_orders AS
+        SELECT amount FROM raw_orders WHERE amount >= 5;
+        CREATE VIEW final_orders AS
+        SELECT amount FROM stage_orders WHERE amount <= 10;
+    ";
+    let generated = generate_from_sql(
+        sql,
+        "generic",
+        &[schema("raw_orders", &[("amount", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect("transitive protocol semantics should generate source data");
+
+    let values = generated
+        .table("raw_orders")
+        .expect("physical source table should exist")
+        .get_ints("amount")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+
+    assert!(values.iter().all(|value| (5..=10).contains(value)));
+}
+
+#[test]
+fn contradictory_protocol_domain_is_an_explicit_error() {
+    let error = generate_from_sql(
+        "SELECT col_a FROM t WHERE col_a > 10 AND col_a < 5",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect_err("contradictory domain must not generate rows");
+
+    assert_eq!(
+        error,
+        ProtocolGenerationError::EmptyDomain {
+            relation: "t".to_owned(),
+            column: "col_a".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn multiple_terminal_outcomes_require_selection() {
+    let error = generate_from_sql(
+        "SELECT col_a FROM t; SELECT col_a FROM t",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect_err("multiple outcomes must not be selected arbitrarily");
+
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::AmbiguousTerminalOutcome { .. }
+    ));
+}
+
+#[test]
+fn explicit_terminal_selection_generates_only_the_selected_outcome() {
+    let schemas = [schema("t", &[("col_a", "INTEGER")])];
+    let catalog = RelationCatalog::from_schemas(&schemas).expect("catalog should be valid");
+    let input = SqlInput::inline(
+        "SELECT col_a FROM t WHERE col_a = 10; SELECT col_a FROM t WHERE col_a = 20",
+    );
+    let dialect = dialect_from_name("generic").expect("generic dialect should exist");
+    let configured = [ConfiguredSqlInput::new(
+        "input-0001",
+        &input,
+        "generic",
+        dialect.as_ref(),
+    )];
+    let bundle = analyze_configured_inputs_with_catalog(&configured, &catalog)
+        .expect("protocol analysis should succeed");
+    let selector = OutcomeSelector::AnonymousLayer("layer-0002".to_owned());
+
+    let generated = generate_from_bundle(&bundle, Some(&selector), ROWS, SEED)
+        .expect("explicit terminal selection should succeed");
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+
+    assert_eq!(values, vec![20; ROWS]);
+}
+
+#[test]
+fn missing_source_schema_is_an_explicit_error() {
+    let error = generate_from_sql(
+        "SELECT col_a FROM t WHERE col_a = 10",
+        "generic",
+        &[],
+        ROWS,
+        SEED,
+    )
+    .expect_err("missing source type information must fail");
+
+    assert_eq!(
+        error,
+        ProtocolGenerationError::MissingSourceSchema {
+            relation: "t".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn constrained_column_missing_from_source_schema_is_an_explicit_error() {
+    let error = generate_from_sql(
+        "SELECT col_a FROM t WHERE required_col = 10",
+        "generic",
+        &[schema("t", &[("col_a", "INTEGER")])],
+        ROWS,
+        SEED,
+    )
+    .expect_err("a constrained column cannot be silently omitted from schema");
+
+    assert_eq!(
+        error,
+        ProtocolGenerationError::MissingSchemaColumn {
+            relation: "t".to_owned(),
+            column: "required_col".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn unsupported_canonical_source_type_is_not_coerced() {
+    let array = RelationSchema::new(
+        "t",
+        vec![
+            SchemaColumn::from_sql_type("items", "ARRAY<INTEGER>", "generic")
+                .expect("array datatype should normalize"),
+        ],
+    )
+    .expect("schema should be valid");
+
+    let error = generate_from_sql("SELECT items FROM t", "generic", &[array], ROWS, SEED)
+        .expect_err("array generation is not implemented");
+
+    assert_eq!(
+        error,
+        ProtocolGenerationError::UnsupportedSourceType {
+            relation: "t".to_owned(),
+            column: "items".to_owned(),
+            data_type: DataType::Array {
+                element: Some(Box::new(DataType::SignedInteger { bits: Some(32) })),
+                length: None,
+            }
+            .kind()
+            .to_owned(),
+        }
     );
 }

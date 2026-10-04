@@ -32,6 +32,32 @@ impl IntDomain {
         })
     }
 
+    /// Creates a domain from inclusive, non-overlapping intervals.
+    pub(crate) fn from_intervals(intervals: Vec<Interval>) -> Result<Self, SolverError> {
+        let Some(first) = intervals.first() else {
+            return Err(SolverError::UnsatisfiableDomain);
+        };
+        let Some(last) = intervals.last() else {
+            return Err(SolverError::UnsatisfiableDomain);
+        };
+
+        let mut previous_max = None;
+        for interval in &intervals {
+            if let Some(max) = previous_max
+                && interval.min() <= max
+            {
+                return Err(SolverError::UnsatisfiableDomain);
+            }
+            previous_max = Some(interval.max());
+        }
+
+        Ok(Self {
+            total_min: first.min(),
+            total_max: last.max(),
+            intervals,
+        })
+    }
+
     /// Returns the allowed intervals in ascending order.
     pub fn intervals(&self) -> &[Interval] {
         &self.intervals
