@@ -35,20 +35,20 @@ SQL Semantic Protocol 1.0.0.
 
 ## Acceptance Criteria
 
-- [ ] `sql-semantic-protocol` is the sole SQL semantic analysis dependency used by sql-tdg.
-- [ ] sql-tdg no longer depends directly on `sqlparser`.
-- [ ] The current internal parser module and parser-specific IR are removed once all callers consume protocol types or sql-tdg-owned generation types derived from them.
-- [ ] Predicate-to-domain derivation is removed from sql-tdg; ranges, inclusive/exclusive bounds, sets, empty domains, and unknown domains are interpreted from the protocol contract.
-- [ ] Resolved protocol `column_domains` are converted into the existing typed solver/generator domains without weakening the protocol semantics.
-- [ ] SQL input APIs, if retained, invoke SQL Semantic Protocol internally and then use the resulting protocol exactly like a directly supplied protocol document.
-- [ ] The generator can consume a resolved terminal outcome identified through `graph.components[].final_outcomes` and its layer `composed_semantics`.
-- [ ] Multiple or ambiguous candidate outcomes require explicit selection rather than an arbitrary default.
-- [ ] Unresolved composition, unknown domains, unsupported semantics, missing type information, or other insufficient protocol data return explicit errors; sql-tdg never reparses SQL as a fallback.
-- [ ] Any source-column datatype/schema information required for generation is obtained from the protocol contract. If the active protocol version cannot represent it, the missing capability is implemented upstream in `phdah/sql-semantic-protocol` before this task is considered complete.
-- [ ] Existing integer, boolean, and timestamp end-to-end generation behavior remains covered using protocol-driven fixtures.
-- [ ] Tests demonstrate lower and upper bounds, inclusive and exclusive bounds, excluded values, empty/contradictory domains, and terminal composed semantics.
-- [ ] README.md and AGENTS.md describe SQL Semantic Protocol as the semantic boundary and no longer describe sql-tdg as owning SQL parsing or semantic analysis.
-- [ ] `make rust-checks` remains green.
+- [x] `sql-semantic-protocol` is the sole SQL semantic analysis dependency used by sql-tdg.
+- [x] sql-tdg no longer depends directly on `sqlparser`.
+- [x] The current internal parser module and parser-specific IR are removed once all callers consume protocol types or sql-tdg-owned generation types derived from them.
+- [x] Predicate-to-domain derivation is removed from sql-tdg; ranges, inclusive/exclusive bounds, sets, empty domains, and unknown domains are interpreted from the protocol contract.
+- [x] Resolved protocol `column_domains` are converted into the existing typed solver/generator domains without weakening the protocol semantics.
+- [x] SQL input APIs, if retained, invoke SQL Semantic Protocol internally and then use the resulting protocol exactly like a directly supplied protocol document.
+- [x] The generator can consume a resolved terminal outcome identified through `graph.components[].final_outcomes` and its layer `composed_semantics`.
+- [x] Multiple or ambiguous candidate outcomes require explicit selection rather than an arbitrary default.
+- [x] Unresolved composition, unknown domains, unsupported semantics, missing type information, or other insufficient protocol data return explicit errors; sql-tdg never reparses SQL as a fallback.
+- [x] Any source-column datatype/schema information required for generation is obtained from the protocol contract. If the active protocol version cannot represent it, the missing capability is implemented upstream in `phdah/sql-semantic-protocol` before this task is considered complete.
+- [x] Existing integer, boolean, and timestamp end-to-end generation behavior remains covered using protocol-driven fixtures.
+- [x] Tests demonstrate lower and upper bounds, inclusive and exclusive bounds, excluded values, empty/contradictory domains, and terminal composed semantics.
+- [x] README.md and AGENTS.md describe SQL Semantic Protocol as the semantic boundary and no longer describe sql-tdg as owning SQL parsing or semantic analysis.
+- [x] `make rust-checks` remains green.
 
 
 ## Protocol 1.0 release gate
