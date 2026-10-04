@@ -85,10 +85,26 @@ pub enum ProtocolGenerationError {
         /// Upstream reason and diagnostics.
         reason: String,
     },
+    /// Resolved composition still contains a diagnostic that prevents safe generation.
+    UnsupportedSemantics {
+        /// Layer containing the diagnostic.
+        layer_id: String,
+        /// Stable diagnostic code.
+        code: String,
+        /// Diagnostic explanation.
+        message: String,
+    },
     /// A physical source relation does not have declared schema metadata.
     MissingSourceSchema {
         /// Canonical source relation identity.
         relation: String,
+    },
+    /// A constrained protocol column is absent from declared source schema metadata.
+    MissingSchemaColumn {
+        /// Canonical source relation identity.
+        relation: String,
+        /// Constrained source column.
+        column: String,
     },
     /// A protocol column domain cannot be mapped to exactly one source column.
     AmbiguousColumnDomain {
@@ -197,12 +213,24 @@ impl fmt::Display for ProtocolGenerationError {
                 formatter,
                 "terminal layer {layer_id} has unresolved composed semantics: {reason}"
             ),
+            Self::UnsupportedSemantics {
+                layer_id,
+                code,
+                message,
+            } => write!(
+                formatter,
+                "terminal layer {layer_id} contains unsupported semantics {code}: {message}"
+            ),
             Self::MissingSourceSchema { relation } => {
                 write!(
                     formatter,
                     "missing source schema metadata for relation {relation:?}"
                 )
             }
+            Self::MissingSchemaColumn { relation, column } => write!(
+                formatter,
+                "protocol constrains {relation}.{column} but the source schema does not declare it"
+            ),
             Self::AmbiguousColumnDomain { column } => {
                 write!(
                     formatter,
@@ -347,9 +375,54 @@ pub fn generate_from_bundle(
         }
     };
 
+    if let Some(diagnostic) = semantics.diagnostics().first() {
+        return Err(ProtocolGenerationError::UnsupportedSemantics {
+            layer_id: layer.id().to_owned(),
+            code: diagnostic.code().to_owned(),
+            message: diagnostic.message().to_owned(),
+        });
+    }
+
     let mut schemas = BTreeMap::new();
     for schema in bundle.source_schemas() {
         schemas.insert(schema.relation(), schema);
+    }
+
+    for domain in semantics.column_domains() {
+        let Some(relation) = domain.column().relation() else {
+            return Err(ProtocolGenerationError::UnsupportedDomain {
+                relation: "<unresolved>".to_owned(),
+                column: domain.column().name().to_owned(),
+                message: "composed source-column domain has no physical relation".to_owned(),
+            });
+        };
+        if !semantics
+            .dependencies()
+            .iter()
+            .any(|dependency| dependency == relation)
+        {
+            return Err(ProtocolGenerationError::UnsupportedDomain {
+                relation: relation.to_owned(),
+                column: domain.column().name().to_owned(),
+                message: "domain relation is not a composed physical dependency".to_owned(),
+            });
+        }
+        let schema = schemas
+            .get(relation)
+            .copied()
+            .ok_or_else(|| ProtocolGenerationError::MissingSourceSchema {
+                relation: relation.to_owned(),
+            })?;
+        if !schema
+            .columns()
+            .iter()
+            .any(|column| column.name() == domain.column().name())
+        {
+            return Err(ProtocolGenerationError::MissingSchemaColumn {
+                relation: relation.to_owned(),
+                column: domain.column().name().to_owned(),
+            });
+        }
     }
 
     let mut tables = BTreeMap::new();
@@ -368,12 +441,8 @@ pub fn generate_from_bundle(
                 map_column_type(relation, schema_column.name(), schema_column.data_type())?;
             columns.push(Column::new(schema_column.name(), column_type));
 
-            let domain = find_column_domain(
-                semantics.column_domains(),
-                semantics.dependencies(),
-                relation,
-                schema_column.name(),
-            )?;
+            let domain =
+                find_column_domain(semantics.column_domains(), relation, schema_column.name())?;
             let generation_domain = map_domain(
                 relation,
                 schema_column.name(),
@@ -484,21 +553,13 @@ fn describe_outcome(outcome: &DatasetRef) -> String {
 
 fn find_column_domain<'a>(
     domains: &'a [sql_semantic_protocol::ColumnDomain],
-    dependencies: &[String],
     relation: &str,
     column: &str,
 ) -> Result<Option<&'a ValueDomain>, ProtocolGenerationError> {
     let matches = domains
         .iter()
         .filter(|domain| {
-            if domain.column().name() != column {
-                return false;
-            }
-
-            match domain.column().relation() {
-                Some(domain_relation) => domain_relation == relation,
-                None => dependencies.len() == 1,
-            }
+            domain.column().name() == column && domain.column().relation() == Some(relation)
         })
         .collect::<Vec<_>>();
 
@@ -915,13 +976,13 @@ fn timestamp_literal(
 ) -> Result<i32, ProtocolGenerationError> {
     if !matches!(
         literal.literal_type(),
-        LiteralType::Date | LiteralType::Timestamp
+        LiteralType::String | LiteralType::Date | LiteralType::Timestamp
     ) {
         return Err(invalid_literal(
             relation,
             column,
             format!(
-                "expected date or timestamp literal, got {:?}",
+                "expected string, date, or timestamp literal, got {:?}",
                 literal.literal_type()
             ),
         ));
