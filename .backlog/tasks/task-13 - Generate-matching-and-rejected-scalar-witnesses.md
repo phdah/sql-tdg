@@ -13,23 +13,26 @@ dependencies:
 
 ## Description
 
-Generate both rows that satisfy scalar query semantics and rows that are deliberately rejected by
-them.
+Generate both matching and deliberately non-matching rows directly from the resolved value domains
+provided by SQL Semantic Protocol.
 
-Rejected rows should be useful counterexamples, not arbitrary garbage. For conjunctive predicates,
-the seeded generator should choose one supported condition to violate while satisfying the remaining
-conditions whenever that is possible. For disjunctions, violating only one branch is insufficient;
-the rejection plan must falsify all alternatives required for the row to be excluded.
+sql-tdg must not reason about WHERE clauses, boolean expression structure, or which SQL condition
+produced a domain. Matching values are sampled from the provided allowed domain. For a rejected row,
+the seeded generator selects one constrained generated column and samples a value outside its
+provided allowed domain while generating the remaining columns normally.
+
+If the protocol does not provide a sufficiently precise domain to construct a guaranteed matching
+or rejected value, generation fails explicitly rather than reconstructing SQL semantics locally.
 
 ## Acceptance Criteria
 
 - [ ] Callers can request deterministic counts or ratios of matching and rejected rows.
-- [ ] Every matching row satisfies all supported scalar constraints represented by the selected protocol semantics.
-- [ ] For conjunctions, each rejected row deterministically selects one supported rejection target and violates it while satisfying the other compatible conditions.
-- [ ] For disjunctions, rejection plans falsify every branch required to make the complete predicate false rather than naively violating one branch.
-- [ ] Rejection plans cover bounded/disjoint ranges, inclusive/exclusive bounds, excluded values, equality/inequality, finite sets, NULL semantics, and supported string/boolean constraints.
-- [ ] Generated rows retain metadata identifying whether they are expected to match and, for rejected rows, which rejection plan was chosen.
-- [ ] Unsatisfiable requests fail explicitly instead of emitting rows whose classification is uncertain.
-- [ ] Selection of rejection plans is seeded and reproducible.
-- [ ] Tests prove that matching rows satisfy the protocol domains and rejected rows fall outside the intended acceptance semantics.
+- [ ] Matching values are sampled only from the allowed protocol domain.
+- [ ] Each rejected row deterministically selects one constrained generated column and samples outside that column's allowed protocol domain.
+- [ ] Other generated columns continue to sample from their normal protocol-provided domains.
+- [ ] Complement sampling supports bounded and disjoint ranges, inclusive/exclusive bounds, excluded values, finite sets, NULL semantics, and supported string/boolean domains as represented by the protocol.
+- [ ] sql-tdg never inspects SQL predicates or reconstructs AND/OR expression semantics.
+- [ ] Unknown, unbounded, empty, or otherwise insufficient domains fail explicitly when they cannot safely satisfy the requested classification.
+- [ ] Selection of the rejected column/value is seeded and reproducible.
+- [ ] Tests prove matching rows fall inside the selected protocol domains and rejected rows fall outside at least one selected protocol domain.
 - [ ] `make rust-checks` remains green.
