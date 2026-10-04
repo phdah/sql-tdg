@@ -65,8 +65,20 @@ impl GenerationRowCounts {
             });
         }
 
-        let rejected = ((total_rows as f64) * rejected_ratio).round() as usize;
-        Self::new(total_rows.saturating_sub(rejected), rejected)
+        let total = u64::try_from(total_rows).map_err(|_| {
+            ProtocolGenerationError::InvalidRowConfiguration {
+                message: "total row count cannot be represented as u64".to_owned(),
+            }
+        })?;
+        if total > (1_u64 << 53) {
+            return Err(ProtocolGenerationError::InvalidRowConfiguration {
+                message: "ratio-based row counts are limited to integers exactly representable by f64"
+                    .to_owned(),
+            });
+        }
+
+        let rejected = ((total as f64) * rejected_ratio).round() as usize;
+        Self::new(total_rows - rejected, rejected)
     }
 
     /// Returns the number of rows sampled inside every supplied scalar domain.
@@ -96,6 +108,7 @@ impl fmt::Debug for GeneratedData {
         formatter
             .debug_struct("GeneratedData")
             .field("relations", &self.tables.keys().collect::<Vec<_>>())
+            .field("row_counts", &self.row_counts)
             .finish()
     }
 }
