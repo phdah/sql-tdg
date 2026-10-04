@@ -721,7 +721,6 @@ fn non_equality_relationship_is_an_explicit_error() {
     ));
 }
 
-
 #[test]
 fn relational_subquery_predicates_are_explicit_errors() {
     let schemas = [
