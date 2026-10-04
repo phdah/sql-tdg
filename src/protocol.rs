@@ -327,7 +327,7 @@ pub fn generate_from_bundle(
         .layers()
         .iter()
         .find(|layer| layer.id() == layer_id)
-        .ok_or_else(|| ProtocolGenerationError::MissingOutcomeLayer {
+        .ok_or(ProtocolGenerationError::MissingOutcomeLayer {
             outcome: outcome_description,
         })?;
 
