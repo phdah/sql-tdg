@@ -21,10 +21,7 @@ fn coverage_schema() -> RelationSchema {
                     scale: Some(4),
                 },
             ),
-            column(
-                "float_value",
-                DataType::FloatingPoint { bits: Some(64) },
-            ),
+            column("float_value", DataType::FloatingPoint { bits: Some(64) }),
             column(
                 "text_value",
                 DataType::String {
@@ -40,17 +37,10 @@ fn coverage_schema() -> RelationSchema {
                 },
             ),
             column("date_value", DataType::Date),
-            column(
-                "time_value",
-                DataType::Time {
-                    precision: Some(6),
-                },
-            ),
+            column("time_value", DataType::Time { precision: Some(6) }),
             column(
                 "timestamp_value",
-                DataType::Timestamp {
-                    precision: Some(9),
-                },
+                DataType::Timestamp { precision: Some(9) },
             ),
             column("uuid_value", DataType::Uuid),
             column("json_value", DataType::Json),
@@ -167,11 +157,19 @@ fn supported_type_boundaries_keep_expected_arrow_storage() {
         .expect("generated source should exist");
 
     assert_eq!(
-        table.arrow_schema().field_with_name("i64_value").unwrap().data_type(),
+        table
+            .arrow_schema()
+            .field_with_name("i64_value")
+            .unwrap()
+            .data_type(),
         &arrow_schema::DataType::Int64
     );
     assert_eq!(
-        table.arrow_schema().field_with_name("u64_value").unwrap().data_type(),
+        table
+            .arrow_schema()
+            .field_with_name("u64_value")
+            .unwrap()
+            .data_type(),
         &arrow_schema::DataType::UInt64
     );
     assert_eq!(
