@@ -7,8 +7,8 @@ use arrow_array::ArrayRef;
 use arrow_array::builder::{
     ArrayBuilder, BinaryBuilder, BooleanBuilder, Date32Builder, Decimal128Builder,
     FixedSizeBinaryBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder, Int8Builder,
-    Int16Builder, Int32Builder, Int64Builder, ListBuilder, MapBuilder, StringBuilder, StructBuilder,
-    Time64MicrosecondBuilder, Time64NanosecondBuilder, TimestampMicrosecondBuilder,
+    Int16Builder, Int32Builder, Int64Builder, ListBuilder, MapBuilder, StringBuilder,
+    StructBuilder, Time64MicrosecondBuilder, Time64NanosecondBuilder, TimestampMicrosecondBuilder,
     TimestampNanosecondBuilder, UInt8Builder, UInt16Builder, UInt32Builder, UInt64Builder,
     make_builder,
 };
@@ -303,16 +303,18 @@ fn range_candidates(
             if lower.inclusive() {
                 value
             } else {
-                step_value(&value, true)
-                    .ok_or_else(|| "exclusive lower bound has no representable successor".to_owned())?
+                step_value(&value, true).ok_or_else(|| {
+                    "exclusive lower bound has no representable successor".to_owned()
+                })?
             }
         } else if let Some(upper) = range.upper() {
             let value = value_from_literal(data_type, upper.value())?;
             if upper.inclusive() {
                 value
             } else {
-                step_value(&value, false)
-                    .ok_or_else(|| "exclusive upper bound has no representable predecessor".to_owned())?
+                step_value(&value, false).ok_or_else(|| {
+                    "exclusive upper bound has no representable predecessor".to_owned()
+                })?
             }
         } else {
             representative_value(data_type)?
@@ -396,7 +398,9 @@ fn default_values(data_type: &DataType) -> Result<Vec<ProtocolValue>, String> {
                 let max = length.unwrap_or(u64::MAX);
                 let mut values = vec![ProtocolValue::String(String::new())];
                 if max > 0 {
-                    values.push(ProtocolValue::String("value".chars().take(max as usize).collect()));
+                    values.push(ProtocolValue::String(
+                        "value".chars().take(max as usize).collect(),
+                    ));
                 }
                 Ok(values)
             }
@@ -482,7 +486,9 @@ fn default_values(data_type: &DataType) -> Result<Vec<ProtocolValue>, String> {
                     Ok(vec![ProtocolValue::List(vec![
                         representative;
                         usize::try_from(*length)
-                            .map_err(|_| format!("array[{length}]"))?
+                            .map_err(|_| format!(
+                                "array[{length}]"
+                            ))?
                     ])])
                 }
                 None => Ok(vec![
@@ -518,11 +524,7 @@ fn default_values(data_type: &DataType) -> Result<Vec<ProtocolValue>, String> {
             if values.is_empty() {
                 return Err("set has no declared values".to_owned());
             }
-            Ok(values
-                .iter()
-                .cloned()
-                .map(ProtocolValue::String)
-                .collect())
+            Ok(values.iter().cloned().map(ProtocolValue::String).collect())
         }
         DataType::Nullable(inner) => {
             let mut values = vec![ProtocolValue::Null];
@@ -661,17 +663,22 @@ fn value_from_literal(
                 .parse::<i128>()
                 .map_err(|_| "integer literal is outside supported range".to_owned())?;
             match bits.unwrap_or(64) {
-                0..=8 => Ok(ProtocolValue::Int8(
-                    i8::try_from(value).map_err(|_| "integer literal overflows INT8".to_owned())?,
-                )),
+                0..=8 => {
+                    Ok(ProtocolValue::Int8(i8::try_from(value).map_err(|_| {
+                        "integer literal overflows INT8".to_owned()
+                    })?))
+                }
                 9..=16 => Ok(ProtocolValue::Int16(
-                    i16::try_from(value).map_err(|_| "integer literal overflows INT16".to_owned())?,
+                    i16::try_from(value)
+                        .map_err(|_| "integer literal overflows INT16".to_owned())?,
                 )),
                 17..=32 => Ok(ProtocolValue::Int32(
-                    i32::try_from(value).map_err(|_| "integer literal overflows INT32".to_owned())?,
+                    i32::try_from(value)
+                        .map_err(|_| "integer literal overflows INT32".to_owned())?,
                 )),
                 33..=64 => Ok(ProtocolValue::Int64(
-                    i64::try_from(value).map_err(|_| "integer literal overflows INT64".to_owned())?,
+                    i64::try_from(value)
+                        .map_err(|_| "integer literal overflows INT64".to_owned())?,
                 )),
                 bits => Err(format!("signed_integer({bits})")),
             }
@@ -681,17 +688,22 @@ fn value_from_literal(
                 .parse::<u128>()
                 .map_err(|_| "unsigned integer literal is outside supported range".to_owned())?;
             match bits.unwrap_or(64) {
-                0..=8 => Ok(ProtocolValue::UInt8(
-                    u8::try_from(value).map_err(|_| "integer literal overflows UINT8".to_owned())?,
-                )),
+                0..=8 => {
+                    Ok(ProtocolValue::UInt8(u8::try_from(value).map_err(|_| {
+                        "integer literal overflows UINT8".to_owned()
+                    })?))
+                }
                 9..=16 => Ok(ProtocolValue::UInt16(
-                    u16::try_from(value).map_err(|_| "integer literal overflows UINT16".to_owned())?,
+                    u16::try_from(value)
+                        .map_err(|_| "integer literal overflows UINT16".to_owned())?,
                 )),
                 17..=32 => Ok(ProtocolValue::UInt32(
-                    u32::try_from(value).map_err(|_| "integer literal overflows UINT32".to_owned())?,
+                    u32::try_from(value)
+                        .map_err(|_| "integer literal overflows UINT32".to_owned())?,
                 )),
                 33..=64 => Ok(ProtocolValue::UInt64(
-                    u64::try_from(value).map_err(|_| "integer literal overflows UINT64".to_owned())?,
+                    u64::try_from(value)
+                        .map_err(|_| "integer literal overflows UINT64".to_owned())?,
                 )),
                 bits => Err(format!("unsigned_integer({bits})")),
             }
@@ -752,7 +764,8 @@ fn value_from_literal(
             if *fixed {
                 let width = length.unwrap_or(value_len);
                 value.resize(
-                    usize::try_from(width).map_err(|_| "fixed binary length is too large".to_owned())?,
+                    usize::try_from(width)
+                        .map_err(|_| "fixed binary length is too large".to_owned())?,
                     0,
                 );
             }
@@ -763,9 +776,9 @@ fn value_from_literal(
                 .map_err(|_| "invalid DATE literal".to_owned())?;
             let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("Unix epoch is valid");
             let days = date.signed_duration_since(epoch).num_days();
-            Ok(ProtocolValue::Date32(
-                i32::try_from(days).map_err(|_| "DATE literal is outside Arrow range".to_owned())?,
-            ))
+            Ok(ProtocolValue::Date32(i32::try_from(days).map_err(
+                |_| "DATE literal is outside Arrow range".to_owned(),
+            )?))
         }
         DataType::Time { precision } => {
             let time = NaiveTime::parse_from_str(literal_text(literal)?, "%H:%M:%S%.f")
@@ -786,12 +799,14 @@ fn value_from_literal(
         DataType::Timestamp { precision } => {
             let timestamp = parse_timestamp(literal_text(literal)?)?;
             if precision.is_none_or(|value| value <= 6) {
-                Ok(ProtocolValue::TimestampMicroseconds(timestamp.timestamp_micros()))
+                Ok(ProtocolValue::TimestampMicroseconds(
+                    timestamp.timestamp_micros(),
+                ))
             } else if precision.is_some_and(|value| value <= 9) {
                 Ok(ProtocolValue::TimestampNanoseconds(
-                    timestamp
-                        .timestamp_nanos_opt()
-                        .ok_or_else(|| "TIMESTAMP literal is outside nanosecond range".to_owned())?,
+                    timestamp.timestamp_nanos_opt().ok_or_else(|| {
+                        "TIMESTAMP literal is outside nanosecond range".to_owned()
+                    })?,
                 ))
             } else {
                 Err(format!("timestamp({})", precision.unwrap_or_default()))
@@ -855,7 +870,10 @@ fn parse_timestamp(text: &str) -> Result<DateTime<Utc>, String> {
 }
 
 fn parse_uuid(text: &str) -> Result<Vec<u8>, String> {
-    let compact = text.chars().filter(|character| *character != '-').collect::<String>();
+    let compact = text
+        .chars()
+        .filter(|character| *character != '-')
+        .collect::<String>();
     if compact.len() != 32 || !compact.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("invalid UUID literal".to_owned());
     }
@@ -883,10 +901,11 @@ fn parse_decimal_scaled(text: &str, precision: u64, scale: u64) -> Result<i128, 
         Some(b'+') => (false, &text[1..]),
         _ => (false, text),
     };
-    let (mantissa, exponent) = match unsigned.split_once(['e', 'E']) {
-        Some((mantissa, exponent)) => (
-            mantissa,
-            exponent
+    let exponent_index = unsigned.find('e').or_else(|| unsigned.find('E'));
+    let (mantissa, exponent) = match exponent_index {
+        Some(index) => (
+            &unsigned[..index],
+            unsigned[index + 1..]
                 .parse::<i32>()
                 .map_err(|_| "invalid decimal exponent".to_owned())?,
         ),
@@ -971,10 +990,12 @@ fn step_value(value: &ProtocolValue, up: bool) -> Option<ProtocolValue> {
         ProtocolValue::TimeNanoseconds(value) => checked_step!(*value, TimeNanoseconds),
         ProtocolValue::TimestampMicroseconds(value) => checked_step!(*value, TimestampMicroseconds),
         ProtocolValue::TimestampNanoseconds(value) => checked_step!(*value, TimestampNanoseconds),
-        ProtocolValue::Float32(bits) => next_f32(f32::from_bits(*bits), up)
-            .map(|value| ProtocolValue::Float32(value.to_bits())),
-        ProtocolValue::Float64(bits) => next_f64(f64::from_bits(*bits), up)
-            .map(|value| ProtocolValue::Float64(value.to_bits())),
+        ProtocolValue::Float32(bits) => {
+            next_f32(f32::from_bits(*bits), up).map(|value| ProtocolValue::Float32(value.to_bits()))
+        }
+        ProtocolValue::Float64(bits) => {
+            next_f64(f64::from_bits(*bits), up).map(|value| ProtocolValue::Float64(value.to_bits()))
+        }
         _ => None,
     }
 }
@@ -1033,7 +1054,9 @@ fn compare_values(left: &ProtocolValue, right: &ProtocolValue) -> Result<Orderin
         (ProtocolValue::UInt16(left), ProtocolValue::UInt16(right)) => compare!(left, right),
         (ProtocolValue::UInt32(left), ProtocolValue::UInt32(right)) => compare!(left, right),
         (ProtocolValue::UInt64(left), ProtocolValue::UInt64(right)) => compare!(left, right),
-        (ProtocolValue::Decimal128(left), ProtocolValue::Decimal128(right)) => compare!(left, right),
+        (ProtocolValue::Decimal128(left), ProtocolValue::Decimal128(right)) => {
+            compare!(left, right)
+        }
         (ProtocolValue::Date32(left), ProtocolValue::Date32(right)) => compare!(left, right),
         (ProtocolValue::TimeMicroseconds(left), ProtocolValue::TimeMicroseconds(right)) => {
             compare!(left, right)
@@ -1045,10 +1068,9 @@ fn compare_values(left: &ProtocolValue, right: &ProtocolValue) -> Result<Orderin
             ProtocolValue::TimestampMicroseconds(left),
             ProtocolValue::TimestampMicroseconds(right),
         ) => compare!(left, right),
-        (
-            ProtocolValue::TimestampNanoseconds(left),
-            ProtocolValue::TimestampNanoseconds(right),
-        ) => compare!(left, right),
+        (ProtocolValue::TimestampNanoseconds(left), ProtocolValue::TimestampNanoseconds(right)) => {
+            compare!(left, right)
+        }
         (ProtocolValue::Float32(left), ProtocolValue::Float32(right)) => f32::from_bits(*left)
             .partial_cmp(&f32::from_bits(*right))
             .ok_or_else(|| "NaN is not orderable".to_owned()),
@@ -1221,10 +1243,7 @@ fn append_value(
     Ok(())
 }
 
-fn append_null(
-    builder: &mut dyn ArrayBuilder,
-    data_type: &ArrowDataType,
-) -> Result<(), String> {
+fn append_null(builder: &mut dyn ArrayBuilder, data_type: &ArrowDataType) -> Result<(), String> {
     match data_type {
         ArrowDataType::Boolean => builder_mut::<BooleanBuilder>(builder)?.append_null(),
         ArrowDataType::Int8 => builder_mut::<Int8Builder>(builder)?.append_null(),
@@ -1284,16 +1303,22 @@ fn append_null(
                 .append(false)
                 .map_err(|error| error.to_string())?;
         }
-        _ => return Err(format!("NULL is unsupported for Arrow datatype {data_type}")),
+        _ => {
+            return Err(format!(
+                "NULL is unsupported for Arrow datatype {data_type}"
+            ));
+        }
     }
     Ok(())
 }
 
 fn builder_mut<T: 'static>(builder: &mut dyn ArrayBuilder) -> Result<&mut T, String> {
-    builder
-        .as_any_mut()
-        .downcast_mut::<T>()
-        .ok_or_else(|| format!("unexpected Arrow builder for {}", std::any::type_name::<T>()))
+    builder.as_any_mut().downcast_mut::<T>().ok_or_else(|| {
+        format!(
+            "unexpected Arrow builder for {}",
+            std::any::type_name::<T>()
+        )
+    })
 }
 
 fn is_nullable(data_type: &DataType) -> bool {
@@ -1306,7 +1331,7 @@ mod tests {
         Array, Decimal128Array, Int64Array, ListArray, MapArray, StringArray, StructArray,
         UInt64Array,
     };
-    use sql_semantic_protocol::{DataType, DataTypeField, EnumValue};
+    use sql_semantic_protocol::{DataType, DataTypeField, parse_data_type};
 
     use super::{ProtocolValue, arrow_data_type, build_array, default_values};
 
@@ -1395,18 +1420,26 @@ mod tests {
             .downcast_ref::<StructArray>()
             .expect("struct storage");
         assert_eq!(struct_array.len(), 1);
-        assert!(struct_array.column(0).as_any().downcast_ref::<ListArray>().is_some());
-        assert!(struct_array.column(1).as_any().downcast_ref::<MapArray>().is_some());
+        assert!(
+            struct_array
+                .column(0)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .is_some()
+        );
+        assert!(
+            struct_array
+                .column(1)
+                .as_any()
+                .downcast_ref::<MapArray>()
+                .is_some()
+        );
     }
 
     #[test]
     fn enum_values_are_limited_to_declared_members() {
-        let data_type = DataType::Enum {
-            values: vec![
-                EnumValue::new("ready".to_owned(), None),
-                EnumValue::new("done".to_owned(), None),
-            ],
-        };
+        let data_type =
+            parse_data_type("ENUM('ready', 'done')", "mysql").expect("enum should normalize");
         let values = default_values(&data_type).expect("enum should be supported");
         assert_eq!(
             values,
