@@ -6,10 +6,7 @@ pub(super) fn record(key: &str, value: &str) -> String {
     format!("{key}\t{value}")
 }
 
-pub(super) fn next_value<'a, I>(
-    lines: &mut I,
-    expected_key: &str,
-) -> Result<&'a str, TestCaseError>
+pub(super) fn next_value<'a, I>(lines: &mut I, expected_key: &str) -> Result<&'a str, TestCaseError>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -41,9 +38,11 @@ pub(super) fn parse_count(value: &str, field: &str) -> Result<usize, TestCaseErr
 }
 
 pub(super) fn parse_u64(value: &str, field: &str) -> Result<u64, TestCaseError> {
-    value
-        .parse::<u64>()
-        .map_err(|_| invalid_metadata(format!("{field} value {value:?} is not an unsigned integer")))
+    value.parse::<u64>().map_err(|_| {
+        invalid_metadata(format!(
+            "{field} value {value:?} is not an unsigned integer"
+        ))
+    })
 }
 
 pub(super) fn encode_string(value: &str) -> String {
@@ -75,12 +74,9 @@ pub(super) fn decode_string(encoded: &str) -> Result<String, TestCaseError> {
             .to_digit(16)
             .ok_or_else(|| invalid_metadata("hex-encoded string contains a non-hex digit"))?;
         let value = (high << 4) | low;
-        bytes.push(
-            u8::try_from(value).expect("two hexadecimal digits always fit into one byte"),
-        );
+        bytes.push(u8::try_from(value).expect("two hexadecimal digits always fit into one byte"));
     }
-    String::from_utf8(bytes)
-        .map_err(|_| invalid_metadata("hex-encoded string is not valid UTF-8"))
+    String::from_utf8(bytes).map_err(|_| invalid_metadata("hex-encoded string is not valid UTF-8"))
 }
 
 pub(super) fn invalid_metadata(message: impl Into<String>) -> TestCaseError {
