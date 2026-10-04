@@ -87,8 +87,7 @@ fn intermediate_boundary_must_be_materialized() {
     let error = TestCaseMetadata::new(
         WorkloadIdentity::raw_sql("orders", "queries/orders.sql")
             .expect("test workload identity should be valid"),
-        TestTarget::relation("analytics.orders")
-            .expect("test target identity should be valid"),
+        TestTarget::relation("analytics.orders").expect("test target identity should be valid"),
         GenerationBoundary::intermediate_relations(["stage.missing"])
             .expect("boundary itself should be valid"),
         "duckdb",
