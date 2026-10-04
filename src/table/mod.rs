@@ -16,7 +16,7 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use chrono::{DateTime, Utc};
 use sql_semantic_protocol::{DataType as ProtocolDataType, SchemaColumn};
 
-use crate::protocol_value::arrow_data_type;
+use crate::protocol_value::arrow_data_type as protocol_arrow_data_type;
 use crate::types::{Column, ColumnType};
 
 #[cfg(test)]
@@ -304,9 +304,8 @@ impl Table {
         let mut columns = BTreeMap::new();
 
         for (protocol_column, array) in protocol_columns.iter().zip(arrays) {
-            let expected = arrow_data_type(protocol_column.data_type()).map_err(|data_type| {
-                TableError::UnsupportedProtocolType { data_type }
-            })?;
+            let expected = protocol_arrow_data_type(protocol_column.data_type())
+                .map_err(|data_type| TableError::UnsupportedProtocolType { data_type })?;
             if array.data_type() != &expected {
                 return Err(TableError::ProtocolArrayTypeMismatch {
                     column: protocol_column.name().to_owned(),
@@ -318,10 +317,7 @@ impl Table {
             let column_type = legacy_column_type(protocol_column.data_type());
             let name = protocol_column.name().to_owned();
             if columns
-                .insert(
-                    name.clone(),
-                    ColumnStorage::from_array(column_type, array),
-                )
+                .insert(name.clone(), ColumnStorage::from_array(column_type, array))
                 .is_some()
             {
                 return Err(TableError::DuplicateColumn { column: name });
