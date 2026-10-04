@@ -296,9 +296,10 @@ fn canonical_array_source_type_is_generated_losslessly() {
 
     assert_eq!(
         values.data_type(),
-        &arrow_schema::DataType::List(std::sync::Arc::new(
-            arrow_schema::Field::new_list_field(arrow_schema::DataType::Int32, false)
-        ))
+        &arrow_schema::DataType::List(std::sync::Arc::new(arrow_schema::Field::new_list_field(
+            arrow_schema::DataType::Int32,
+            false
+        )))
     );
     assert_eq!(values.len(), ROWS);
 }
