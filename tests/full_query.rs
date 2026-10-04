@@ -1,6 +1,10 @@
+use sql_semantic_protocol::{
+    ConfiguredSqlInput, RelationCatalog, SqlInput, analyze_configured_inputs_with_catalog,
+    dialect_from_name,
+};
 use sql_tdg::{
-    DataType, ProtocolGenerationError, RelationSchema, SchemaColumn, generate_from_sql,
-    to_timestamp,
+    DataType, OutcomeSelector, ProtocolGenerationError, RelationSchema, SchemaColumn,
+    generate_from_bundle, generate_from_sql, to_timestamp,
 };
 
 const ROWS: usize = 12;
@@ -179,6 +183,36 @@ fn multiple_terminal_outcomes_require_selection() {
         error,
         ProtocolGenerationError::AmbiguousTerminalOutcome { .. }
     ));
+}
+
+#[test]
+fn explicit_terminal_selection_generates_only_the_selected_outcome() {
+    let schemas = [schema("t", &[("col_a", "INTEGER")])];
+    let catalog = RelationCatalog::from_schemas(&schemas).expect("catalog should be valid");
+    let input = SqlInput::inline(
+        "SELECT col_a FROM t WHERE col_a = 10; SELECT col_a FROM t WHERE col_a = 20",
+    );
+    let dialect = dialect_from_name("generic").expect("generic dialect should exist");
+    let configured = [ConfiguredSqlInput::new(
+        "input-0001",
+        &input,
+        "generic",
+        dialect.as_ref(),
+    )];
+    let bundle = analyze_configured_inputs_with_catalog(&configured, &catalog)
+        .expect("protocol analysis should succeed");
+    let selector = OutcomeSelector::AnonymousLayer("layer-0002".to_owned());
+
+    let generated = generate_from_bundle(&bundle, Some(&selector), ROWS, SEED)
+        .expect("explicit terminal selection should succeed");
+    let values = generated
+        .table("t")
+        .expect("source table should exist")
+        .get_ints("col_a")
+        .expect("integer column should be readable")
+        .expect("integer column should be built");
+
+    assert_eq!(values, vec![20; ROWS]);
 }
 
 #[test]
