@@ -407,12 +407,11 @@ pub fn generate_from_bundle(
                 message: "domain relation is not a composed physical dependency".to_owned(),
             });
         }
-        let schema = schemas
-            .get(relation)
-            .copied()
-            .ok_or_else(|| ProtocolGenerationError::MissingSourceSchema {
+        let schema = schemas.get(relation).copied().ok_or_else(|| {
+            ProtocolGenerationError::MissingSourceSchema {
                 relation: relation.to_owned(),
-            })?;
+            }
+        })?;
         if !schema
             .columns()
             .iter()
