@@ -1,7 +1,7 @@
 ---
 id: TASK-8
 title: Validate end-to-end Go/Rust parity
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-02'
 labels: []
@@ -24,12 +24,12 @@ The Python proof of concept remains frozen.
 
 ## Acceptance Criteria
 
-- [ ] Full-query Rust tests cover the currently supported integer, boolean, and timestamp flows.
-- [ ] A repeatable parity harness can run the same representative query/schema/input cases through both Go and Rust.
-- [ ] Deterministic parser, solver, interop, and table behavior is compared directly between Go and Rust.
-- [ ] Generator parity verifies equivalent semantics and constraint satisfaction without requiring Rust to reproduce Go `math/rand` samples.
-- [ ] Seeded Rust generation is deterministic and all generated rows satisfy supported constraints.
-- [ ] Unsupported behavior remains explicit rather than being silently accepted.
-- [ ] The user interactively runs representative inputs through both implementations one after another and accepts the observed parity.
-- [ ] Go remains present and runnable after this task is complete.
-- [ ] TASK-9 does not start until this parity task has been accepted.
+- [x] Full-query Rust tests cover the currently supported integer, boolean, and timestamp flows.
+- [x] A repeatable parity harness can run the same representative query/schema/input cases through both Go and Rust.
+- [x] Deterministic parser, solver, interop, and table behavior is compared directly between Go and Rust.
+- [x] Generator parity verifies equivalent semantics and constraint satisfaction without requiring Rust to reproduce Go `math/rand` samples.
+- [x] Seeded Rust generation is deterministic and all generated rows satisfy supported constraints.
+- [x] Unsupported behavior remains explicit rather than being silently accepted.
+- [x] The user interactively runs representative inputs through both implementations one after another and accepts the observed parity.
+- [x] Go remains present and runnable after this task is complete.
+- [x] TASK-9 does not start until this parity task has been accepted.
