@@ -287,11 +287,19 @@ fn cli_samples_full_matching_and_rejected_integer_ranges() {
                 .expect("generated INTEGER should parse as i32")
         })
         .collect::<Vec<_>>();
-    let (matching, rejected) = values.split_at(MATCHING);
+    let matching = values
+        .iter()
+        .copied()
+        .filter(|value| (10..=1_000).contains(value))
+        .collect::<Vec<_>>();
+    let rejected = values
+        .iter()
+        .copied()
+        .filter(|value| !(10..=1_000).contains(value))
+        .collect::<Vec<_>>();
 
-    assert!(matching.iter().all(|value| (10..=1_000).contains(value)));
-    assert!(rejected.iter().all(|value| !(10..=1_000).contains(value)));
-
+    assert_eq!(matching.len(), MATCHING);
+    assert_eq!(rejected.len(), REJECTED);
     assert!(
         matching.iter().copied().collect::<BTreeSet<_>>().len() > 1,
         "matching rows must be sampled across the allowed interval"
