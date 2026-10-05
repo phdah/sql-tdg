@@ -1209,11 +1209,12 @@ fn generate_prepared_relational_data(
 
     let adjacency = relationship_adjacency(relationship_plan.relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values =
-        choose_component_values(relationship_plan.candidates_by_column, &adjacency, &mut rng)?;
 
-    for (column, value) in &matching_values {
-        for row in 0..row_counts.total() {
+    for row in 0..row_counts.total() {
+        let matching_values =
+            choose_component_values(relationship_plan.candidates_by_column, &adjacency, &mut rng)?;
+
+        for (column, value) in &matching_values {
             set_generated_value(
                 &mut generated_by_relation,
                 schemas,
@@ -1222,23 +1223,21 @@ fn generate_prepared_relational_data(
                 value.clone(),
             )?;
         }
-    }
 
-    if row_counts.rejected() > 0 {
-        let witnesses = relationship_witnesses(
-            relationship_plan.relationships,
-            relationship_plan.candidates_by_column,
-            &adjacency,
-            &matching_values,
-            &mut rng,
-        )?;
-        if witnesses.is_empty() {
-            return Err(ProtocolGenerationError::NoBreakableRelationship {
-                layer_id: layer_id.to_owned(),
-            });
-        }
+        if row >= row_counts.matching() {
+            let witnesses = relationship_witnesses(
+                relationship_plan.relationships,
+                relationship_plan.candidates_by_column,
+                &adjacency,
+                &matching_values,
+                &mut rng,
+            )?;
+            if witnesses.is_empty() {
+                return Err(ProtocolGenerationError::NoBreakableRelationship {
+                    layer_id: layer_id.to_owned(),
+                });
+            }
 
-        for offset in 0..row_counts.rejected() {
             let witness_index =
                 sample_relationship_index(&mut rng, witnesses.len(), "relationship witness")?;
             let witness = witnesses.get(witness_index).ok_or_else(|| {
@@ -1250,7 +1249,7 @@ fn generate_prepared_relational_data(
                 &mut generated_by_relation,
                 schemas,
                 &witness.column,
-                row_counts.matching() + offset,
+                row,
                 witness.value.clone(),
             )?;
         }
@@ -1429,10 +1428,11 @@ fn generate_relational_data(
     let candidates_by_column = relationship_candidates(semantics, schemas, relationships)?;
     let adjacency = relationship_adjacency(relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values = choose_component_values(&candidates_by_column, &adjacency, &mut rng)?;
 
-    for (column, value) in &matching_values {
-        for row in 0..row_counts.total() {
+    for row in 0..row_counts.total() {
+        let matching_values = choose_component_values(&candidates_by_column, &adjacency, &mut rng)?;
+
+        for (column, value) in &matching_values {
             set_generated_value(
                 &mut generated_by_relation,
                 schemas,
@@ -1441,23 +1441,21 @@ fn generate_relational_data(
                 value.clone(),
             )?;
         }
-    }
 
-    if row_counts.rejected() > 0 {
-        let witnesses = relationship_witnesses(
-            relationships,
-            &candidates_by_column,
-            &adjacency,
-            &matching_values,
-            &mut rng,
-        )?;
-        if witnesses.is_empty() {
-            return Err(ProtocolGenerationError::NoBreakableRelationship {
-                layer_id: layer_id.to_owned(),
-            });
-        }
+        if row >= row_counts.matching() {
+            let witnesses = relationship_witnesses(
+                relationships,
+                &candidates_by_column,
+                &adjacency,
+                &matching_values,
+                &mut rng,
+            )?;
+            if witnesses.is_empty() {
+                return Err(ProtocolGenerationError::NoBreakableRelationship {
+                    layer_id: layer_id.to_owned(),
+                });
+            }
 
-        for offset in 0..row_counts.rejected() {
             let witness_index =
                 sample_relationship_index(&mut rng, witnesses.len(), "relationship witness")?;
             let witness = witnesses.get(witness_index).ok_or_else(|| {
@@ -1469,7 +1467,7 @@ fn generate_relational_data(
                 &mut generated_by_relation,
                 schemas,
                 &witness.column,
-                row_counts.matching() + offset,
+                row,
                 witness.value.clone(),
             )?;
         }
