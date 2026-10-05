@@ -1209,11 +1209,8 @@ fn generate_prepared_relational_data(
 
     let adjacency = relationship_adjacency(relationship_plan.relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values = choose_component_values(
-        relationship_plan.candidates_by_column,
-        &adjacency,
-        &mut rng,
-    )?;
+    let matching_values =
+        choose_component_values(relationship_plan.candidates_by_column, &adjacency, &mut rng)?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
