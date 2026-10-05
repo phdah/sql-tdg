@@ -209,9 +209,10 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
     );
     assert_eq!(mutation, vec![expected_row(&["high", "4", "100"])]);
 
+    let boundary_fixture_path = fixture("advanced_boundary.sql");
     let boundary_dir = TestDir::new("pipeline-boundary");
     let boundary = run_cli(
-        &fixture_path,
+        &boundary_fixture_path,
         "core_enriched",
         PIPELINE_SCHEMAS,
         &["stage_orders", "stage_customers"],
