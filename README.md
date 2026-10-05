@@ -72,6 +72,13 @@ Unknown or empty value domains, unresolved composition, missing source schemas, 
 outcomes, and unsupported generation semantics are explicit errors. sql-tdg never reparses SQL as
 a fallback.
 
+
+DuckDB is the first execution backend. `DuckDbExecutor` materializes generated relations using
+their protocol-backed logical types, executes ordered SQL workloads, captures explicit approved
+results, and verifies current workload output against those snapshots. File-backed databases are
+created only through explicit output paths, and existing databases can be opened read-only for
+verification.
+
 The original Python proof of concept remains under `python_poc/` as frozen reference material and
 is not part of the active implementation.
 
