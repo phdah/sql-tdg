@@ -43,7 +43,9 @@ fn exposes_generated_table_as_record_batch_and_csv() {
         42,
     )
     .expect("generation should succeed");
-    let table = generated.table("orders").expect("orders should be generated");
+    let table = generated
+        .table("orders")
+        .expect("orders should be generated");
 
     let batch = record_batch(table).expect("record batch should materialize");
     assert_eq!(batch.num_rows(), 4);
@@ -83,19 +85,20 @@ fn parquet_round_trip_preserves_arrow_schema_and_rows() {
         7,
     )
     .expect("generation should succeed");
-    let table = generated.table("events").expect("events should be generated");
+    let table = generated
+        .table("events")
+        .expect("events should be generated");
     let expected = record_batch(table).expect("record batch should materialize");
 
     let path = output_path("parquet");
     let _ = std::fs::remove_file(&path);
     write_parquet(table, &path).expect("Parquet export should succeed");
 
-    let reader = ParquetRecordBatchReaderBuilder::try_new(
-        File::open(&path).expect("Parquet should open"),
-    )
-    .expect("Parquet reader should initialize")
-    .build()
-    .expect("Parquet reader should build");
+    let reader =
+        ParquetRecordBatchReaderBuilder::try_new(File::open(&path).expect("Parquet should open"))
+            .expect("Parquet reader should initialize")
+            .build()
+            .expect("Parquet reader should build");
     let batches = reader
         .collect::<Result<Vec<_>, _>>()
         .expect("Parquet should read back");
