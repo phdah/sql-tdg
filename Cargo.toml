@@ -13,6 +13,7 @@ arrow-array = "60"
 arrow-ord = "60"
 arrow-schema = "60"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+duckdb = { version = "~1.10506.0", features = ["bundled", "json"] }
 rand_chacha = "0.10"
 rand_core = "0.10"
 sql-semantic-protocol = "1.0.0"
