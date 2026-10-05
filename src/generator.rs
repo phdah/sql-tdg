@@ -6,7 +6,8 @@ use std::fmt;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
 
-use crate::protocol_value::ProtocolValue;
+use crate::protocol_value::{ProtocolValue, sample_range_value, sample_rejected_range_value};
+use sql_semantic_protocol::{DataType, ValueRange};
 use crate::solver::{BoolDomain, IntDomain, SolverError, TimestampDomain};
 use crate::table::{Table, TableError, TableValue};
 use crate::types::{Column, ColumnType, Constraint};
@@ -48,6 +49,13 @@ pub enum GeneratorError {
         column: String,
         /// Number of allowed values in the domain.
         value_count: usize,
+    },
+    /// Sampling a canonical protocol range failed.
+    ProtocolSampling {
+        /// Column whose protocol domain could not be sampled.
+        column: String,
+        /// Sampling failure from the canonical protocol domain.
+        message: String,
     },
     /// A protocol-only generation domain was used through the legacy table path.
     ProtocolOnlyDomain {
@@ -101,6 +109,9 @@ impl fmt::Display for GeneratorError {
                 formatter,
                 "column {column:?} domain with {value_count} values is too large to sample"
             ),
+            Self::ProtocolSampling { column, message } => {
+                write!(formatter, "could not sample protocol domain for column {column:?}: {message}")
+            }
             Self::ProtocolOnlyDomain { column } => {
                 write!(
                     formatter,
@@ -421,6 +432,22 @@ fn sample_protocol_domain<R: Rng + ?Sized>(
                 })?;
             Ok(value)
         }
+        GenerationDomain::Range { data_type, ranges } => {
+            sample_range_value(data_type, ranges, rng).map_err(|message| {
+                GeneratorError::ProtocolSampling {
+                    column: column.to_owned(),
+                    message,
+                }
+            })
+        }
+        GenerationDomain::RejectedRange { data_type, ranges } => {
+            sample_rejected_range_value(data_type, ranges, rng).map_err(|message| {
+                GeneratorError::ProtocolSampling {
+                    column: column.to_owned(),
+                    message,
+                }
+            })
+        }
     }
 }
 
@@ -430,6 +457,14 @@ pub(crate) enum GenerationDomain {
     Timestamp(TimestampDomain),
     Bool(BoolDomain),
     Values(Vec<ProtocolValue>),
+    Range {
+        data_type: DataType,
+        ranges: Vec<ValueRange>,
+    },
+    RejectedRange {
+        data_type: DataType,
+        ranges: Vec<ValueRange>,
+    },
 }
 
 fn sample_index<R: Rng + ?Sized>(
