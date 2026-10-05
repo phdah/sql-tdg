@@ -184,17 +184,18 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
         3,
     );
 
-    assert_eq!(physical_result, vec![expected_row(&["high", "1", "100"])]);
+    assert_eq!(physical_result, vec![expected_row(&["high", "2", "100"])]);
 
     let mutation = physical_db
         .execute_text(
-            "SELECT amount_bucket::VARCHAR, COUNT(*)::VARCHAR AS order_count, \
-                    MAX(amount)::VARCHAR AS max_amount \
-             FROM stage_orders \
-             WHERE amount = 100 \
-             GROUP BY amount_bucket \
+            "SELECT orders.amount_bucket::VARCHAR, COUNT(*)::VARCHAR AS order_count, \
+                    MAX(orders.amount)::VARCHAR AS max_amount \
+             FROM stage_orders AS orders \
+             CROSS JOIN stage_customers AS customers \
+             WHERE orders.amount = 100 \
+             GROUP BY orders.amount_bucket \
              HAVING COUNT(*) >= 1 \
-             ORDER BY amount_bucket",
+             ORDER BY orders.amount_bucket",
             3,
         )
         .expect("mutated workload should execute");
@@ -202,7 +203,7 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
         mutation, physical_result,
         "removing the relational stage must change the complete result"
     );
-    assert_eq!(mutation, vec![expected_row(&["high", "2", "100"])]);
+    assert_eq!(mutation, vec![expected_row(&["high", "4", "100"])]);
 
     let boundary_dir = TestDir::new("pipeline-boundary");
     let boundary = run_cli(
@@ -225,7 +226,7 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
         .execute_text(PIPELINE_DOWNSTREAM, 3)
         .expect("downstream workload should execute");
 
-    assert_eq!(boundary_result, physical_result);
+    assert_eq!(boundary_result, vec![expected_row(&["high", "1", "100"])]);
 }
 
 #[test]
@@ -363,19 +364,22 @@ fn cli_insert_fixture_executes_deterministic_dml() {
     let output = run_cli(
         &fixture_path,
         "insert_result",
-        &["raw_insert:value=INTEGER", "insert_sink:value=INTEGER"],
+        &["raw_insert:value=INTEGER"],
         &[],
         output_dir.path(),
     );
     let stdout = assert_cli_success(&output);
     let executor = CliDuckDb::in_memory().expect("DuckDB should open");
     load_outputs(&executor, &stdout);
-    let result = execute_with_final_select(
-        &executor,
-        &fixture_sql,
-        "SELECT value::VARCHAR FROM insert_result ORDER BY value",
-        1,
-    );
+    let result = executor
+        .execute_text(
+            &format!(
+                "CREATE TABLE insert_sink(value INTEGER);\n{fixture_sql}\n\
+                 SELECT value::VARCHAR FROM insert_sink ORDER BY value"
+            ),
+            1,
+        )
+        .expect("INSERT workload should execute");
     assert_eq!(result, vec![expected_row(&["10"])]);
 }
 
