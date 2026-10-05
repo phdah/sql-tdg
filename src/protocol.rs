@@ -2364,6 +2364,11 @@ fn map_rejected_domain(
 
     if values.is_empty() {
         Ok(None)
+    } else if let ValueDomain::Ranges(ranges) = domain {
+        Ok(Some(GenerationDomain::RejectedRange {
+            data_type: data_type.clone(),
+            ranges: ranges.ranges().to_vec(),
+        }))
     } else {
         Ok(Some(GenerationDomain::Values(values)))
     }
@@ -2388,7 +2393,15 @@ fn generic_generation_domain(
             column: column.to_owned(),
         });
     }
-    Ok(GenerationDomain::Values(values))
+
+    if let Some(ValueDomain::Ranges(ranges)) = domain {
+        Ok(GenerationDomain::Range {
+            data_type: data_type.clone(),
+            ranges: ranges.ranges().to_vec(),
+        })
+    } else {
+        Ok(GenerationDomain::Values(values))
+    }
 }
 
 fn unsupported_source_type(
