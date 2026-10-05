@@ -243,6 +243,7 @@ pub type TimestampColumns = BTreeMap<String, Option<Vec<DateTime<Utc>>>>;
 pub struct Table {
     schema: Vec<Column>,
     arrow_schema: Schema,
+    protocol_schema: Option<Vec<SchemaColumn>>,
     dim: Dim,
     columns: BTreeMap<String, ColumnStorage>,
 }
@@ -282,6 +283,7 @@ impl Table {
             },
             schema,
             arrow_schema: Schema::new(fields),
+            protocol_schema: None,
             columns,
         })
     }
@@ -338,8 +340,14 @@ impl Table {
             },
             schema,
             arrow_schema: Schema::new(fields),
+            protocol_schema: Some(protocol_columns.to_vec()),
             columns,
         })
+    }
+
+    /// Returns the canonical protocol schema when this table was built from one.
+    pub fn protocol_schema(&self) -> Option<&[SchemaColumn]> {
+        self.protocol_schema.as_deref()
     }
 
     /// Returns the project schema in declaration order.
