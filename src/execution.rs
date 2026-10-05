@@ -59,6 +59,11 @@ pub enum DuckDbExecutionError {
         /// Arrow datatype description.
         data_type: String,
     },
+    /// An Arrow-backed table operation failed while materializing data.
+    Table {
+        /// Table error message.
+        message: String,
+    },
     /// A test-case snapshot or observed query result is invalid.
     TestCase {
         /// Validation failure.
@@ -92,6 +97,7 @@ impl fmt::Display for DuckDbExecutionError {
                 formatter,
                 "Arrow array value does not match declared datatype {data_type}"
             ),
+            Self::Table { message } => write!(formatter, "table operation failed: {message}"),
             Self::TestCase { message } => write!(formatter, "invalid test-case result: {message}"),
             Self::Verification(error) => error.fmt(formatter),
         }
@@ -103,6 +109,14 @@ impl Error for DuckDbExecutionError {}
 impl From<duckdb::Error> for DuckDbExecutionError {
     fn from(error: duckdb::Error) -> Self {
         Self::DuckDb {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<crate::TableError> for DuckDbExecutionError {
+    fn from(error: crate::TableError) -> Self {
+        Self::Table {
             message: error.to_string(),
         }
     }
