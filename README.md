@@ -72,6 +72,16 @@ Unknown or empty value domains, unresolved composition, missing source schemas, 
 outcomes, and unsupported generation semantics are explicit errors. sql-tdg never reparses SQL as
 a fallback.
 
+
+Generated relations are backend-neutral Arrow data. Callers can consume the Arrow-backed tables
+directly, convert a table to an Arrow `RecordBatch`, or export it as CSV or Parquet. Parquet is the
+preferred lossless file format for the full supported Arrow type surface; CSV is an interoperability
+format for flat data, including dbt seed workflows.
+
+sql-tdg does not connect to, create, seed, or mutate user databases. Loading generated files into a
+database or warehouse is owned by the caller. DuckDB is used only by this repository's end-to-end
+test harness to prove that generated data can execute real SQL workloads.
+
 The original Python proof of concept remains under `python_poc/` as frozen reference material and
 is not part of the active implementation.
 
