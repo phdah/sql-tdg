@@ -657,8 +657,9 @@ fn inclusive_range_bounds(
             if bound.inclusive() {
                 value
             } else {
-                step_value(&value, true)
-                    .ok_or_else(|| "exclusive lower bound has no representable successor".to_owned())?
+                step_value(&value, true).ok_or_else(|| {
+                    "exclusive lower bound has no representable successor".to_owned()
+                })?
             }
         }
         None => type_min.clone(),
@@ -669,8 +670,9 @@ fn inclusive_range_bounds(
             if bound.inclusive() {
                 value
             } else {
-                step_value(&value, false)
-                    .ok_or_else(|| "exclusive upper bound has no representable predecessor".to_owned())?
+                step_value(&value, false).ok_or_else(|| {
+                    "exclusive upper bound has no representable predecessor".to_owned()
+                })?
             }
         }
         None => type_max.clone(),
