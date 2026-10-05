@@ -12,10 +12,8 @@ struct TestDir {
 impl TestDir {
     fn new(name: &str) -> Self {
         let counter = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "sql-tdg-{name}-{}-{counter}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("sql-tdg-{name}-{}-{counter}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("test directory should be creatable");
         Self { path }
@@ -88,12 +86,7 @@ fn compiled_cli_reads_sql_files_and_exports_csv() {
     .expect("query fixture should be writable");
 
     let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
-        .args([
-            "generate",
-            "--dialect",
-            "generic",
-            "--file",
-        ])
+        .args(["generate", "--dialect", "generic", "--file"])
         .arg(&query_path)
         .args([
             "--schema",
