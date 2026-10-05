@@ -13,8 +13,8 @@ use arrow_array::builder::{
     make_builder,
 };
 use arrow_schema::{DataType as ArrowDataType, Field, Fields, TimeUnit};
-use rand_core::Rng;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
+use rand_core::Rng;
 use sql_semantic_protocol::{
     DataType, LiteralExpression, LiteralType, LiteralValue, SetMode, ValueDomain, ValueRange,
 };
@@ -899,7 +899,7 @@ fn sample_i128_inclusive<R: Rng + ?Sized>(
     let lower = (lower as u128) ^ SIGN;
     let upper = (upper as u128) ^ SIGN;
     let sampled = sample_u128_inclusive(rng, lower, upper)?;
-    Ok(((sampled ^ SIGN) as i128))
+    Ok((sampled ^ SIGN) as i128)
 }
 
 fn sample_u128_inclusive<R: Rng + ?Sized>(
