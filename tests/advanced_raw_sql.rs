@@ -139,7 +139,11 @@ fn load_outputs(executor: &DuckDbExecutor, stdout: &str) {
     let outputs = generated_paths(stdout);
     assert!(!outputs.is_empty(), "CLI should report generated relations");
     for (relation, path) in outputs {
-        assert!(path.is_file(), "generated output should exist: {}", path.display());
+        assert!(
+            path.is_file(),
+            "generated output should exist: {}",
+            path.display()
+        );
         executor
             .materialize_parquet(&relation, &path)
             .expect("CLI Parquet output should materialize in DuckDB");
@@ -163,7 +167,8 @@ fn expected_row(values: &[&str]) -> Vec<String> {
 #[test]
 fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
     let fixture_path = fixture("advanced_pipeline.sql");
-    let fixture_sql = fs::read_to_string(&fixture_path).expect("pipeline fixture should be readable");
+    let fixture_sql =
+        fs::read_to_string(&fixture_path).expect("pipeline fixture should be readable");
 
     let physical_dir = TestDir::new("pipeline-physical");
     let physical = run_cli(
@@ -234,10 +239,7 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
 fn cli_window_fixture_is_ranked_limited_and_deterministic() {
     let fixture_path = fixture("window_ranked.sql");
     let fixture_sql = fs::read_to_string(&fixture_path).expect("window fixture should be readable");
-    let schemas = &[
-        "raw_window:category=VARCHAR",
-        "raw_window:score=INTEGER",
-    ];
+    let schemas = &["raw_window:category=VARCHAR", "raw_window:score=INTEGER"];
 
     let first_dir = TestDir::new("window-first");
     let first = run_cli(
@@ -261,7 +263,10 @@ fn cli_window_fixture_is_ranked_limited_and_deterministic() {
     let second_stdout = assert_cli_success(&second);
     let second_paths = generated_paths(&second_stdout);
 
-    assert_eq!(first_paths.keys().collect::<Vec<_>>(), second_paths.keys().collect::<Vec<_>>());
+    assert_eq!(
+        first_paths.keys().collect::<Vec<_>>(),
+        second_paths.keys().collect::<Vec<_>>()
+    );
     for relation in first_paths.keys() {
         assert_eq!(
             fs::read(&first_paths[relation]).expect("first Parquet file should be readable"),
@@ -277,10 +282,7 @@ fn cli_window_fixture_is_ranked_limited_and_deterministic() {
         &fixture_sql,
         "SELECT marker, rn FROM ranked_result ORDER BY rn",
     );
-    assert_eq!(
-        result.rows(),
-        &[expected_row(&["i32:1", "i64:1"])]
-    );
+    assert_eq!(result.rows(), &[expected_row(&["i32:1", "i64:1"])]);
 }
 
 #[test]
