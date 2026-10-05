@@ -78,10 +78,16 @@ impl fmt::Display for DuckDbExecutionError {
         match self {
             Self::DuckDb { message } => write!(formatter, "DuckDB operation failed: {message}"),
             Self::InvalidRelation { relation } => {
-                write!(formatter, "relation {relation:?} is not a valid DuckDB table identity")
+                write!(
+                    formatter,
+                    "relation {relation:?} is not a valid DuckDB table identity"
+                )
             }
             Self::UnsupportedArrowType { data_type } => {
-                write!(formatter, "Arrow datatype {data_type} cannot be materialized in DuckDB")
+                write!(
+                    formatter,
+                    "Arrow datatype {data_type} cannot be materialized in DuckDB"
+                )
             }
             Self::UnsupportedProtocolType { data_type } => {
                 write!(
@@ -179,11 +185,9 @@ impl DuckDbExecutor {
     pub fn execute(&self, workload: &str) -> Result<QueryResult, DuckDbExecutionError> {
         let mut statement = self.connection.prepare(workload)?;
         let mut rows = statement.query([])?;
-        let statement = rows
-            .as_ref()
-            .ok_or_else(|| DuckDbExecutionError::DuckDb {
-                message: "workload did not expose a prepared final statement".to_owned(),
-            })?;
+        let statement = rows.as_ref().ok_or_else(|| DuckDbExecutionError::DuckDb {
+            message: "workload did not expose a prepared final statement".to_owned(),
+        })?;
 
         let column_count = statement.column_count();
         let mut columns = Vec::with_capacity(column_count);
@@ -230,11 +234,7 @@ impl DuckDbExecutor {
         Ok(())
     }
 
-    fn materialize_table(
-        &self,
-        relation: &str,
-        table: &Table,
-    ) -> Result<(), DuckDbExecutionError> {
+    fn materialize_table(&self, relation: &str, table: &Table) -> Result<(), DuckDbExecutionError> {
         let identity = QualifiedRelation::parse(relation)?;
         if let Some(schema) = &identity.schema {
             self.connection.execute_batch(&format!(
@@ -282,14 +282,13 @@ impl DuckDbExecutor {
         for row_index in 0..table.dim().rows() {
             let mut values = Vec::with_capacity(fields.len());
             for (column_index, field) in fields.iter().enumerate() {
-                let array = table
-                    .array(field.name())?
-                    .ok_or_else(|| DuckDbExecutionError::UnbuiltColumn {
+                let array = table.array(field.name())?.ok_or_else(|| {
+                    DuckDbExecutionError::UnbuiltColumn {
                         relation: relation.to_owned(),
                         column: field.name().to_owned(),
-                    })?;
-                let protocol_type =
-                    protocol_schema.map(|schema| schema[column_index].data_type());
+                    }
+                })?;
+                let protocol_type = protocol_schema.map(|schema| schema[column_index].data_type());
                 values.push(arrow_value(array, row_index, protocol_type)?);
             }
             insert.execute(params_from_iter(values))?;
@@ -384,11 +383,11 @@ fn protocol_type_sql(data_type: &ProtocolDataType) -> Result<String, DuckDbExecu
         ProtocolDataType::Uuid => "UUID".to_owned(),
         ProtocolDataType::Json => "JSON".to_owned(),
         ProtocolDataType::Array { element, length } => {
-            let element = element
-                .as_deref()
-                .ok_or_else(|| DuckDbExecutionError::UnsupportedProtocolType {
+            let element = element.as_deref().ok_or_else(|| {
+                DuckDbExecutionError::UnsupportedProtocolType {
                     data_type: "array without element datatype".to_owned(),
-                })?;
+                }
+            })?;
             let element = protocol_type_sql(element)?;
             match length {
                 Some(length) => format!("{element}[{length}]"),
@@ -518,21 +517,26 @@ fn arrow_value(
     }
 
     match array.data_type() {
-        ArrowDataType::Boolean => Ok(Value::Boolean(downcast::<BooleanArray>(array)?.value(index))),
+        ArrowDataType::Boolean => Ok(Value::Boolean(
+            downcast::<BooleanArray>(array)?.value(index),
+        )),
         ArrowDataType::Int8 => Ok(Value::TinyInt(downcast::<Int8Array>(array)?.value(index))),
         ArrowDataType::Int16 => Ok(Value::SmallInt(downcast::<Int16Array>(array)?.value(index))),
         ArrowDataType::Int32 => Ok(Value::Int(downcast::<Int32Array>(array)?.value(index))),
         ArrowDataType::Int64 => Ok(Value::BigInt(downcast::<Int64Array>(array)?.value(index))),
         ArrowDataType::UInt8 => Ok(Value::UTinyInt(downcast::<UInt8Array>(array)?.value(index))),
-        ArrowDataType::UInt16 => Ok(Value::USmallInt(downcast::<UInt16Array>(array)?.value(index))),
+        ArrowDataType::UInt16 => Ok(Value::USmallInt(
+            downcast::<UInt16Array>(array)?.value(index),
+        )),
         ArrowDataType::UInt32 => Ok(Value::UInt(downcast::<UInt32Array>(array)?.value(index))),
         ArrowDataType::UInt64 => Ok(Value::UBigInt(downcast::<UInt64Array>(array)?.value(index))),
         ArrowDataType::Float32 => Ok(Value::Float(downcast::<Float32Array>(array)?.value(index))),
         ArrowDataType::Float64 => Ok(Value::Double(downcast::<Float64Array>(array)?.value(index))),
         ArrowDataType::Decimal128(width, scale) if *scale >= 0 => {
-            let scale = u8::try_from(*scale).map_err(|_| DuckDbExecutionError::InvalidArrowValue {
-                data_type: array.data_type().to_string(),
-            })?;
+            let scale =
+                u8::try_from(*scale).map_err(|_| DuckDbExecutionError::InvalidArrowValue {
+                    data_type: array.data_type().to_string(),
+                })?;
             let decimal = Decimal::new(
                 *width,
                 scale,
@@ -550,7 +554,9 @@ fn arrow_value(
             downcast::<BinaryArray>(array)?.value(index).to_vec(),
         )),
         ArrowDataType::FixedSizeBinary(_) => Ok(Value::Blob(
-            downcast::<FixedSizeBinaryArray>(array)?.value(index).to_vec(),
+            downcast::<FixedSizeBinaryArray>(array)?
+                .value(index)
+                .to_vec(),
         )),
         ArrowDataType::Date32 => Ok(Value::Date32(downcast::<Date32Array>(array)?.value(index))),
         ArrowDataType::Time64(ArrowTimeUnit::Microsecond) => Ok(Value::Time64(
@@ -660,11 +666,12 @@ fn downcast<T: Array + 'static>(array: &dyn Array) -> Result<&T, DuckDbExecution
 }
 
 fn uuid_text(bytes: &[u8]) -> Result<String, DuckDbExecutionError> {
-    let bytes: &[u8; 16] = bytes
-        .try_into()
-        .map_err(|_| DuckDbExecutionError::InvalidArrowValue {
-            data_type: format!("UUID requires 16 bytes, received {}", bytes.len()),
-        })?;
+    let bytes: &[u8; 16] =
+        bytes
+            .try_into()
+            .map_err(|_| DuckDbExecutionError::InvalidArrowValue {
+                data_type: format!("UUID requires 16 bytes, received {}", bytes.len()),
+            })?;
     Ok(format!(
         "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
         bytes[0],
@@ -725,11 +732,7 @@ fn canonical_value(value: &Value) -> Result<String, DuckDbExecutionError> {
             let entries = values
                 .iter()
                 .map(|(key, value)| {
-                    Ok(format!(
-                        "{}{}",
-                        frame(key),
-                        frame(&canonical_value(value)?)
-                    ))
+                    Ok(format!("{}{}", frame(key), frame(&canonical_value(value)?)))
                 })
                 .collect::<Result<Vec<_>, DuckDbExecutionError>>()?;
             format!("struct:{}", frame(&entries.join("")))
