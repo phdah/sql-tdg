@@ -1,6 +1,10 @@
 use std::error::Error;
 use std::fmt;
 
+use super::codec::{
+    APPROVED_RESULT_HEADER, decode_string, encode_string, invalid_metadata, next_value,
+    parse_count, record,
+};
 use super::{TestCaseError, TestCaseMetadata, required_string};
 
 /// One result-set column as reported by the execution backend.
@@ -76,6 +80,25 @@ pub enum ResultOrdering {
     Unordered,
 }
 
+impl ResultOrdering {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ordered => "ordered",
+            Self::Unordered => "unordered",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, TestCaseError> {
+        match value {
+            "ordered" => Ok(Self::Ordered),
+            "unordered" => Ok(Self::Unordered),
+            _ => Err(invalid_metadata(format!(
+                "unknown result ordering {value:?}"
+            ))),
+        }
+    }
+}
+
 /// Explicitly approved expected result, separate from the current workload text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovedResult {
@@ -97,6 +120,106 @@ impl ApprovedResult {
     /// Returns the approved complete result.
     pub const fn result(&self) -> &QueryResult {
         &self.result
+    }
+
+    /// Serializes the approved result to a stable standalone snapshot.
+    pub fn serialize(&self) -> String {
+        let mut records = vec![APPROVED_RESULT_HEADER.to_owned()];
+        records.push(record("ordering", self.ordering.as_str()));
+        records.push(record(
+            "column_count",
+            &self.result.columns.len().to_string(),
+        ));
+        for column in &self.result.columns {
+            records.push(format!(
+                "column\t{}\t{}",
+                encode_string(column.name()),
+                encode_string(column.data_type())
+            ));
+        }
+        records.push(record("row_count", &self.result.rows.len().to_string()));
+        for row in &self.result.rows {
+            let mut fields = Vec::with_capacity(row.len() + 1);
+            fields.push("row".to_owned());
+            fields.extend(row.iter().map(|cell| encode_string(cell)));
+            records.push(fields.join("\t"));
+        }
+        records.join("\n")
+    }
+
+    /// Deserializes an approved result snapshot without changing any test case.
+    pub fn deserialize(serialized: &str) -> Result<Self, TestCaseError> {
+        let mut lines = serialized.lines();
+        let header = lines
+            .next()
+            .ok_or_else(|| invalid_metadata("approved result is empty"))?;
+        if header != APPROVED_RESULT_HEADER {
+            return Err(invalid_metadata(format!(
+                "unsupported approved result header {header:?}"
+            )));
+        }
+
+        let ordering = ResultOrdering::parse(next_value(&mut lines, "ordering")?)?;
+        let column_count =
+            parse_count(next_value(&mut lines, "column_count")?, "column_count")?;
+        let mut columns = Vec::with_capacity(column_count);
+        for _ in 0..column_count {
+            let line = lines
+                .next()
+                .ok_or_else(|| invalid_metadata("missing approved-result column record"))?;
+            let mut fields = line.split('\t');
+            if fields.next() != Some("column") {
+                return Err(invalid_metadata(format!(
+                    "invalid approved-result column record {line:?}"
+                )));
+            }
+            let name = fields
+                .next()
+                .ok_or_else(|| invalid_metadata("approved-result column has no name"))?;
+            let data_type = fields
+                .next()
+                .ok_or_else(|| invalid_metadata("approved-result column has no type"))?;
+            if fields.next().is_some() {
+                return Err(invalid_metadata(format!(
+                    "invalid approved-result column record {line:?}"
+                )));
+            }
+            columns.push(ResultColumn::new(
+                decode_string(name)?,
+                decode_string(data_type)?,
+            )?);
+        }
+
+        let row_count = parse_count(next_value(&mut lines, "row_count")?, "row_count")?;
+        let mut rows = Vec::with_capacity(row_count);
+        for row_index in 0..row_count {
+            let line = lines
+                .next()
+                .ok_or_else(|| invalid_metadata("missing approved-result row record"))?;
+            let mut fields = line.split('\t');
+            if fields.next() != Some("row") {
+                return Err(invalid_metadata(format!(
+                    "invalid approved-result row record {line:?}"
+                )));
+            }
+            let row = fields.map(decode_string).collect::<Result<Vec<_>, _>>()?;
+            if row.len() != column_count {
+                return Err(TestCaseError::InvalidResultRowWidth {
+                    row_index,
+                    expected: column_count,
+                    actual: row.len(),
+                });
+            }
+            rows.push(row);
+        }
+
+        if let Some(line) = lines.next() {
+            return Err(invalid_metadata(format!(
+                "unexpected trailing approved-result record {line:?}"
+            )));
+        }
+
+        Ok(Self::new(QueryResult::new(columns, rows)?, ordering))
     }
 
     /// Compares a current result without mutating or re-approving the snapshot.
