@@ -9,10 +9,10 @@ pub use sql_tdg::{
     TestCaseError, VerificationError,
 };
 
-#[path = "../src/execution.rs"]
-mod execution;
+#[path = "support/duckdb.rs"]
+mod duckdb;
 
-use execution::DuckDbExecutor;
+use duckdb::DuckDbExecutor;
 
 fn column(name: &str, data_type: DataType) -> SchemaColumn {
     SchemaColumn::new(name, data_type).expect("test schema column should be valid")
