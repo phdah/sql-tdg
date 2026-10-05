@@ -11,6 +11,8 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    env:
+      DUCKDB_DOWNLOAD_LIB: "1"
 
     steps:
       - name: Check out repository
