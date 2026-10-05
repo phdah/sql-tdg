@@ -233,7 +233,7 @@ fn approval_snapshot_round_trips_and_filter_regressions_fail() {
         "SELECT amount FROM orders WHERE amount >= 10 AND amount < 20",
         "duckdb",
         &[schema],
-        GenerationRowCounts::new(4, 2),
+        GenerationRowCounts::new(4, 2).expect("classified row counts should be valid"),
         42,
     )
     .expect("classified generation should succeed");
