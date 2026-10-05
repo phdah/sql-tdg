@@ -178,6 +178,35 @@ impl DuckDbExecutor {
         Ok(())
     }
 
+    /// Materializes one CLI-exported Parquet relation into DuckDB.
+    pub fn materialize_parquet(
+        &self,
+        relation: &str,
+        path: impl AsRef<Path>,
+    ) -> Result<(), DuckDbExecutionError> {
+        let identity = QualifiedRelation::parse(relation)?;
+        if let Some(schema) = &identity.schema {
+            self.connection.execute_batch(&format!(
+                "CREATE SCHEMA IF NOT EXISTS {}",
+                quote_identifier(schema)
+            ))?;
+        }
+
+        let path = path
+            .as_ref()
+            .to_str()
+            .ok_or_else(|| DuckDbExecutionError::DuckDb {
+                message: "Parquet path is not valid UTF-8".to_owned(),
+            })?;
+        let qualified = identity.sql_name();
+        self.connection.execute_batch(&format!(
+            "DROP TABLE IF EXISTS {qualified}; \
+             CREATE TABLE {qualified} AS SELECT * FROM read_parquet({})",
+            quote_literal(path)
+        ))?;
+        Ok(())
+    }
+
     /// Executes an ordered SQL workload and captures the final statement result.
     ///
     /// DuckDB prepares the complete input and executes preceding statements before yielding the
