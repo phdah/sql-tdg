@@ -17,26 +17,30 @@ const PIPELINE_SCHEMAS: &[&str] = &[
     "raw_orders:amount=INTEGER",
     "raw_customers:customer_id=INTEGER",
     "raw_customers:active=BOOLEAN",
+    "stage_orders:order_id=INTEGER",
+    "stage_orders:customer_id=INTEGER",
+    "stage_orders:amount=INTEGER",
+    "stage_orders:amount_bucket=VARCHAR",
+    "stage_customers:customer_id=INTEGER",
+    "stage_customers:active=BOOLEAN",
     "core_enriched:customer_id=INTEGER",
     "core_enriched:amount=INTEGER",
     "core_enriched:amount_bucket=VARCHAR",
 ];
 
-const PIPELINE_DOWNSTREAM: &str = r#"
-CREATE VIEW mart_customer_summary AS
+const CORE_FROM_STAGE: &str = r#"
+CREATE VIEW core_enriched AS
 SELECT
-    amount_bucket,
-    COUNT(*) AS order_count,
-    MAX(amount) AS max_amount
-FROM core_enriched
-WHERE amount = 100
-GROUP BY amount_bucket
-HAVING COUNT(*) >= 1
-ORDER BY amount_bucket;
+    orders.customer_id,
+    orders.amount,
+    orders.amount_bucket
+FROM stage_orders AS orders
+JOIN stage_customers AS customers
+  ON orders.customer_id = customers.customer_id;
 
-SELECT amount_bucket::VARCHAR, order_count::VARCHAR, max_amount::VARCHAR
-FROM mart_customer_summary
-ORDER BY amount_bucket;
+SELECT amount_bucket::VARCHAR, amount::VARCHAR
+FROM core_enriched
+ORDER BY amount_bucket, amount;
 "#;
 
 struct TestDir {
@@ -208,25 +212,31 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
     let boundary_dir = TestDir::new("pipeline-boundary");
     let boundary = run_cli(
         &fixture_path,
-        "mart_customer_summary",
+        "core_enriched",
         PIPELINE_SCHEMAS,
-        &["core_enriched"],
+        &["stage_orders", "stage_customers"],
         boundary_dir.path(),
     );
     let boundary_stdout = assert_cli_success(&boundary);
     let boundary_paths = generated_paths(&boundary_stdout);
     assert_eq!(
         boundary_paths.keys().cloned().collect::<Vec<_>>(),
-        vec!["core_enriched".to_owned()]
+        vec!["stage_customers".to_owned(), "stage_orders".to_owned()]
     );
 
     let boundary_db = CliDuckDb::in_memory().expect("DuckDB should open");
     load_outputs(&boundary_db, &boundary_stdout);
     let boundary_result = boundary_db
-        .execute_text(PIPELINE_DOWNSTREAM, 3)
-        .expect("downstream workload should execute");
+        .execute_text(CORE_FROM_STAGE, 2)
+        .expect("intermediate-boundary workload should execute");
 
-    assert_eq!(boundary_result, vec![expected_row(&["high", "1", "100"])]);
+    assert_eq!(
+        boundary_result,
+        vec![
+            expected_row(&["high", "100"]),
+            expected_row(&["high", "100"]),
+        ]
+    );
 }
 
 #[test]
