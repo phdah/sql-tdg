@@ -1,9 +1,18 @@
 use sql_semantic_protocol::{DataType, DataTypeField, parse_data_type};
-use sql_tdg::{
-    ApprovedResult, DuckDbExecutor, GeneratedRelation, GenerationBoundary, GenerationRowCounts,
-    ProtocolSnapshot, RelationSchema, ResultOrdering, SchemaColumn, TestCase, TestCaseMetadata,
-    TestTarget, WorkloadIdentity, generate_classified_from_sql, generate_from_sql,
+pub use sql_tdg::{
+    GeneratedData, QueryResult, ResultColumn, ResultOrdering, Table, TableError, TestCase,
+    TestCaseError, VerificationError,
 };
+use sql_tdg::{
+    ApprovedResult, GeneratedRelation, GenerationBoundary, GenerationRowCounts, ProtocolSnapshot,
+    RelationSchema, SchemaColumn, TestCaseMetadata, TestTarget, WorkloadIdentity,
+    generate_classified_from_sql, generate_from_sql,
+};
+
+#[path = "../src/execution.rs"]
+mod execution;
+
+use execution::DuckDbExecutor;
 
 fn column(name: &str, data_type: DataType) -> SchemaColumn {
     SchemaColumn::new(name, data_type).expect("test schema column should be valid")
