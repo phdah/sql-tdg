@@ -12,23 +12,24 @@ dependencies:
 
 ## Description
 
-Add a thin production CLI on top of the library workflow.
+Add a thin production CLI on top of the backend-neutral generation library.
 
-The CLI should let a user create, inspect, execute, verify, and explicitly approve deterministic SQL
-test cases without embedding SQL analysis, solving, generation, or DuckDB semantics in argument
-handling code.
+The CLI generates deterministic test data from raw SQL or protocol-backed dbt artifacts and writes
+portable outputs. It does not connect to databases, execute workloads, seed warehouses, approve
+query results, or verify backend state. Users own loading the generated files into their target
+system.
 
 ## Acceptance Criteria
 
 - [ ] The package exposes an installable `sql-tdg` binary while retaining the library API.
 - [ ] CLI inputs support raw SQL strings/files and protocol-backed dbt artifact/project workflows.
-- [ ] CLI options expose dialect, target outcome, source/intermediate boundary, seed, matching row count, rejected row count, and output location.
-- [ ] A generate command creates the deterministic test database and test-case metadata.
-- [ ] An approve command explicitly records expected result snapshots.
-- [ ] A verify command executes the current workload against the existing generated case and fails on result differences.
-- [ ] CLI output clearly reports generated relations, positive/rejected row counts, selected target, seed, database path, and verification status.
+- [ ] CLI options expose dialect, target outcome, source/intermediate boundary, seed, matching row count, rejected row count, output directory, and output format.
+- [ ] A generate command produces deterministic relation files plus reproducibility metadata.
+- [ ] CSV and Parquet are supported output formats, with Parquet preferred where Arrow types cannot be represented losslessly in CSV.
+- [ ] The CLI never opens, creates, seeds, mutates, or verifies a user database or warehouse.
+- [ ] CLI output clearly reports generated relations, positive/rejected row counts, selected target, seed, format, and output paths.
 - [ ] Invalid or unsupported semantics return non-zero exit codes with actionable errors.
 - [ ] Argument parsing and filesystem I/O remain thin wrappers around library APIs.
 - [ ] CLI integration tests run the compiled binary rather than only invoking internal functions.
-- [ ] README documents copy-pastable raw SQL and dbt workflows.
+- [ ] README documents copy-pastable raw SQL and dbt generation/export workflows.
 - [ ] `make rust-checks` remains the source of truth for normal Rust CI.
