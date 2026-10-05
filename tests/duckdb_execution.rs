@@ -117,9 +117,14 @@ fn test_case() -> TestCase {
 
 #[test]
 fn materializes_every_task_12_type_shared_with_duckdb() {
-    let generated =
-        generate_from_sql("SELECT * FROM typed_source", "duckdb", &[typed_schema()], 8, 42)
-            .expect("typed generation should succeed");
+    let generated = generate_from_sql(
+        "SELECT * FROM typed_source",
+        "duckdb",
+        &[typed_schema()],
+        8,
+        42,
+    )
+    .expect("typed generation should succeed");
     let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
     executor
         .materialize(&generated)
@@ -352,8 +357,7 @@ fn read_only_database_does_not_allow_fixture_mutation() {
             .expect("explicit database output should materialize");
     }
     {
-        let reader =
-            DuckDbExecutor::open_read_only(&path).expect("read-only database should open");
+        let reader = DuckDbExecutor::open_read_only(&path).expect("read-only database should open");
         assert_eq!(
             reader
                 .execute("SELECT amount FROM orders")
