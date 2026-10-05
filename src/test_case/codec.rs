@@ -1,6 +1,7 @@
 use super::TestCaseError;
 
 pub(super) const METADATA_HEADER: &str = "sql-tdg-test-case-metadata-v1";
+pub(super) const APPROVED_RESULT_HEADER: &str = "sql-tdg-approved-result-v1";
 
 pub(super) fn record(key: &str, value: &str) -> String {
     format!("{key}\t{value}")
