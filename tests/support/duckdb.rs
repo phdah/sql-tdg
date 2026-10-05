@@ -667,8 +667,8 @@ fn bind_expression(
             Ok(format!("{{{}}}", expressions.join(", ")))
         }
         Value::Map(values) => {
-            let mut keys = Vec::with_capacity(values.len());
-            let mut mapped_values = Vec::with_capacity(values.len());
+            let mut keys = Vec::new();
+            let mut mapped_values = Vec::new();
             for (key, value) in values.iter() {
                 keys.push(bind_expression(key.clone(), parameters)?);
                 mapped_values.push(bind_expression(value.clone(), parameters)?);
