@@ -94,11 +94,9 @@ fn intermediate_boundary_materializes_only_direct_upstream_relation() {
             .iter()
             .all(|value| (10..=20).contains(value))
     );
-    assert!(
-        amounts[counts.matching()..]
-            .iter()
-            .all(|value| *value >= 10 && *value > 20)
-    );
+    let rejected_amounts = &amounts[counts.matching()..];
+    assert!(rejected_amounts.iter().all(|value| *value >= 10));
+    assert!(rejected_amounts.iter().all(|value| *value > 20));
 }
 
 #[test]
