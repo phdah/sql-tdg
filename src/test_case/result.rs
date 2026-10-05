@@ -160,8 +160,7 @@ impl ApprovedResult {
         }
 
         let ordering = ResultOrdering::parse(next_value(&mut lines, "ordering")?)?;
-        let column_count =
-            parse_count(next_value(&mut lines, "column_count")?, "column_count")?;
+        let column_count = parse_count(next_value(&mut lines, "column_count")?, "column_count")?;
         let mut columns = Vec::with_capacity(column_count);
         for _ in 0..column_count {
             let line = lines
