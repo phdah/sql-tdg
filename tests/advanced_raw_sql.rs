@@ -363,7 +363,7 @@ fn cli_insert_fixture_executes_deterministic_dml() {
     let output_dir = TestDir::new("insert");
     let output = run_cli(
         &fixture_path,
-        "insert_result",
+        "insert_sink",
         &["raw_insert:value=INTEGER"],
         &[],
         output_dir.path(),
