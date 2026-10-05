@@ -42,8 +42,8 @@ fn intermediate_boundary_materializes_only_direct_upstream_relation() {
             &[("amount", "INTEGER"), ("customer_id", "INTEGER")],
         ),
     ];
-    let boundary =
-        GenerationBoundary::intermediate_relations(["stage_orders"]).expect("boundary should build");
+    let boundary = GenerationBoundary::intermediate_relations(["stage_orders"])
+        .expect("boundary should build");
     let counts = GenerationRowCounts::new(4, 6).expect("row counts should be valid");
 
     let generated = generate_classified_from_sql_at_boundary(
@@ -108,13 +108,13 @@ fn intermediate_boundary_preserves_relational_classification() {
             "stage_orders",
             &[("customer_id", "INTEGER"), ("amount", "INTEGER")],
         ),
-        schema("stage_customers", &[("id", "INTEGER"), ("active", "BOOLEAN")]),
+        schema(
+            "stage_customers",
+            &[("id", "INTEGER"), ("active", "BOOLEAN")],
+        ),
     ];
-    let boundary = GenerationBoundary::intermediate_relations([
-        "stage_orders",
-        "stage_customers",
-    ])
-    .expect("boundary should build");
+    let boundary = GenerationBoundary::intermediate_relations(["stage_orders", "stage_customers"])
+        .expect("boundary should build");
     let counts = GenerationRowCounts::new(5, 7).expect("row counts should be valid");
 
     let generated = generate_classified_from_sql_at_boundary(
