@@ -196,40 +196,34 @@ where
             "--sql" => args
                 .raw_inputs
                 .push(RawInput::Inline(next_value(&mut arguments, "--sql")?)),
-            "--file" => args.raw_inputs.push(RawInput::File(PathBuf::from(next_value(
-                &mut arguments,
-                "--file",
-            )?))),
+            "--file" => args
+                .raw_inputs
+                .push(RawInput::File(PathBuf::from(next_value(
+                    &mut arguments,
+                    "--file",
+                )?))),
             "--schema" => args
                 .schema_specs
                 .push(next_value(&mut arguments, "--schema")?),
             "--dialect" => args.dialect = Some(next_value(&mut arguments, "--dialect")?),
             "--dbt-project" => {
-                args.dbt_project =
-                    Some(PathBuf::from(next_value(&mut arguments, "--dbt-project")?))
+                args.dbt_project = Some(PathBuf::from(next_value(&mut arguments, "--dbt-project")?))
             }
             "--dbt-manifest" => {
-                args.dbt_manifest = Some(PathBuf::from(next_value(
-                    &mut arguments,
-                    "--dbt-manifest",
-                )?))
+                args.dbt_manifest =
+                    Some(PathBuf::from(next_value(&mut arguments, "--dbt-manifest")?))
             }
             "--dbt-catalog" => {
-                args.dbt_catalog =
-                    Some(PathBuf::from(next_value(&mut arguments, "--dbt-catalog")?))
+                args.dbt_catalog = Some(PathBuf::from(next_value(&mut arguments, "--dbt-catalog")?))
             }
-            "--target" => {
-                args.target_relation = Some(next_value(&mut arguments, "--target")?)
-            }
+            "--target" => args.target_relation = Some(next_value(&mut arguments, "--target")?),
             "--target-layer" => {
                 args.target_layer = Some(next_value(&mut arguments, "--target-layer")?)
             }
             "--boundary" => args
                 .boundaries
                 .push(next_value(&mut arguments, "--boundary")?),
-            "--seed" => {
-                args.seed = parse_number(next_value(&mut arguments, "--seed")?, "--seed")?
-            }
+            "--seed" => args.seed = parse_number(next_value(&mut arguments, "--seed")?, "--seed")?,
             "--matching" => {
                 args.matching =
                     parse_number(next_value(&mut arguments, "--matching")?, "--matching")?
@@ -239,12 +233,9 @@ where
                     parse_number(next_value(&mut arguments, "--rejected")?, "--rejected")?
             }
             "--format" => {
-                args.output_format =
-                    OutputFormat::parse(&next_value(&mut arguments, "--format")?)?
+                args.output_format = OutputFormat::parse(&next_value(&mut arguments, "--format")?)?
             }
-            "--output" => {
-                args.output_dir = PathBuf::from(next_value(&mut arguments, "--output")?)
-            }
+            "--output" => args.output_dir = PathBuf::from(next_value(&mut arguments, "--output")?),
             "--name" => args.workload_name = Some(next_value(&mut arguments, "--name")?),
             other => {
                 return Err(CliError::new(format!(
@@ -304,9 +295,7 @@ fn validate_generate_args(args: &GenerateArgs) -> Result<(), CliError> {
             ));
         }
         if args.dbt_catalog.is_some() {
-            return Err(CliError::new(
-                "--dbt-catalog is only valid with dbt input",
-            ));
+            return Err(CliError::new("--dbt-catalog is only valid with dbt input"));
         }
     } else {
         if !args.schema_specs.is_empty() {
@@ -352,18 +341,8 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
 
     let target = target_for_metadata(&analysis.bundle, selector.as_ref())?;
     let target_label = describe_target(&target);
-    let metadata = build_metadata(
-        &analysis,
-        target,
-        boundary,
-        args.seed,
-        &generated,
-    )?;
-    let exported = write_generated_outputs(
-        &generated,
-        args.output_format,
-        &args.output_dir,
-    )?;
+    let metadata = build_metadata(&analysis, target, boundary, args.seed, &generated)?;
+    let exported = write_generated_outputs(&generated, args.output_format, &args.output_dir)?;
     let metadata_path = args.output_dir.join("metadata.sqltdg");
     fs::write(&metadata_path, metadata.serialize()).map_err(|error| {
         CliError::new(format!(
@@ -401,9 +380,8 @@ fn analyze_raw(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
     let dialect = dialect_from_name(dialect_name)
         .ok_or_else(|| CliError::new(format!("unsupported SQL dialect {dialect_name:?}")))?;
     let schemas = parse_schemas(&args.schema_specs, dialect_name)?;
-    let catalog = RelationCatalog::from_schemas(&schemas).map_err(|error| {
-        CliError::new(format!("invalid source schema metadata: {error}"))
-    })?;
+    let catalog = RelationCatalog::from_schemas(&schemas)
+        .map_err(|error| CliError::new(format!("invalid source schema metadata: {error}")))?;
 
     let mut inputs = Vec::with_capacity(args.raw_inputs.len());
     let mut entrypoints = Vec::with_capacity(args.raw_inputs.len());
@@ -432,9 +410,7 @@ fn analyze_raw(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
     let configured = ids
         .iter()
         .zip(inputs.iter())
-        .map(|(id, input)| {
-            ConfiguredSqlInput::new(id, input, dialect_name, dialect.as_ref())
-        })
+        .map(|(id, input)| ConfiguredSqlInput::new(id, input, dialect_name, dialect.as_ref()))
         .collect::<Vec<_>>();
     let bundle = analyze_configured_inputs_with_catalog(&configured, &catalog)
         .map_err(|error| CliError::new(format!("protocol analysis failed: {error}")))?;
@@ -484,20 +460,13 @@ fn analyze_dbt(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
             manifest.adapter_type()
         ))
     })?;
-    let bundle = analyze_dbt_artifacts(
-        &manifest,
-        &catalog,
-        &dialect_name,
-        dialect.as_ref(),
-    )
-    .map_err(|error| CliError::new(format!("dbt protocol analysis failed: {error}")))?;
+    let bundle = analyze_dbt_artifacts(&manifest, &catalog, &dialect_name, dialect.as_ref())
+        .map_err(|error| CliError::new(format!("dbt protocol analysis failed: {error}")))?;
 
     let workload_name = args.workload_name.clone().unwrap_or(default_name);
-    let workload = WorkloadIdentity::dbt_project(
-        workload_name,
-        manifest_path.display().to_string(),
-    )
-    .map_err(|error| CliError::new(error.to_string()))?;
+    let workload =
+        WorkloadIdentity::dbt_project(workload_name, manifest_path.display().to_string())
+            .map_err(|error| CliError::new(error.to_string()))?;
 
     Ok(AnalysisProduct {
         bundle,
@@ -522,9 +491,10 @@ fn resolve_dbt_paths(args: &GenerateArgs) -> Result<(PathBuf, PathBuf, String), 
         return Ok((manifest, catalog, name));
     }
 
-    let manifest = args.dbt_manifest.clone().ok_or_else(|| {
-        CliError::new("dbt input requires --dbt-project or --dbt-manifest")
-    })?;
+    let manifest = args
+        .dbt_manifest
+        .clone()
+        .ok_or_else(|| CliError::new("dbt input requires --dbt-project or --dbt-manifest"))?;
     let catalog = args.dbt_catalog.clone().unwrap_or_else(|| {
         manifest
             .parent()
@@ -564,11 +534,10 @@ fn parse_schemas(specs: &[String], dialect: &str) -> Result<Vec<RelationSchema>,
             )));
         }
 
-        let schema_column = SchemaColumn::from_sql_type(column, sql_type, dialect).map_err(|error| {
-            CliError::new(format!(
-                "invalid datatype for {relation}.{column}: {error}"
-            ))
-        })?;
+        let schema_column =
+            SchemaColumn::from_sql_type(column, sql_type, dialect).map_err(|error| {
+                CliError::new(format!("invalid datatype for {relation}.{column}: {error}"))
+            })?;
         columns_by_relation
             .entry(relation.to_owned())
             .or_default()
@@ -589,12 +558,11 @@ fn target_for_metadata(
     selector: Option<&OutcomeSelector>,
 ) -> Result<TestTarget, CliError> {
     match selector {
-        Some(OutcomeSelector::Relation(relation)) => TestTarget::relation(relation.clone())
-            .map_err(|error| CliError::new(error.to_string())),
-        Some(OutcomeSelector::AnonymousLayer(layer)) => {
-            TestTarget::anonymous_layer(layer.clone())
-                .map_err(|error| CliError::new(error.to_string()))
+        Some(OutcomeSelector::Relation(relation)) => {
+            TestTarget::relation(relation.clone()).map_err(|error| CliError::new(error.to_string()))
         }
+        Some(OutcomeSelector::AnonymousLayer(layer)) => TestTarget::anonymous_layer(layer.clone())
+            .map_err(|error| CliError::new(error.to_string())),
         None => {
             let outcomes = bundle
                 .graph()
@@ -611,10 +579,8 @@ fn target_for_metadata(
             match outcome {
                 DatasetRef::Relation { name } => TestTarget::relation(name.clone())
                     .map_err(|error| CliError::new(error.to_string())),
-                DatasetRef::Anonymous { layer_id } => {
-                    TestTarget::anonymous_layer(layer_id.clone())
-                        .map_err(|error| CliError::new(error.to_string()))
-                }
+                DatasetRef::Anonymous { layer_id } => TestTarget::anonymous_layer(layer_id.clone())
+                    .map_err(|error| CliError::new(error.to_string())),
                 _ => Err(CliError::new(
                     "selected protocol outcome cannot be represented by the CLI",
                 )),
@@ -706,7 +672,10 @@ fn sanitize_relation(relation: &str) -> String {
             }
         })
         .collect::<String>();
-    if sanitized.chars().any(|character| character.is_ascii_alphanumeric()) {
+    if sanitized
+        .chars()
+        .any(|character| character.is_ascii_alphanumeric())
+    {
         sanitized
     } else {
         "relation".to_owned()
