@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -85,6 +85,26 @@ fn run_cli(
     boundaries: &[&str],
     output_dir: &Path,
 ) -> Output {
+    run_cli_with_counts(
+        fixture_path,
+        target,
+        schemas,
+        boundaries,
+        output_dir,
+        1,
+        1,
+    )
+}
+
+fn run_cli_with_counts(
+    fixture_path: &Path,
+    target: &str,
+    schemas: &[&str],
+    boundaries: &[&str],
+    output_dir: &Path,
+    matching: usize,
+    rejected: usize,
+) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sql-tdg"));
     command
         .args(["generate", "--dialect", "duckdb", "--file"])
@@ -98,17 +118,11 @@ fn run_cli(
         command.args(["--boundary", boundary]);
     }
     command
-        .args([
-            "--matching",
-            "1",
-            "--rejected",
-            "1",
-            "--seed",
-            "42",
-            "--format",
-            "parquet",
-            "--output",
-        ])
+        .arg("--matching")
+        .arg(matching.to_string())
+        .arg("--rejected")
+        .arg(rejected.to_string())
+        .args(["--seed", "42", "--format", "parquet", "--output"])
         .arg(output_dir)
         .output()
         .expect("compiled sql-tdg binary should execute")
@@ -237,6 +251,54 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
             expected_row(&["high", "100"]),
             expected_row(&["high", "100"]),
         ]
+    );
+}
+
+#[test]
+fn cli_samples_full_matching_and_rejected_integer_ranges() {
+    const MATCHING: usize = 64;
+    const REJECTED: usize = 64;
+
+    let fixture_path = fixture("range_sampling.sql");
+    let output_dir = TestDir::new("range-sampling");
+    let output = run_cli_with_counts(
+        &fixture_path,
+        "range_result",
+        &["raw_range:value=INTEGER"],
+        &[],
+        output_dir.path(),
+        MATCHING,
+        REJECTED,
+    );
+    let stdout = assert_cli_success(&output);
+    let executor = CliDuckDb::in_memory().expect("DuckDB should open");
+    load_outputs(&executor, &stdout);
+
+    let rows = executor
+        .execute_text("SELECT value::VARCHAR FROM raw_range", 1)
+        .expect("generated range source should be queryable");
+    assert_eq!(rows.len(), MATCHING + REJECTED);
+
+    let values = rows
+        .iter()
+        .map(|row| {
+            row[0]
+                .parse::<i32>()
+                .expect("generated INTEGER should parse as i32")
+        })
+        .collect::<Vec<_>>();
+    let (matching, rejected) = values.split_at(MATCHING);
+
+    assert!(matching.iter().all(|value| (10..=1_000).contains(value)));
+    assert!(rejected.iter().all(|value| !(10..=1_000).contains(value)));
+
+    assert!(
+        matching.iter().copied().collect::<BTreeSet<_>>().len() > 1,
+        "matching rows must be sampled across the allowed interval"
+    );
+    assert!(
+        rejected.iter().copied().collect::<BTreeSet<_>>().len() > 1,
+        "rejected rows must be sampled across the complement interval"
     );
 }
 
