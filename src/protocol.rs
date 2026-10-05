@@ -17,7 +17,7 @@ use sql_semantic_protocol::{
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
     ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
-    value_satisfies_domain,
+    supports_ordered_sampling, value_satisfies_domain,
 };
 use crate::solver::SolverError;
 use crate::table::{Table, TableError};
@@ -2398,6 +2398,12 @@ fn generic_generation_domain(
         Ok(GenerationDomain::Range {
             data_type: data_type.clone(),
             ranges: ranges.ranges().to_vec(),
+        })
+    } else if domain.is_none_or(|domain| matches!(domain, ValueDomain::Unbounded))
+        && supports_ordered_sampling(data_type)
+    {
+        Ok(GenerationDomain::UnboundedOrdered {
+            data_type: data_type.clone(),
         })
     } else {
         Ok(GenerationDomain::Values(values))
