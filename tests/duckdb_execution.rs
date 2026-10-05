@@ -1,12 +1,12 @@
 use sql_semantic_protocol::{DataType, DataTypeField, parse_data_type};
-pub use sql_tdg::{
-    GeneratedData, QueryResult, ResultColumn, ResultOrdering, Table, TableError, TestCase,
-    TestCaseError, VerificationError,
-};
 use sql_tdg::{
     ApprovedResult, GeneratedRelation, GenerationBoundary, GenerationRowCounts, ProtocolSnapshot,
     RelationSchema, SchemaColumn, TestCaseMetadata, TestTarget, WorkloadIdentity,
     generate_classified_from_sql, generate_from_sql,
+};
+pub use sql_tdg::{
+    GeneratedData, QueryResult, ResultColumn, ResultOrdering, Table, TableError, TestCase,
+    TestCaseError, VerificationError,
 };
 
 #[path = "../src/execution.rs"]
