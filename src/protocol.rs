@@ -829,13 +829,16 @@ fn generate_intermediate_boundary_data(
             seed,
         )
     } else {
+        let relationship_plan = PreparedRelationships {
+            candidates_by_column: &candidates_by_column,
+            relationships: &relationships,
+        };
         generate_prepared_relational_data(
             target_layer.id(),
             boundary.relations(),
             schemas,
             &plans_by_relation,
-            &candidates_by_column,
-            &relationships,
+            &relationship_plan,
             row_counts,
             seed,
         )
@@ -1172,13 +1175,17 @@ fn generate_prepared_scalar_data(
     Ok(GeneratedData { tables, row_counts })
 }
 
+struct PreparedRelationships<'a> {
+    candidates_by_column: &'a BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    relationships: &'a [EqualityRelationship],
+}
+
 fn generate_prepared_relational_data(
     layer_id: &str,
     relations: &[String],
     schemas: &BTreeMap<String, &RelationSchema>,
     plans_by_relation: &BTreeMap<String, Vec<ColumnPlan>>,
-    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
-    relationships: &[EqualityRelationship],
+    relationship_plan: &PreparedRelationships<'_>,
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
@@ -1200,9 +1207,13 @@ fn generate_prepared_relational_data(
         generated_by_relation.insert(relation.clone(), generated);
     }
 
-    let adjacency = relationship_adjacency(relationships);
+    let adjacency = relationship_adjacency(relationship_plan.relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values = choose_component_values(candidates_by_column, &adjacency, &mut rng)?;
+    let matching_values = choose_component_values(
+        relationship_plan.candidates_by_column,
+        &adjacency,
+        &mut rng,
+    )?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -1218,8 +1229,8 @@ fn generate_prepared_relational_data(
 
     if row_counts.rejected() > 0 {
         let witnesses = relationship_witnesses(
-            relationships,
-            candidates_by_column,
+            relationship_plan.relationships,
+            relationship_plan.candidates_by_column,
             &adjacency,
             &matching_values,
             &mut rng,
