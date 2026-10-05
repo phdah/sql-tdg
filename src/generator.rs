@@ -366,7 +366,9 @@ impl ColumnPlan {
                 Ok(TableValue::Timestamp(value))
             }
             GenerationDomain::Bool(domain) => Ok(TableValue::Bool(domain.value())),
-            GenerationDomain::Values(_) => Err(GeneratorError::ProtocolOnlyDomain {
+            GenerationDomain::Values(_)
+            | GenerationDomain::Range { .. }
+            | GenerationDomain::RejectedRange { .. } => Err(GeneratorError::ProtocolOnlyDomain {
                 column: self.name.clone(),
             }),
         }
