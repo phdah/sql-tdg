@@ -660,14 +660,9 @@ pub fn generate_classified_from_bundle_at_boundary(
                 )
             }
         }
-        BoundaryKind::IntermediateRelations => generate_intermediate_boundary_data(
-            bundle,
-            layer,
-            &schemas,
-            boundary,
-            row_counts,
-            seed,
-        ),
+        BoundaryKind::IntermediateRelations => {
+            generate_intermediate_boundary_data(bundle, layer, &schemas, boundary, row_counts, seed)
+        }
     }
 }
 
@@ -793,12 +788,11 @@ fn generate_intermediate_boundary_data(
     let mut candidates_by_column = BTreeMap::new();
 
     for relation in boundary.relations() {
-        let schema = schemas
-            .get(relation)
-            .copied()
-            .ok_or_else(|| ProtocolGenerationError::MissingBoundarySchema {
+        let schema = schemas.get(relation).copied().ok_or_else(|| {
+            ProtocolGenerationError::MissingBoundarySchema {
                 relation: relation.clone(),
-            })?;
+            }
+        })?;
         let producer = producers.get(relation).copied().ok_or_else(|| {
             ProtocolGenerationError::InvalidGenerationBoundary {
                 layer_id: target_layer.id().to_owned(),
@@ -909,8 +903,11 @@ fn prepare_intermediate_relation_plans(
             });
         };
 
-        let downstream =
-            find_column_domain(target_query.column_domains(), relation, schema_column.name())?;
+        let downstream = find_column_domain(
+            target_query.column_domains(),
+            relation,
+            schema_column.name(),
+        )?;
         let matching_values = intersect_boundary_candidates(
             relation,
             schema_column.name(),
@@ -988,13 +985,15 @@ fn intersect_boundary_candidates(
                 }
             })?;
         let downstream_match = match downstream {
-            Some(domain) => value_satisfies_domain(data_type, &candidate, domain).map_err(
-                |message| ProtocolGenerationError::UnsupportedDomain {
-                    relation: relation.to_owned(),
-                    column: column.to_owned(),
-                    message,
-                },
-            )?,
+            Some(domain) => {
+                value_satisfies_domain(data_type, &candidate, domain).map_err(|message| {
+                    ProtocolGenerationError::UnsupportedDomain {
+                        relation: relation.to_owned(),
+                        column: column.to_owned(),
+                        message,
+                    }
+                })?
+            }
             None => true,
         };
         if upstream_match && downstream_match && !matching.contains(&candidate) {
@@ -1088,12 +1087,12 @@ fn collect_boundary_relationships(
             });
         }
 
-        let condition = join.condition().ok_or_else(|| {
-            ProtocolGenerationError::UnsupportedRelationship {
-                layer_id: layer_id.to_owned(),
-                message: "inner join has no resolved condition".to_owned(),
-            }
-        })?;
+        let condition =
+            join.condition()
+                .ok_or_else(|| ProtocolGenerationError::UnsupportedRelationship {
+                    layer_id: layer_id.to_owned(),
+                    message: "inner join has no resolved condition".to_owned(),
+                })?;
         let mut equalities = Vec::new();
         collect_column_equalities(layer_id, condition, &mut equalities)?;
 
@@ -1251,12 +1250,11 @@ fn generate_prepared_relational_data(
 
     let mut tables = BTreeMap::new();
     for relation in relations {
-        let schema = schemas
-            .get(relation)
-            .copied()
-            .ok_or_else(|| ProtocolGenerationError::MissingBoundarySchema {
+        let schema = schemas.get(relation).copied().ok_or_else(|| {
+            ProtocolGenerationError::MissingBoundarySchema {
                 relation: relation.clone(),
-            })?;
+            }
+        })?;
         let generated = generated_by_relation.remove(relation).ok_or_else(|| {
             ProtocolGenerationError::InvalidGenerationBoundary {
                 layer_id: layer_id.to_owned(),
