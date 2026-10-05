@@ -25,11 +25,11 @@ JOIN stage_customers AS customers
 
 CREATE VIEW mart_customer_summary AS
 SELECT
-    amount_bucket,
+    enriched.amount_bucket,
     COUNT(*) AS order_count,
-    MAX(amount) AS max_amount
-FROM core_enriched
-WHERE amount = 100
-GROUP BY amount_bucket
+    MAX(enriched.amount) AS max_amount
+FROM core_enriched AS enriched
+WHERE enriched.amount = 100
+GROUP BY enriched.amount_bucket
 HAVING COUNT(*) >= 1
-ORDER BY amount_bucket;
+ORDER BY enriched.amount_bucket;
