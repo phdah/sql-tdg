@@ -576,6 +576,30 @@ fn non_null_candidates(
     }
 }
 
+pub(crate) fn supports_ordered_sampling(data_type: &DataType) -> bool {
+    let non_null_type = match data_type {
+        DataType::Nullable(inner) => inner.as_ref(),
+        _ => data_type,
+    };
+    ordered_type_bounds(non_null_type).is_ok()
+}
+
+pub(crate) fn sample_unbounded_value<R: Rng + ?Sized>(
+    data_type: &DataType,
+    rng: &mut R,
+) -> Result<ProtocolValue, String> {
+    if let DataType::Nullable(inner) = data_type {
+        if rng.next_u64() % 8 == 0 {
+            return Ok(ProtocolValue::Null);
+        }
+        let (lower, upper) = ordered_type_bounds(inner)?;
+        return sample_inclusive_interval(rng, &lower, &upper);
+    }
+
+    let (lower, upper) = ordered_type_bounds(data_type)?;
+    sample_inclusive_interval(rng, &lower, &upper)
+}
+
 pub(crate) fn sample_range_value<R: Rng + ?Sized>(
     data_type: &DataType,
     ranges: &[ValueRange],
