@@ -4,15 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-pub use sql_tdg::{
-    GeneratedData, QueryResult, ResultColumn, ResultOrdering, Table, TableError, TestCase,
-    TestCaseError, VerificationError,
-};
+#[path = "support/cli_duckdb.rs"]
+mod cli_duckdb;
 
-#[path = "support/duckdb.rs"]
-mod duckdb;
-
-use duckdb::DuckDbExecutor;
+use cli_duckdb::CliDuckDb;
 
 static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -39,7 +34,7 @@ GROUP BY amount_bucket
 HAVING COUNT(*) >= 1
 ORDER BY amount_bucket;
 
-SELECT amount_bucket, order_count, max_amount
+SELECT amount_bucket::VARCHAR, order_count::VARCHAR, max_amount::VARCHAR
 FROM mart_customer_summary
 ORDER BY amount_bucket;
 "#;
@@ -135,7 +130,7 @@ fn generated_paths(stdout: &str) -> BTreeMap<String, PathBuf> {
         .collect()
 }
 
-fn load_outputs(executor: &DuckDbExecutor, stdout: &str) {
+fn load_outputs(executor: &CliDuckDb, stdout: &str) {
     let outputs = generated_paths(stdout);
     assert!(!outputs.is_empty(), "CLI should report generated relations");
     for (relation, path) in outputs {
@@ -151,12 +146,13 @@ fn load_outputs(executor: &DuckDbExecutor, stdout: &str) {
 }
 
 fn execute_with_final_select(
-    executor: &DuckDbExecutor,
+    executor: &CliDuckDb,
     fixture_sql: &str,
     final_select: &str,
-) -> QueryResult {
+    column_count: usize,
+) -> Vec<Vec<String>> {
     executor
-        .execute(&format!("{fixture_sql}\n{final_select}"))
+        .execute_text(&format!("{fixture_sql}\n{final_select}"), column_count)
         .expect("fixture workload should execute")
 }
 
@@ -179,37 +175,34 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
         physical_dir.path(),
     );
     let physical_stdout = assert_cli_success(&physical);
-    let physical_db = DuckDbExecutor::in_memory().expect("DuckDB should open");
+    let physical_db = CliDuckDb::in_memory().expect("DuckDB should open");
     load_outputs(&physical_db, &physical_stdout);
     let physical_result = execute_with_final_select(
         &physical_db,
         &fixture_sql,
-        "SELECT amount_bucket, order_count, max_amount FROM mart_customer_summary ORDER BY amount_bucket",
+        "SELECT amount_bucket::VARCHAR, order_count::VARCHAR, max_amount::VARCHAR FROM mart_customer_summary ORDER BY amount_bucket",
+        3,
     );
 
-    assert_eq!(
-        physical_result.rows(),
-        &[expected_row(&["text:4:high", "i64:1", "i32:100"])]
-    );
+    assert_eq!(physical_result, vec![expected_row(&["high", "1", "100"])]);
 
     let mutation = physical_db
-        .execute(
-            "SELECT amount_bucket, COUNT(*) AS order_count, MAX(amount) AS max_amount \
+        .execute_text(
+            "SELECT amount_bucket::VARCHAR, COUNT(*)::VARCHAR AS order_count, \
+                    MAX(amount)::VARCHAR AS max_amount \
              FROM stage_orders \
              WHERE amount = 100 \
              GROUP BY amount_bucket \
              HAVING COUNT(*) >= 1 \
              ORDER BY amount_bucket",
+            3,
         )
         .expect("mutated workload should execute");
     assert_ne!(
         mutation, physical_result,
         "removing the relational stage must change the complete result"
     );
-    assert_eq!(
-        mutation.rows(),
-        &[expected_row(&["text:4:high", "i64:2", "i32:100"])]
-    );
+    assert_eq!(mutation, vec![expected_row(&["high", "2", "100"])]);
 
     let boundary_dir = TestDir::new("pipeline-boundary");
     let boundary = run_cli(
@@ -226,10 +219,10 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
         vec!["core_enriched".to_owned()]
     );
 
-    let boundary_db = DuckDbExecutor::in_memory().expect("DuckDB should open");
+    let boundary_db = CliDuckDb::in_memory().expect("DuckDB should open");
     load_outputs(&boundary_db, &boundary_stdout);
     let boundary_result = boundary_db
-        .execute(PIPELINE_DOWNSTREAM)
+        .execute_text(PIPELINE_DOWNSTREAM, 3)
         .expect("downstream workload should execute");
 
     assert_eq!(boundary_result, physical_result);
@@ -275,14 +268,15 @@ fn cli_window_fixture_is_ranked_limited_and_deterministic() {
         );
     }
 
-    let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
+    let executor = CliDuckDb::in_memory().expect("DuckDB should open");
     load_outputs(&executor, &first_stdout);
     let result = execute_with_final_select(
         &executor,
         &fixture_sql,
-        "SELECT marker, rn FROM ranked_result ORDER BY rn",
+        "SELECT marker::VARCHAR, rn::VARCHAR FROM ranked_result ORDER BY rn",
+        2,
     );
-    assert_eq!(result.rows(), &[expected_row(&["i32:1", "i64:1"])]);
+    assert_eq!(result, vec![expected_row(&["1", "1"])]);
 }
 
 #[test]
@@ -300,8 +294,8 @@ fn cli_set_operation_fixtures_execute_with_full_expected_results() {
              CREATE VIEW set_b AS SELECT 2 AS marker FROM raw_b WHERE value = 20; \
              CREATE VIEW union_all_result AS \
              SELECT marker FROM set_a UNION ALL SELECT marker FROM set_b ORDER BY marker LIMIT 2; \
-             SELECT marker FROM union_all_result ORDER BY marker;",
-            vec![expected_row(&["i32:1"]), expected_row(&["i32:2"])],
+             SELECT marker::VARCHAR FROM union_all_result ORDER BY marker;",
+            vec![expected_row(&["1"]), expected_row(&["2"])],
         ),
         (
             "union_result",
@@ -309,8 +303,8 @@ fn cli_set_operation_fixtures_execute_with_full_expected_results() {
              CREATE VIEW set_c AS SELECT 1 AS marker FROM raw_c WHERE value = 30; \
              CREATE VIEW union_result AS \
              SELECT marker FROM set_a UNION SELECT marker FROM set_c ORDER BY marker; \
-             SELECT marker FROM union_result ORDER BY marker;",
-            vec![expected_row(&["i32:1"])],
+             SELECT marker::VARCHAR FROM union_result ORDER BY marker;",
+            vec![expected_row(&["1"])],
         ),
         (
             "intersect_result",
@@ -318,8 +312,8 @@ fn cli_set_operation_fixtures_execute_with_full_expected_results() {
              CREATE VIEW set_c AS SELECT 1 AS marker FROM raw_c WHERE value = 30; \
              CREATE VIEW intersect_result AS \
              SELECT marker FROM set_a INTERSECT SELECT marker FROM set_c ORDER BY marker; \
-             SELECT marker FROM intersect_result ORDER BY marker;",
-            vec![expected_row(&["i32:1"])],
+             SELECT marker::VARCHAR FROM intersect_result ORDER BY marker;",
+            vec![expected_row(&["1"])],
         ),
         (
             "except_result",
@@ -327,15 +321,15 @@ fn cli_set_operation_fixtures_execute_with_full_expected_results() {
              CREATE VIEW set_b AS SELECT 2 AS marker FROM raw_b WHERE value = 20; \
              CREATE VIEW except_result AS \
              SELECT marker FROM set_a EXCEPT SELECT marker FROM set_b ORDER BY marker; \
-             SELECT marker FROM except_result ORDER BY marker;",
-            vec![expected_row(&["i32:1"])],
+             SELECT marker::VARCHAR FROM except_result ORDER BY marker;",
+            vec![expected_row(&["1"])],
         ),
         (
             "distinct_result",
             "CREATE VIEW set_a AS SELECT 1 AS marker FROM raw_a WHERE value = 10; \
              CREATE VIEW distinct_result AS SELECT DISTINCT marker FROM set_a ORDER BY marker; \
-             SELECT marker FROM distinct_result ORDER BY marker;",
-            vec![expected_row(&["i32:1"])],
+             SELECT marker::VARCHAR FROM distinct_result ORDER BY marker;",
+            vec![expected_row(&["1"])],
         ),
         (
             "limited_result",
@@ -343,8 +337,8 @@ fn cli_set_operation_fixtures_execute_with_full_expected_results() {
              CREATE VIEW set_b AS SELECT 2 AS marker FROM raw_b WHERE value = 20; \
              CREATE VIEW limited_result AS \
              SELECT marker FROM set_a UNION ALL SELECT marker FROM set_b ORDER BY marker LIMIT 1; \
-             SELECT marker FROM limited_result ORDER BY marker;",
-            vec![expected_row(&["i32:1"])],
+             SELECT marker::VARCHAR FROM limited_result ORDER BY marker;",
+            vec![expected_row(&["1"])],
         ),
     ];
 
@@ -352,12 +346,12 @@ fn cli_set_operation_fixtures_execute_with_full_expected_results() {
         let output_dir = TestDir::new(&format!("set-{index}"));
         let output = run_cli(&fixture_path, target, schemas, &[], output_dir.path());
         let stdout = assert_cli_success(&output);
-        let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
+        let executor = CliDuckDb::in_memory().expect("DuckDB should open");
         load_outputs(&executor, &stdout);
         let result = executor
-            .execute(workload)
+            .execute_text(workload, 1)
             .unwrap_or_else(|error| panic!("{target} should execute: {error}"));
-        assert_eq!(result.rows(), expected.as_slice(), "target {target}");
+        assert_eq!(result, expected, "target {target}");
     }
 }
 
@@ -374,14 +368,15 @@ fn cli_insert_fixture_executes_deterministic_dml() {
         output_dir.path(),
     );
     let stdout = assert_cli_success(&output);
-    let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
+    let executor = CliDuckDb::in_memory().expect("DuckDB should open");
     load_outputs(&executor, &stdout);
     let result = execute_with_final_select(
         &executor,
         &fixture_sql,
-        "SELECT value FROM insert_result ORDER BY value",
+        "SELECT value::VARCHAR FROM insert_result ORDER BY value",
+        1,
     );
-    assert_eq!(result.rows(), &[expected_row(&["i32:10"])]);
+    assert_eq!(result, vec![expected_row(&["10"])]);
 }
 
 #[test]
