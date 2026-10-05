@@ -17,9 +17,11 @@ use sql_semantic_protocol::{
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
     ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
+    value_satisfies_domain,
 };
 use crate::solver::SolverError;
 use crate::table::{Table, TableError};
+use crate::test_case::{BoundaryKind, GenerationBoundary};
 
 /// Explicit selection of one terminal protocol outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,6 +195,18 @@ pub enum ProtocolGenerationError {
         /// Canonical source relation identity.
         relation: String,
     },
+    /// An explicitly selected intermediate relation has no declared output schema metadata.
+    MissingBoundarySchema {
+        /// Exact protocol relation identity selected for materialization.
+        relation: String,
+    },
+    /// A requested generation boundary cannot be materialized safely.
+    InvalidGenerationBoundary {
+        /// Selected terminal layer.
+        layer_id: String,
+        /// Explanation of the invalid or unsupported boundary.
+        message: String,
+    },
     /// A constrained protocol column is absent from declared source schema metadata.
     MissingSchemaColumn {
         /// Canonical source relation identity.
@@ -348,6 +362,14 @@ impl fmt::Display for ProtocolGenerationError {
                     "missing source schema metadata for relation {relation:?}"
                 )
             }
+            Self::MissingBoundarySchema { relation } => write!(
+                formatter,
+                "missing output schema metadata for intermediate relation {relation:?}"
+            ),
+            Self::InvalidGenerationBoundary { layer_id, message } => write!(
+                formatter,
+                "cannot materialize generation boundary for layer {layer_id}: {message}"
+            ),
             Self::MissingSchemaColumn { relation, column } => write!(
                 formatter,
                 "protocol constrains {relation}.{column} but the source schema does not declare it"
@@ -448,7 +470,7 @@ impl Error for ProtocolGenerationError {
     }
 }
 
-/// Analyze SQL through SQL Semantic Protocol and generate matching source rows.
+/// Analyze SQL through SQL Semantic Protocol and generate matching physical source rows.
 pub fn generate_from_sql(
     sql: &str,
     dialect_name: &str,
@@ -465,11 +487,54 @@ pub fn generate_from_sql(
     )
 }
 
-/// Analyze SQL through SQL Semantic Protocol and generate classified source rows.
+/// Analyze SQL through SQL Semantic Protocol and generate classified physical source rows.
 pub fn generate_classified_from_sql(
     sql: &str,
     dialect_name: &str,
     source_schemas: &[RelationSchema],
+    row_counts: GenerationRowCounts,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    let boundary = GenerationBoundary::physical_sources();
+    generate_classified_from_sql_at_boundary(
+        sql,
+        dialect_name,
+        source_schemas,
+        None,
+        &boundary,
+        row_counts,
+        seed,
+    )
+}
+
+/// Analyze SQL and generate matching rows at an explicit protocol graph boundary.
+pub fn generate_from_sql_at_boundary(
+    sql: &str,
+    dialect_name: &str,
+    relation_schemas: &[RelationSchema],
+    selector: Option<&OutcomeSelector>,
+    boundary: &GenerationBoundary,
+    rows: usize,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    generate_classified_from_sql_at_boundary(
+        sql,
+        dialect_name,
+        relation_schemas,
+        selector,
+        boundary,
+        GenerationRowCounts::matching_only(rows),
+        seed,
+    )
+}
+
+/// Analyze SQL and generate classified rows at an explicit protocol graph boundary.
+pub fn generate_classified_from_sql_at_boundary(
+    sql: &str,
+    dialect_name: &str,
+    relation_schemas: &[RelationSchema],
+    selector: Option<&OutcomeSelector>,
+    boundary: &GenerationBoundary,
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
@@ -485,7 +550,7 @@ pub fn generate_classified_from_sql(
         dialect_name,
         dialect.as_ref(),
     )];
-    let catalog = RelationCatalog::from_schemas(source_schemas).map_err(|error| {
+    let catalog = RelationCatalog::from_schemas(relation_schemas).map_err(|error| {
         ProtocolGenerationError::InvalidSchemaMetadata {
             message: error.to_string(),
         }
@@ -497,10 +562,10 @@ pub fn generate_classified_from_sql(
             }
         })?;
 
-    generate_classified_from_bundle(&bundle, None, row_counts, seed)
+    generate_classified_from_bundle_at_boundary(&bundle, selector, boundary, row_counts, seed)
 }
 
-/// Generate matching source rows from one explicitly resolved terminal outcome in a protocol bundle.
+/// Generate matching physical source rows from one explicitly resolved terminal outcome.
 pub fn generate_from_bundle(
     bundle: &AnalysisBundle,
     selector: Option<&OutcomeSelector>,
@@ -515,10 +580,39 @@ pub fn generate_from_bundle(
     )
 }
 
-/// Generate classified source rows from one explicitly resolved terminal outcome in a protocol bundle.
+/// Generate classified physical source rows from one explicitly resolved terminal outcome.
 pub fn generate_classified_from_bundle(
     bundle: &AnalysisBundle,
     selector: Option<&OutcomeSelector>,
+    row_counts: GenerationRowCounts,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    let boundary = GenerationBoundary::physical_sources();
+    generate_classified_from_bundle_at_boundary(bundle, selector, &boundary, row_counts, seed)
+}
+
+/// Generate matching rows at an explicit boundary of one selected terminal outcome.
+pub fn generate_from_bundle_at_boundary(
+    bundle: &AnalysisBundle,
+    selector: Option<&OutcomeSelector>,
+    boundary: &GenerationBoundary,
+    rows: usize,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    generate_classified_from_bundle_at_boundary(
+        bundle,
+        selector,
+        boundary,
+        GenerationRowCounts::matching_only(rows),
+        seed,
+    )
+}
+
+/// Generate classified rows at an explicit boundary of one selected terminal outcome.
+pub fn generate_classified_from_bundle_at_boundary(
+    bundle: &AnalysisBundle,
+    selector: Option<&OutcomeSelector>,
+    boundary: &GenerationBoundary,
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
@@ -531,21 +625,7 @@ pub fn generate_classified_from_bundle(
             outcome: outcome_description,
         })?;
 
-    let semantics = match layer.composed_semantics() {
-        ComposedSemantics::Resolved(semantics) => semantics,
-        ComposedSemantics::Unresolved(unresolved) => {
-            return Err(ProtocolGenerationError::UnresolvedComposition {
-                layer_id: layer.id().to_owned(),
-                reason: format!("{:?}", unresolved.reason()),
-            });
-        }
-        _ => {
-            return Err(ProtocolGenerationError::UnresolvedComposition {
-                layer_id: layer.id().to_owned(),
-                reason: "unsupported composed semantics variant".to_owned(),
-            });
-        }
-    };
+    let semantics = resolved_layer_semantics(layer)?;
 
     if let Some(diagnostic) = semantics.diagnostics().first() {
         return Err(ProtocolGenerationError::UnsupportedSemantics {
@@ -561,21 +641,633 @@ pub fn generate_classified_from_bundle(
         .map(|schema| (schema.relation().to_owned(), schema))
         .collect::<BTreeMap<_, _>>();
 
-    validate_composed_domains(semantics, &schemas)?;
-    let relationships = collect_equality_relationships(bundle, layer.id(), semantics, &schemas)?;
+    match boundary.kind() {
+        BoundaryKind::PhysicalSources => {
+            validate_composed_domains(semantics, &schemas)?;
+            let relationships =
+                collect_equality_relationships(bundle, layer.id(), semantics, &schemas)?;
+
+            if relationships.is_empty() {
+                generate_scalar_data(semantics, &schemas, row_counts, seed)
+            } else {
+                generate_relational_data(
+                    layer.id(),
+                    semantics,
+                    &schemas,
+                    &relationships,
+                    row_counts,
+                    seed,
+                )
+            }
+        }
+        BoundaryKind::IntermediateRelations => generate_intermediate_boundary_data(
+            bundle,
+            layer,
+            &schemas,
+            boundary,
+            row_counts,
+            seed,
+        ),
+    }
+}
+
+fn resolved_layer_semantics(
+    layer: &TransformationLayer,
+) -> Result<&ResolvedComposedSemantics, ProtocolGenerationError> {
+    match layer.composed_semantics() {
+        ComposedSemantics::Resolved(semantics) => Ok(semantics),
+        ComposedSemantics::Unresolved(unresolved) => {
+            Err(ProtocolGenerationError::UnresolvedComposition {
+                layer_id: layer.id().to_owned(),
+                reason: format!("{:?}", unresolved.reason()),
+            })
+        }
+        _ => Err(ProtocolGenerationError::UnresolvedComposition {
+            layer_id: layer.id().to_owned(),
+            reason: "unsupported composed semantics variant".to_owned(),
+        }),
+    }
+}
+
+fn generate_intermediate_boundary_data(
+    bundle: &AnalysisBundle,
+    target_layer: &TransformationLayer,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    boundary: &GenerationBoundary,
+    row_counts: GenerationRowCounts,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    let target_query = query_for_layer(bundle, target_layer)?;
+    let selected = boundary
+        .relations()
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let direct_edges = bundle
+        .graph()
+        .edges()
+        .iter()
+        .filter(|edge| edge.consumer_layer_id() == target_layer.id())
+        .collect::<Vec<_>>();
+
+    if direct_edges.is_empty() {
+        return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+            layer_id: target_layer.id().to_owned(),
+            message: "selected target has no direct relation boundary to materialize".to_owned(),
+        });
+    }
+
+    let mut direct_relations = BTreeSet::new();
+    let mut producers = BTreeMap::new();
+    for edge in direct_edges {
+        direct_relations.insert(edge.relation().to_owned());
+        if edge.resolution() != RelationResolution::Resolved {
+            return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: target_layer.id().to_owned(),
+                message: format!(
+                    "direct dependency {:?} has resolution {:?}; intermediate boundaries require a fully defined in-bundle producer",
+                    edge.relation(),
+                    edge.resolution()
+                ),
+            });
+        }
+        let [producer_id] = edge.producer_layer_ids() else {
+            return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: target_layer.id().to_owned(),
+                message: format!(
+                    "direct dependency {:?} does not resolve to exactly one producer",
+                    edge.relation()
+                ),
+            });
+        };
+        let producer = bundle
+            .layers()
+            .iter()
+            .find(|layer| layer.id() == producer_id)
+            .ok_or_else(|| ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: target_layer.id().to_owned(),
+                message: format!("producer layer {producer_id:?} is missing"),
+            })?;
+        let Some(write_kind) = producer.write_kind() else {
+            return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: target_layer.id().to_owned(),
+                message: format!(
+                    "producer layer {:?} does not expose a complete relation-write contract",
+                    producer.id()
+                ),
+            });
+        };
+        if !write_kind.fully_defines_relation() {
+            return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: target_layer.id().to_owned(),
+                message: format!(
+                    "relation {:?} is produced by partial write kind {write_kind:?}",
+                    edge.relation()
+                ),
+            });
+        }
+        producers.insert(edge.relation().to_owned(), producer);
+    }
+
+    if selected != direct_relations {
+        let missing = direct_relations
+            .difference(&selected)
+            .cloned()
+            .collect::<Vec<_>>();
+        let unexpected = selected
+            .difference(&direct_relations)
+            .cloned()
+            .collect::<Vec<_>>();
+        return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+            layer_id: target_layer.id().to_owned(),
+            message: format!(
+                "intermediate boundary must exactly cover direct target inputs; missing={missing:?}, unexpected={unexpected:?}"
+            ),
+        });
+    }
+
+    let relationships =
+        collect_boundary_relationships(target_layer.id(), target_query, &selected, schemas)?;
+    let include_rejected_domains = relationships.is_empty() && row_counts.rejected() > 0;
+    let mut plans_by_relation = BTreeMap::new();
+    let mut candidates_by_column = BTreeMap::new();
+
+    for relation in boundary.relations() {
+        let schema = schemas
+            .get(relation)
+            .copied()
+            .ok_or_else(|| ProtocolGenerationError::MissingBoundarySchema {
+                relation: relation.clone(),
+            })?;
+        let producer = producers.get(relation).copied().ok_or_else(|| {
+            ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: target_layer.id().to_owned(),
+                message: format!("boundary relation {relation:?} has no resolved producer"),
+            }
+        })?;
+        let producer_semantics = resolved_layer_semantics(producer)?;
+        if let Some(diagnostic) = producer_semantics.diagnostics().first() {
+            return Err(ProtocolGenerationError::UnsupportedSemantics {
+                layer_id: producer.id().to_owned(),
+                code: diagnostic.code().to_owned(),
+                message: diagnostic.message().to_owned(),
+            });
+        }
+
+        validate_intermediate_schema(target_layer.id(), relation, schema, producer_semantics)?;
+        let plans = prepare_intermediate_relation_plans(
+            relation,
+            schema,
+            producer_semantics,
+            target_query,
+            include_rejected_domains,
+            &mut candidates_by_column,
+        )?;
+        plans_by_relation.insert(relation.clone(), plans);
+    }
 
     if relationships.is_empty() {
-        generate_scalar_data(semantics, &schemas, row_counts, seed)
+        generate_prepared_scalar_data(
+            boundary.relations(),
+            schemas,
+            &plans_by_relation,
+            row_counts,
+            seed,
+        )
     } else {
-        generate_relational_data(
-            layer.id(),
-            semantics,
-            &schemas,
+        generate_prepared_relational_data(
+            target_layer.id(),
+            boundary.relations(),
+            schemas,
+            &plans_by_relation,
+            &candidates_by_column,
             &relationships,
             row_counts,
             seed,
         )
     }
+}
+
+fn validate_intermediate_schema(
+    target_layer_id: &str,
+    relation: &str,
+    schema: &RelationSchema,
+    producer_semantics: &ResolvedComposedSemantics,
+) -> Result<(), ProtocolGenerationError> {
+    let declared = schema
+        .columns()
+        .iter()
+        .map(|column| column.name())
+        .collect::<Vec<_>>();
+    let produced = producer_semantics
+        .output()
+        .columns()
+        .iter()
+        .map(|column| column.name())
+        .collect::<Vec<_>>();
+
+    if declared != produced {
+        return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+            layer_id: target_layer_id.to_owned(),
+            message: format!(
+                "declared output schema for {relation:?} does not match producer output columns: declared={declared:?}, produced={produced:?}"
+            ),
+        });
+    }
+
+    Ok(())
+}
+
+fn prepare_intermediate_relation_plans(
+    relation: &str,
+    schema: &RelationSchema,
+    producer_semantics: &ResolvedComposedSemantics,
+    target_query: &QueryStatement,
+    include_rejected_domains: bool,
+    candidates_by_column: &mut BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+) -> Result<Vec<ColumnPlan>, ProtocolGenerationError> {
+    let mut plans = Vec::with_capacity(schema.columns().len());
+
+    for schema_column in schema.columns() {
+        is_supported(schema_column.data_type()).map_err(|_| {
+            unsupported_source_type(relation, schema_column.name(), schema_column.data_type())
+        })?;
+
+        let produced = producer_semantics
+            .output()
+            .columns()
+            .iter()
+            .filter(|column| column.name() == schema_column.name())
+            .collect::<Vec<_>>();
+        let [produced] = produced.as_slice() else {
+            return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: relation.to_owned(),
+                message: format!(
+                    "producer output does not contain exactly one column named {:?}",
+                    schema_column.name()
+                ),
+            });
+        };
+
+        let downstream =
+            find_column_domain(target_query.column_domains(), relation, schema_column.name())?;
+        let matching_values = intersect_boundary_candidates(
+            relation,
+            schema_column.name(),
+            schema_column.data_type(),
+            produced.domain(),
+            downstream,
+        )?;
+        let rejected_values = if include_rejected_domains {
+            boundary_rejected_candidates(
+                relation,
+                schema_column.name(),
+                schema_column.data_type(),
+                produced.domain(),
+                downstream,
+            )?
+        } else {
+            Vec::new()
+        };
+
+        candidates_by_column.insert(
+            RelationshipColumn::new(relation, schema_column.name()),
+            matching_values.clone(),
+        );
+        plans.push(ColumnPlan::new(
+            schema_column.name(),
+            GenerationDomain::Values(matching_values),
+            (!rejected_values.is_empty()).then_some(GenerationDomain::Values(rejected_values)),
+        ));
+    }
+
+    Ok(plans)
+}
+
+fn intersect_boundary_candidates(
+    relation: &str,
+    column: &str,
+    data_type: &DataType,
+    upstream: &ValueDomain,
+    downstream: Option<&ValueDomain>,
+) -> Result<Vec<ProtocolValue>, ProtocolGenerationError> {
+    validate_boundary_domain(relation, column, upstream)?;
+    if let Some(domain) = downstream {
+        validate_boundary_domain(relation, column, domain)?;
+    }
+
+    let mut pool = candidates(data_type, Some(upstream)).map_err(|message| {
+        ProtocolGenerationError::UnsupportedDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+            message,
+        }
+    })?;
+    if let Some(domain) = downstream {
+        for candidate in candidates(data_type, Some(domain)).map_err(|message| {
+            ProtocolGenerationError::UnsupportedDomain {
+                relation: relation.to_owned(),
+                column: column.to_owned(),
+                message,
+            }
+        })? {
+            if !pool.contains(&candidate) {
+                pool.push(candidate);
+            }
+        }
+    }
+
+    let mut matching = Vec::new();
+    for candidate in pool {
+        let upstream_match =
+            value_satisfies_domain(data_type, &candidate, upstream).map_err(|message| {
+                ProtocolGenerationError::UnsupportedDomain {
+                    relation: relation.to_owned(),
+                    column: column.to_owned(),
+                    message,
+                }
+            })?;
+        let downstream_match = match downstream {
+            Some(domain) => value_satisfies_domain(data_type, &candidate, domain).map_err(
+                |message| ProtocolGenerationError::UnsupportedDomain {
+                    relation: relation.to_owned(),
+                    column: column.to_owned(),
+                    message,
+                },
+            )?,
+            None => true,
+        };
+        if upstream_match && downstream_match && !matching.contains(&candidate) {
+            matching.push(candidate);
+        }
+    }
+
+    if matching.is_empty() {
+        return Err(ProtocolGenerationError::EmptyDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+        });
+    }
+
+    Ok(matching)
+}
+
+fn boundary_rejected_candidates(
+    relation: &str,
+    column: &str,
+    data_type: &DataType,
+    upstream: &ValueDomain,
+    downstream: Option<&ValueDomain>,
+) -> Result<Vec<ProtocolValue>, ProtocolGenerationError> {
+    let Some(downstream) = downstream else {
+        return Ok(Vec::new());
+    };
+    validate_boundary_domain(relation, column, downstream)?;
+
+    let values = rejected_candidates(data_type, downstream).map_err(|message| {
+        ProtocolGenerationError::UnsupportedDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+            message: format!("cannot derive boundary rejected values: {message}"),
+        }
+    })?;
+    let mut result = Vec::new();
+    for value in values {
+        if value_satisfies_domain(data_type, &value, upstream).map_err(|message| {
+            ProtocolGenerationError::UnsupportedDomain {
+                relation: relation.to_owned(),
+                column: column.to_owned(),
+                message,
+            }
+        })? {
+            result.push(value);
+        }
+    }
+    Ok(result)
+}
+
+fn validate_boundary_domain(
+    relation: &str,
+    column: &str,
+    domain: &ValueDomain,
+) -> Result<(), ProtocolGenerationError> {
+    match domain {
+        ValueDomain::Empty => Err(ProtocolGenerationError::EmptyDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+        }),
+        ValueDomain::Unknown(unknown) => Err(ProtocolGenerationError::UnknownDomain {
+            relation: relation.to_owned(),
+            column: column.to_owned(),
+            reason: unknown.reason().to_owned(),
+        }),
+        _ => Ok(()),
+    }
+}
+
+fn collect_boundary_relationships(
+    layer_id: &str,
+    query: &QueryStatement,
+    selected: &BTreeSet<String>,
+    schemas: &BTreeMap<String, &RelationSchema>,
+) -> Result<Vec<EqualityRelationship>, ProtocolGenerationError> {
+    reject_unsupported_relational_predicates(layer_id, query)?;
+    let mut relationships = BTreeSet::new();
+
+    for join in query.joins() {
+        if join.kind() == JoinKind::Cross && join.condition().is_none() {
+            continue;
+        }
+        if join.kind() != JoinKind::Inner {
+            return Err(ProtocolGenerationError::UnsupportedRelationship {
+                layer_id: layer_id.to_owned(),
+                message: format!(
+                    "join kind {:?} does not define the required matching/non-matching witness contract",
+                    join.kind()
+                ),
+            });
+        }
+
+        let condition = join.condition().ok_or_else(|| {
+            ProtocolGenerationError::UnsupportedRelationship {
+                layer_id: layer_id.to_owned(),
+                message: "inner join has no resolved condition".to_owned(),
+            }
+        })?;
+        let mut equalities = Vec::new();
+        collect_column_equalities(layer_id, condition, &mut equalities)?;
+
+        for (left_expression, right_expression) in equalities {
+            let left_relation = source_relation_for_column(layer_id, query, &left_expression)?;
+            let right_relation = source_relation_for_column(layer_id, query, &right_expression)?;
+            if !selected.contains(left_relation) || !selected.contains(right_relation) {
+                return Err(ProtocolGenerationError::InvalidGenerationBoundary {
+                    layer_id: layer_id.to_owned(),
+                    message: "join relationship crosses outside the selected intermediate boundary"
+                        .to_owned(),
+                });
+            }
+
+            let left = RelationshipColumn::new(left_relation, left_expression.name());
+            let right = RelationshipColumn::new(right_relation, right_expression.name());
+            if left == right {
+                return Err(ProtocolGenerationError::UnsupportedRelationship {
+                    layer_id: layer_id.to_owned(),
+                    message: format!(
+                        "relationship {} = {} resolves to the same boundary column",
+                        left.describe(),
+                        right.describe()
+                    ),
+                });
+            }
+            validate_relationship_types(layer_id, schemas, &left, &right)?;
+            relationships.insert(EqualityRelationship::new(left, right));
+        }
+    }
+
+    Ok(relationships.into_iter().collect())
+}
+
+fn generate_prepared_scalar_data(
+    relations: &[String],
+    schemas: &BTreeMap<String, &RelationSchema>,
+    plans_by_relation: &BTreeMap<String, Vec<ColumnPlan>>,
+    row_counts: GenerationRowCounts,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    let mut tables = BTreeMap::new();
+
+    for relation in relations {
+        let schema = source_schema(schemas, relation).map_err(|_| {
+            ProtocolGenerationError::MissingBoundarySchema {
+                relation: relation.clone(),
+            }
+        })?;
+        let plans = plans_by_relation.get(relation).ok_or_else(|| {
+            ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: relation.clone(),
+                message: "prepared boundary plan is missing".to_owned(),
+            }
+        })?;
+        if row_counts.rejected() > 0 && !plans.iter().any(ColumnPlan::is_rejectable) {
+            return Err(ProtocolGenerationError::NoRejectableColumn {
+                relation: relation.clone(),
+            });
+        }
+
+        let generated = Generator::new()
+            .generate_classified_protocol_values(
+                row_counts.matching(),
+                row_counts.rejected(),
+                seed,
+                plans,
+            )
+            .map_err(|source| ProtocolGenerationError::Generator {
+                relation: relation.clone(),
+                source,
+            })?;
+        let table = build_protocol_table(relation, schema, row_counts.total(), generated)?;
+        tables.insert(relation.clone(), table);
+    }
+
+    Ok(GeneratedData { tables, row_counts })
+}
+
+fn generate_prepared_relational_data(
+    layer_id: &str,
+    relations: &[String],
+    schemas: &BTreeMap<String, &RelationSchema>,
+    plans_by_relation: &BTreeMap<String, Vec<ColumnPlan>>,
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    relationships: &[EqualityRelationship],
+    row_counts: GenerationRowCounts,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    let mut generated_by_relation = BTreeMap::new();
+
+    for relation in relations {
+        let plans = plans_by_relation.get(relation).ok_or_else(|| {
+            ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: layer_id.to_owned(),
+                message: format!("prepared plan for relation {relation:?} is missing"),
+            }
+        })?;
+        let generated = Generator::new()
+            .generate_classified_protocol_values(row_counts.total(), 0, seed, plans)
+            .map_err(|source| ProtocolGenerationError::Generator {
+                relation: relation.clone(),
+                source,
+            })?;
+        generated_by_relation.insert(relation.clone(), generated);
+    }
+
+    let adjacency = relationship_adjacency(relationships);
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let matching_values = choose_component_values(candidates_by_column, &adjacency, &mut rng)?;
+
+    for (column, value) in &matching_values {
+        for row in 0..row_counts.total() {
+            set_generated_value(
+                &mut generated_by_relation,
+                schemas,
+                column,
+                row,
+                value.clone(),
+            )?;
+        }
+    }
+
+    if row_counts.rejected() > 0 {
+        let witnesses = relationship_witnesses(
+            relationships,
+            candidates_by_column,
+            &adjacency,
+            &matching_values,
+            &mut rng,
+        )?;
+        if witnesses.is_empty() {
+            return Err(ProtocolGenerationError::NoBreakableRelationship {
+                layer_id: layer_id.to_owned(),
+            });
+        }
+
+        for offset in 0..row_counts.rejected() {
+            let witness_index =
+                sample_relationship_index(&mut rng, witnesses.len(), "relationship witness")?;
+            let witness = witnesses.get(witness_index).ok_or_else(|| {
+                ProtocolGenerationError::InvalidRowConfiguration {
+                    message: "selected relationship witness is missing".to_owned(),
+                }
+            })?;
+            set_generated_value(
+                &mut generated_by_relation,
+                schemas,
+                &witness.column,
+                row_counts.matching() + offset,
+                witness.value.clone(),
+            )?;
+        }
+    }
+
+    let mut tables = BTreeMap::new();
+    for relation in relations {
+        let schema = schemas
+            .get(relation)
+            .copied()
+            .ok_or_else(|| ProtocolGenerationError::MissingBoundarySchema {
+                relation: relation.clone(),
+            })?;
+        let generated = generated_by_relation.remove(relation).ok_or_else(|| {
+            ProtocolGenerationError::InvalidGenerationBoundary {
+                layer_id: layer_id.to_owned(),
+                message: format!("generated relation {relation:?} is missing"),
+            }
+        })?;
+        let table = build_protocol_table(relation, schema, row_counts.total(), generated)?;
+        tables.insert(relation.clone(), table);
+    }
+
+    Ok(GeneratedData { tables, row_counts })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
