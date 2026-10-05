@@ -111,9 +111,10 @@ impl fmt::Display for GeneratorError {
                 formatter,
                 "column {column:?} domain with {value_count} values is too large to sample"
             ),
-            Self::ProtocolSampling { column, message } => {
-                write!(formatter, "could not sample protocol domain for column {column:?}: {message}")
-            }
+            Self::ProtocolSampling { column, message } => write!(
+                formatter,
+                "could not sample protocol domain for column {column:?}: {message}"
+            ),
             Self::ProtocolOnlyDomain { column } => {
                 write!(
                     formatter,
