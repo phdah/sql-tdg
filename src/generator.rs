@@ -5,9 +5,9 @@ use std::fmt;
 
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
+use sql_semantic_protocol::{DataType, ValueRange};
 
 use crate::protocol_value::{ProtocolValue, sample_range_value, sample_rejected_range_value};
-use sql_semantic_protocol::{DataType, ValueRange};
 use crate::solver::{BoolDomain, IntDomain, SolverError, TimestampDomain};
 use crate::table::{Table, TableError, TableValue};
 use crate::types::{Column, ColumnType, Constraint};
