@@ -91,10 +91,10 @@ is not part of the active implementation.
 The production CLI only generates backend-neutral relation files and reproducibility metadata. It
 does not connect to, seed, execute against, or verify a database.
 
-For raw SQL, declare the typed source schema explicitly. Repeat \`--sql\`, \`--file\`, and
-\`--schema\` as needed:
+For raw SQL, declare the typed source schema explicitly. Repeat `--sql`, `--file`, and
+`--schema` as needed:
 
-\`\`\`console
+```console
 sql-tdg generate \
   --dialect duckdb \
   --sql 'SELECT amount FROM orders WHERE amount >= 10 AND amount < 20' \
@@ -104,21 +104,21 @@ sql-tdg generate \
   --seed 42 \
   --format parquet \
   --output .sql-tdg/orders
-\`\`\`
+```
 
-Schema entries use \`RELATION:COLUMN=SQL_TYPE\`. SQL types are normalized by SQL Semantic Protocol
+Schema entries use `RELATION:COLUMN=SQL_TYPE`. SQL types are normalized by SQL Semantic Protocol
 using the selected dialect. Parquet is the default and preferred lossless format. CSV is available
 for flat interoperability workflows.
 
-Use \`--target <relation>\` when a bundle has multiple named terminal outcomes, or
-\`--target-layer <layer-id>\` for an anonymous terminal outcome. By default the CLI materializes
-physical source relations. Repeat \`--boundary <relation>\` to materialize explicitly selected
+Use `--target <relation>` when a bundle has multiple named terminal outcomes, or
+`--target-layer <layer-id>` for an anonymous terminal outcome. By default the CLI materializes
+physical source relations. Repeat `--boundary <relation>` to materialize explicitly selected
 intermediate relations instead.
 
-For dbt, first produce normal dbt artifacts, including \`catalog.json\`, then point sql-tdg at the
+For dbt, first produce normal dbt artifacts, including `catalog.json`, then point sql-tdg at the
 project:
 
-\`\`\`console
+```console
 dbt compile
 dbt docs generate
 
@@ -130,23 +130,23 @@ sql-tdg generate \
   --seed 42 \
   --format parquet \
   --output .sql-tdg/customer-summary
-\`\`\`
+```
 
 You can also pass artifacts directly:
 
-\`\`\`console
+```console
 sql-tdg generate \
   --dbt-manifest target/manifest.json \
   --dbt-catalog target/catalog.json \
   --target warehouse.analytics.customer_summary \
   --output .sql-tdg/customer-summary
-\`\`\`
+```
 
 The dbt adapter and dialect come from SQL Semantic Protocol. The CLI does not interpret dbt SQL or
 artifact semantics itself.
 
 Each successful run writes one deterministic relation file per generated relation plus
-\`metadata.sqltdg\`. The metadata records the workload identity, selected target and boundary,
+`metadata.sqltdg`. The metadata records the workload identity, selected target and boundary,
 dialect, seed, generated relation row classifications, and the normalized SQL Semantic Protocol
 snapshot needed to reproduce the generation inputs.
 
