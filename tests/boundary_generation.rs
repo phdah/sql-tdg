@@ -1,6 +1,7 @@
 use sql_tdg::{
     GenerationBoundary, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError,
-    RelationSchema, SchemaColumn, generate_classified_from_sql_at_boundary,
+    RelationSchema, SchemaColumn, generate_classified_from_sql,
+    generate_classified_from_sql_at_boundary,
 };
 
 const SEED: u64 = 42;
@@ -45,6 +46,27 @@ fn intermediate_boundary_materializes_only_direct_upstream_relation() {
     let boundary = GenerationBoundary::intermediate_relations(["stage_orders"])
         .expect("boundary should build");
     let counts = GenerationRowCounts::new(4, 6).expect("row counts should be valid");
+
+    let physical = generate_classified_from_sql(sql, "generic", &schemas, counts, SEED)
+        .expect("physical source generation should succeed");
+    assert_eq!(physical.tables().len(), 1);
+    assert!(physical.table("stage_orders").is_none());
+    let raw_amounts = physical
+        .table("raw_orders")
+        .expect("physical source should be materialized")
+        .get_ints("amount")
+        .expect("raw amount should be readable")
+        .expect("raw amount should be built");
+    assert!(
+        raw_amounts[..counts.matching()]
+            .iter()
+            .all(|value| (10..=20).contains(value))
+    );
+    assert!(
+        raw_amounts[counts.matching()..]
+            .iter()
+            .all(|value| !(10..=20).contains(value))
+    );
 
     let generated = generate_classified_from_sql_at_boundary(
         sql,
