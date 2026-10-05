@@ -1,6 +1,6 @@
 ---
 id: TASK-16
-title: Add DuckDB materialization execution and result snapshots
+title: Add test-only DuckDB execution and backend-neutral file exports
 status: Done
 assignee: []
 created_date: '2026-10-04'
@@ -12,34 +12,38 @@ dependencies:
 
 ## Description
 
-Add DuckDB as the first executable test backend.
+Keep sql-tdg's production boundary backend-neutral while adding the execution machinery required to
+test generated data end to end.
 
-Materialize generated relations into a DuckDB database, execute the real SQL workload, capture an
-approved expected result, and later verify the same workload against that expected result. This is
-the behavior-regression layer: changing a predicate, join, grouping, projection, or other SQL
-semantics should cause verification to fail unless the new result is explicitly approved.
+Generated relations remain Arrow-backed library outputs and can be exported as CSV or Parquet.
+sql-tdg must not connect to, create, seed, or mutate a user's database. DuckDB exists only as a
+repository test harness so real SQL can be executed against generated data and compared with
+explicit expected-result snapshots.
 
 ## Progress
 
-Added an isolated DuckDB execution boundary that materializes protocol-backed generated tables,
-executes ordered raw SQL workloads, canonicalizes complete results, persists explicit approval
-snapshots, and verifies current workload output without implicit re-approval. File-backed databases
-are explicit outputs and can be reopened read-only for verification. Integration coverage exercises
-qualified relations, shared TASK-12 datatypes, deterministic regeneration, multi-statement
-execution, and both widening and narrowing predicate regressions.
+Added Arrow RecordBatch, CSV, and Parquet export helpers as the production persistence boundary.
+Moved DuckDB to a dev dependency and removed DuckDB execution from the public library API. The
+test-only DuckDB harness materializes protocol-backed generated tables, executes ordered raw SQL
+workloads, canonicalizes complete results, persists explicit approval snapshots, and verifies
+current workload output without implicit re-approval. Nested DuckDB values are constructed from
+scalar bind parameters because duckdb-rs does not bind LIST/ARRAY/STRUCT/MAP values directly.
 
 ## Acceptance Criteria
 
-- [x] Generated Arrow tables can be materialized into DuckDB with exact supported types and qualified relation names.
+- [x] Generated tables remain backend-neutral Arrow-backed library values.
+- [x] Finalized tables can be exposed as Arrow RecordBatch values without database-specific code.
+- [x] Flat generated tables can be exported as CSV for common interoperability workflows.
+- [x] Generated tables can be exported as Parquet with Arrow schema metadata preserved.
+- [x] DuckDB is a dev-only dependency and no DuckDB executor is exposed from the production library API.
+- [x] The test harness can materialize generated relations into DuckDB with exact supported types and qualified relation names.
 - [x] Arrow-to-DuckDB round-trip tests prove every TASK-12 datatype supported by both systems preserves type and value semantics.
 - [x] A fresh deterministic database can be reproduced from the same test-case metadata and seed.
 - [x] The execution harness can run ordered multi-statement raw SQL workloads against the generated database.
 - [x] The harness can capture and persist an approved expected result for each selected outcome.
 - [x] Verification executes the current SQL and compares the complete result against the approved result.
 - [x] Result comparison is deterministic and defines handling for ordering, NULLs, decimals/floats, and nested values.
-- [x] A fixture proves that changing a filter to admit one previously rejected row fails verification.
-- [x] A fixture proves that making a filter stricter and losing an expected row fails verification.
-- [x] Database and snapshot writes are explicit outputs and never mutate source fixtures during read-only verification.
-- [x] DuckDB-specific code is isolated behind execution/materialization boundaries rather than leaking into solver semantics.
-- [x] Any new dependency is added only after the repository's dependency-approval rule is satisfied.
+- [x] Fixtures prove both widening and narrowing predicate changes fail verification.
+- [x] DuckDB-specific code remains test-only and never leaks into protocol, solver, generation, or public storage APIs.
+- [x] New dependencies are limited to Arrow CSV/Parquet export support plus the already-approved dev-only DuckDB harness.
 - [x] `make rust-checks` remains green.
