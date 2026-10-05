@@ -207,6 +207,42 @@ pub(crate) fn rejected_candidates(
     }
 }
 
+pub(crate) fn value_satisfies_domain(
+    data_type: &DataType,
+    value: &ProtocolValue,
+    domain: &ValueDomain,
+) -> Result<bool, String> {
+    if !value_is_representable(data_type, value)? {
+        return Ok(false);
+    }
+
+    match domain {
+        ValueDomain::Unbounded => Ok(true),
+        ValueDomain::Empty => Ok(false),
+        ValueDomain::Unknown(unknown) => Err(unknown.reason().to_owned()),
+        ValueDomain::Ranges(ranges) => {
+            if matches!(value, ProtocolValue::Null) {
+                Ok(false)
+            } else {
+                value_in_any_range(value, ranges.ranges(), data_type)
+            }
+        }
+        ValueDomain::Set(set) => {
+            let members = set
+                .values()
+                .iter()
+                .map(|literal| value_from_literal(data_type, literal))
+                .collect::<Result<Vec<_>, _>>()?;
+            let contains = members.contains(value);
+            Ok(match set.mode() {
+                SetMode::Include => contains,
+                SetMode::Exclude => !contains,
+            })
+        }
+        _ => Err("unsupported protocol value-domain variant".to_owned()),
+    }
+}
+
 fn nullable_rejected_candidates(
     inner: &DataType,
     domain: &ValueDomain,
