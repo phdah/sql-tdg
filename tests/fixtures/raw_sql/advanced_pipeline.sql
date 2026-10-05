@@ -5,7 +5,7 @@ SELECT
     amount,
     CASE WHEN amount >= 100 THEN 'high' ELSE 'standard' END AS amount_bucket
 FROM raw_orders
-WHERE amount = 100;
+WHERE amount >= 100;
 
 CREATE VIEW stage_customers AS
 SELECT
