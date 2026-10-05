@@ -272,15 +272,9 @@ impl DuckDbExecutor {
             return Ok(());
         }
 
-        let placeholders = std::iter::repeat_n("?", fields.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let mut insert = self
-            .connection
-            .prepare(&format!("INSERT INTO {qualified} VALUES ({placeholders})"))?;
-
         for row_index in 0..table.dim().rows() {
-            let mut values = Vec::with_capacity(fields.len());
+            let mut expressions = Vec::with_capacity(fields.len());
+            let mut parameters = Vec::with_capacity(fields.len());
             for (column_index, field) in fields.iter().enumerate() {
                 let array = table.array(field.name())?.ok_or_else(|| {
                     DuckDbExecutionError::UnbuiltColumn {
@@ -289,9 +283,16 @@ impl DuckDbExecutor {
                     }
                 })?;
                 let protocol_type = protocol_schema.map(|schema| schema[column_index].data_type());
-                values.push(arrow_value(array, row_index, protocol_type)?);
+                let value = arrow_value(array, row_index, protocol_type)?;
+                expressions.push(bind_expression(value, &mut parameters)?);
             }
-            insert.execute(params_from_iter(values))?;
+            self.connection.execute(
+                &format!(
+                    "INSERT INTO {qualified} VALUES ({})",
+                    expressions.join(", ")
+                ),
+                params_from_iter(parameters),
+            )?;
         }
 
         Ok(())
@@ -637,6 +638,58 @@ fn arrow_value(
         unsupported => Err(DuckDbExecutionError::UnsupportedArrowType {
             data_type: unsupported.to_string(),
         }),
+    }
+}
+
+fn bind_expression(
+    value: Value,
+    parameters: &mut Vec<Value>,
+) -> Result<String, DuckDbExecutionError> {
+    match value {
+        Value::List(values) | Value::Array(values) => {
+            let expressions = values
+                .into_iter()
+                .map(|value| bind_expression(value, parameters))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("[{}]", expressions.join(", ")))
+        }
+        Value::Struct(values) => {
+            let expressions = values
+                .iter()
+                .map(|(name, value)| {
+                    Ok(format!(
+                        "{}: {}",
+                        quote_literal(name),
+                        bind_expression(value.clone(), parameters)?
+                    ))
+                })
+                .collect::<Result<Vec<_>, DuckDbExecutionError>>()?;
+            Ok(format!("{{{}}}", expressions.join(", ")))
+        }
+        Value::Map(values) => {
+            let mut keys = Vec::with_capacity(values.len());
+            let mut mapped_values = Vec::with_capacity(values.len());
+            for (key, value) in values.iter() {
+                keys.push(bind_expression(key.clone(), parameters)?);
+                mapped_values.push(bind_expression(value.clone(), parameters)?);
+            }
+            Ok(format!(
+                "MAP([{}], [{}])",
+                keys.join(", "),
+                mapped_values.join(", ")
+            ))
+        }
+        Value::Enum(value) => {
+            parameters.push(Value::Text(value));
+            Ok("?".to_owned())
+        }
+        Value::Union(_) => Err(DuckDbExecutionError::InvalidArrowValue {
+            data_type: "DuckDB UNION parameter materialization is unsupported".to_owned(),
+        }),
+        scalar => {
+            parameters.push(scalar);
+            Ok("?".to_owned())
+        }
     }
 }
 
