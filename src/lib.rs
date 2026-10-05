@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod execution;
 pub mod generator;
 pub mod protocol;
 mod protocol_value;
@@ -10,6 +11,7 @@ pub mod table;
 pub mod test_case;
 pub mod types;
 
+pub use execution::{DuckDbExecutionError, DuckDbExecutor};
 pub use generator::{Generator, GeneratorError};
 pub use protocol::{
     GeneratedData, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError,
