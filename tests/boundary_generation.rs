@@ -207,8 +207,8 @@ fn intermediate_boundary_must_cover_every_direct_target_input() {
         schema("stage_orders", &[("customer_id", "INTEGER")]),
         schema("stage_customers", &[("id", "INTEGER")]),
     ];
-    let boundary =
-        GenerationBoundary::intermediate_relations(["stage_orders"]).expect("boundary should build");
+    let boundary = GenerationBoundary::intermediate_relations(["stage_orders"])
+        .expect("boundary should build");
 
     let error = generate_classified_from_sql_at_boundary(
         sql,
