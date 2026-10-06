@@ -89,17 +89,28 @@ jobs:
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
           test -n "$version"
 
-          if ! curl --fail --silent --show-error             "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/v${version}"             >/dev/null; then
+          if ! curl --fail --silent --show-error \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/v${version}" \
+            >/dev/null; then
             echo "required=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if curl --fail --silent --show-error             --user-agent "sql-tdg-release-workflow (+https://github.com/phdah/sql-tdg)"             "https://crates.io/api/v1/crates/sql-tdg/${version}"             >/dev/null; then
+          if curl --fail --silent --show-error \
+            --user-agent "sql-tdg-release-workflow (+https://github.com/phdah/sql-tdg)" \
+            "https://crates.io/api/v1/crates/sql-tdg/${version}" \
+            >/dev/null; then
             echo "required=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "required=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain for publish recovery
+        if: steps.recovery.outputs.required == 'true'
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
 
       - name: Verify tagged version for publish recovery
         if: steps.recovery.outputs.required == 'true'
