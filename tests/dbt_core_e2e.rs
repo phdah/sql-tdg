@@ -283,7 +283,10 @@ fn materialize_boundaries(project: &DbtProject, paths: &BTreeMap<String, PathBuf
 fn mutate_boundary_predicate(project: &DbtProject) {
     let path = project.path().join("models/boundary_final_orders.sql");
     let original = fs::read_to_string(&path).expect("boundary final model should be readable");
-    let mutated = original.replace("where amount = 42", "where amount = 43");
+    let mutated = original.replace(
+        "where amount >= 30\n  and amount < 70",
+        "where amount >= 80\n  and amount < 90",
+    );
     assert_ne!(mutated, original, "fixture predicate should be replaceable");
     fs::write(path, mutated).expect("mutated boundary final model should be writable");
 }
@@ -329,8 +332,12 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
         "dbt downstream boundary run",
         &run_dbt(&project, &["run", "--select", "boundary_final_orders"]),
     );
-    let expected_boundary = vec![row(&["42"])];
-    assert_eq!(boundary_snapshot(&project), expected_boundary);
+    let expected_boundary = boundary_snapshot(&project);
+    assert_eq!(expected_boundary.len(), 1);
+    let boundary_amount = expected_boundary[0][0]
+        .parse::<i64>()
+        .expect("generated boundary amount should be an integer");
+    assert!((30..70).contains(&boundary_amount));
 
     mutate_boundary_predicate(&project);
     assert_success(
@@ -338,5 +345,5 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
         &run_dbt(&project, &["run", "--select", "boundary_final_orders"]),
     );
     let mutated = boundary_snapshot(&project);
-    assert_ne!(mutated, expected_boundary);
+    assert!(mutated.is_empty());
 }

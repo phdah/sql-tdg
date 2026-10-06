@@ -3,5 +3,6 @@ select
     score,
     active
 from {{ source('raw', 'customers') }}
-where score = 7
+where score >= 5
+  and score < 15
   and active = true

@@ -3,4 +3,5 @@ select
     status,
     region
 from {{ ref('enriched_orders') }}
-where amount = 42
+where amount >= 40
+  and amount < 60

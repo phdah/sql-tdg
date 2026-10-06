@@ -7,5 +7,6 @@ select
     amount,
     region
 from {{ source('raw', 'legacy_orders') }}
-where amount = 42
+where amount >= 30
+  and amount < 60
   and region = 'north'
