@@ -1,0 +1,112 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    env:
+      DUCKDB_DOWNLOAD_LIB: "1"
+
+    steps:
+      - name: Create or update release
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Check out generated release PR
+        if: steps.release.outputs.prs_created == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+
+      - name: Install Rust components
+        if: steps.release.outputs.prs_created == 'true'
+        run: rustup component add rustfmt clippy
+
+      - name: Run Rust release checks
+        if: steps.release.outputs.prs_created == 'true'
+        run: make rust-checks
+
+      - name: Install dbt end-to-end dependencies
+        if: steps.release.outputs.prs_created == 'true'
+        run: python -m pip install --disable-pip-version-check -r tests/requirements-dbt-e2e.txt
+
+      - name: Run dbt end-to-end release check
+        if: steps.release.outputs.prs_created == 'true'
+        run: make dbt-e2e
+
+      - name: Verify crates.io package
+        if: steps.release.outputs.prs_created == 'true'
+        run: cargo publish --dry-run --locked
+
+      - name: Verify packaged CLI installation
+        if: steps.release.outputs.prs_created == 'true'
+        run: |
+          install_root="$RUNNER_TEMP/sql-tdg-install"
+          rm -rf "$install_root"
+          cargo install --path . --locked --root "$install_root"
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          test "$("$install_root/bin/sql-tdg" --version)" = "sql-tdg $version"
+          "$install_root/bin/sql-tdg" --help >/dev/null
+
+      - name: Check out released revision
+        if: steps.release.outputs.release_created == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+
+      - name: Verify released version
+        if: steps.release.outputs.release_created == 'true'
+        run: |
+          test "v${{ steps.release.outputs.version }}" = "${{ steps.release.outputs.tag_name }}"
+          cargo test --test version_contract
+
+      - name: Publish crate to crates.io
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
+
+      - name: Check out current revision for publish recovery
+        if: steps.release.outputs.release_created != 'true'
+        uses: actions/checkout@v4
+
+      - name: Detect unpublished tagged crate
+        id: recovery
+        if: steps.release.outputs.release_created != 'true'
+        run: |
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          test -n "$version"
+
+          if ! curl --fail --silent --show-error             "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/v${version}"             >/dev/null; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if curl --fail --silent --show-error             --user-agent "sql-tdg-release-workflow (+https://github.com/phdah/sql-tdg)"             "https://crates.io/api/v1/crates/sql-tdg/${version}"             >/dev/null; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "required=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tagged version for publish recovery
+        if: steps.recovery.outputs.required == 'true'
+        run: cargo test --test version_contract
+
+      - name: Recover unpublished crate on crates.io
+        if: steps.recovery.outputs.required == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
