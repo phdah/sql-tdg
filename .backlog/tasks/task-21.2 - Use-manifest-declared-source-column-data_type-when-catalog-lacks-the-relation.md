@@ -4,9 +4,14 @@ title: Use manifest-declared source column data_type when catalog lacks the rela
 status: To Do
 assignee: []
 created_date: '2026-10-06 09:18'
+updated_date: '2026-10-06 13:26'
 labels: []
 milestone: m-2
 dependencies: []
+references:
+  - >-
+    sql-semantic-protocol TASK-34 (Use manifest-declared column data_type when
+    catalog lacks a relation, milestone 1.1.0)
 parent_task_id: TASK-21
 priority: medium
 type: feature

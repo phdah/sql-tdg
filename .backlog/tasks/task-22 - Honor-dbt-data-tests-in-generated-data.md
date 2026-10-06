@@ -4,8 +4,16 @@ title: Honor dbt data tests in generated data
 status: To Do
 assignee: []
 created_date: '2026-10-06 12:39'
+updated_date: '2026-10-06 13:26'
 labels: []
 dependencies: []
+references:
+  - >-
+    sql-semantic-protocol TASK-33 (not-null and accepted-values constraints,
+    milestone 1.1.0)
+  - >-
+    sql-semantic-protocol TASK-29 and TASK-30 (key and foreign-key constraints,
+    milestone 1.1.0)
 priority: medium
 type: feature
 ---

@@ -4,9 +4,14 @@ title: Cover every CASE branch of output columns in generated data
 status: To Do
 assignee: []
 created_date: '2026-10-06 12:39'
+updated_date: '2026-10-06 13:26'
 labels: []
 milestone: m-2
 dependencies: []
+references:
+  - >-
+    sql-semantic-protocol TASK-32 (Emit per-branch source-column domains for
+    CASE output expressions, milestone 1.1.0)
 parent_task_id: TASK-21
 priority: medium
 type: feature

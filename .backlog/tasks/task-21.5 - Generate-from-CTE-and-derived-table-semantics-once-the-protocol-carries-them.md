@@ -4,11 +4,15 @@ title: Generate from CTE and derived-table semantics once the protocol carries t
 status: To Do
 assignee: []
 created_date: '2026-10-06 12:39'
-updated_date: '2026-10-06 12:39'
+updated_date: '2026-10-06 13:26'
 labels: []
 milestone: m-2
 dependencies:
   - TASK-21.4
+references:
+  - >-
+    sql-semantic-protocol TASK-31 (Carry CTE and derived-table semantics through
+    query analysis, milestone 1.1.0)
 parent_task_id: TASK-21
 priority: high
 type: feature

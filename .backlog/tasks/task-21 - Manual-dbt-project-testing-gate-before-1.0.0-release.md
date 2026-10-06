@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@opencode'
 created_date: '2026-10-06 08:23'
-updated_date: '2026-10-06 09:30'
+updated_date: '2026-10-06 12:45'
 labels: []
 milestone: m-2
 dependencies: []
@@ -50,4 +50,6 @@ Subtasks (sequenced):
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-06 gate findings on branch feat/dbt-whole-project-generation (TASK-21.1 and TASK-21.3 done; TASK-21.2 pending protocol work). Further findings awaiting maintainer decision: (1) `--target` requires the exact quoted protocol identity (`"target"."main"."daily_revenue"`); `target.main.daily_revenue` fails with `unknown terminal outcome`, and the README dbt example shows an unquoted name. (2) Output filenames keep quote characters as underscores (`0001-_target_._main_._order_items_.csv`). (3) dbt data tests (unique, not_null, accepted_values, relationships) are not honored: on the maintainer fixture, `dbt build` fails 4 source tests on generated data. (4) Whole-project mode fails if any model has unsupported semantics (e.g. EXISTS in the e2e fixture's subquery_orders); there is no way to exclude models.
+
+2026-10-06 later: TASK-21.4 (CTE/derived-table guard) and TASK-21.6 (moderate unconstrained values) done. Blocked on sql-semantic-protocol features: (P1) carry joins, predicates, column domains, and lineage through CTEs and derived tables, and resolve `select *` from catalog schemas, instead of reporting resolved semantics with these dropped -> unblocks TASK-21.5; (P2) per-branch source-column domains for CASE output expressions -> unblocks TASK-21.7; (P3) canonical not_null and accepted_values constraints from dbt tests, in addition to protocol TASK-29/30 keys and relationships -> unblocks TASK-22; (P4) manifest-declared column data_type fallback -> unblocks TASK-21.2.
 <!-- SECTION:NOTES:END -->
