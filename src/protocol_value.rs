@@ -14,8 +14,9 @@ use arrow_array::builder::{
 };
 use arrow_schema::{DataType as ArrowDataType, Field, Fields, TimeUnit};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
+use rand_core::Rng;
 use sql_semantic_protocol::{
-    DataType, LiteralExpression, LiteralType, LiteralValue, SetMode, ValueDomain,
+    DataType, LiteralExpression, LiteralType, LiteralValue, SetMode, ValueDomain, ValueRange,
 };
 
 const MAX_FIXED_COLLECTION_LENGTH: u64 = 1_024;
@@ -572,6 +573,400 @@ fn non_null_candidates(
         Some(ValueDomain::Empty) => Ok(Vec::new()),
         Some(ValueDomain::Unknown(unknown)) => Err(unknown.reason().to_owned()),
         Some(_) => Err("unsupported protocol value-domain variant".to_owned()),
+    }
+}
+
+pub(crate) fn sample_range_value<R: Rng + ?Sized>(
+    data_type: &DataType,
+    ranges: &[ValueRange],
+    rng: &mut R,
+) -> Result<ProtocolValue, String> {
+    if ranges.is_empty() {
+        return Err("protocol range domain has no ranges".to_owned());
+    }
+
+    let index = sample_random_index(rng, ranges.len())?;
+    let range = ranges
+        .get(index)
+        .ok_or_else(|| "selected protocol range is missing".to_owned())?;
+    let (lower, upper) = inclusive_range_bounds(data_type, range)?;
+    sample_inclusive_interval(rng, &lower, &upper)
+}
+
+pub(crate) fn sample_rejected_range_value<R: Rng + ?Sized>(
+    data_type: &DataType,
+    ranges: &[ValueRange],
+    rng: &mut R,
+) -> Result<ProtocolValue, String> {
+    let non_null_type = match data_type {
+        DataType::Nullable(inner) => inner.as_ref(),
+        _ => data_type,
+    };
+    let complements = complement_ranges(non_null_type, ranges)?;
+    if complements.is_empty() {
+        if matches!(data_type, DataType::Nullable(_)) {
+            return Ok(ProtocolValue::Null);
+        }
+        return Err("protocol range has no representable complement".to_owned());
+    }
+
+    let index = sample_random_index(rng, complements.len())?;
+    let (lower, upper) = complements
+        .get(index)
+        .ok_or_else(|| "selected rejected protocol range is missing".to_owned())?;
+    sample_inclusive_interval(rng, lower, upper)
+}
+
+fn inclusive_range_bounds(
+    data_type: &DataType,
+    range: &ValueRange,
+) -> Result<(ProtocolValue, ProtocolValue), String> {
+    let non_null_type = match data_type {
+        DataType::Nullable(inner) => inner.as_ref(),
+        _ => data_type,
+    };
+    let (type_min, type_max) = ordered_type_bounds(non_null_type)?;
+
+    let lower = match range.lower() {
+        Some(bound) => {
+            let value = value_from_literal(non_null_type, bound.value())?;
+            if bound.inclusive() {
+                value
+            } else {
+                step_value(&value, true).ok_or_else(|| {
+                    "exclusive lower bound has no representable successor".to_owned()
+                })?
+            }
+        }
+        None => type_min.clone(),
+    };
+    let upper = match range.upper() {
+        Some(bound) => {
+            let value = value_from_literal(non_null_type, bound.value())?;
+            if bound.inclusive() {
+                value
+            } else {
+                step_value(&value, false).ok_or_else(|| {
+                    "exclusive upper bound has no representable predecessor".to_owned()
+                })?
+            }
+        }
+        None => type_max.clone(),
+    };
+
+    if !value_is_representable(non_null_type, &lower)?
+        || !value_is_representable(non_null_type, &upper)?
+        || compare_values(&lower, &type_min)? == Ordering::Less
+        || compare_values(&upper, &type_max)? == Ordering::Greater
+        || compare_values(&lower, &upper)? == Ordering::Greater
+    {
+        return Err("protocol range contains no representable value for datatype".to_owned());
+    }
+
+    Ok((lower, upper))
+}
+
+fn complement_ranges(
+    data_type: &DataType,
+    ranges: &[ValueRange],
+) -> Result<Vec<(ProtocolValue, ProtocolValue)>, String> {
+    let (type_min, type_max) = ordered_type_bounds(data_type)?;
+    let mut allowed = Vec::with_capacity(ranges.len());
+
+    for range in ranges {
+        let bounds = inclusive_range_bounds(data_type, range)?;
+        let position = allowed
+            .iter()
+            .position(|(lower, _): &(ProtocolValue, ProtocolValue)| {
+                compare_values(&bounds.0, lower).is_ok_and(|order| order == Ordering::Less)
+            })
+            .unwrap_or(allowed.len());
+        allowed.insert(position, bounds);
+    }
+
+    let mut result = Vec::new();
+    let mut cursor = Some(type_min);
+    for (lower, upper) in allowed {
+        let Some(current) = cursor.clone() else {
+            break;
+        };
+
+        if compare_values(&lower, &current)? == Ordering::Greater
+            && let Some(gap_upper) = step_value(&lower, false)
+            && compare_values(&current, &gap_upper)? != Ordering::Greater
+        {
+            result.push((current.clone(), gap_upper));
+        }
+
+        if compare_values(&upper, &current)? != Ordering::Less {
+            cursor = if compare_values(&upper, &type_max)? == Ordering::Less {
+                step_value(&upper, true)
+            } else {
+                None
+            };
+        }
+    }
+
+    if let Some(current) = cursor
+        && compare_values(&current, &type_max)? != Ordering::Greater
+    {
+        result.push((current, type_max));
+    }
+
+    Ok(result)
+}
+
+fn ordered_type_bounds(data_type: &DataType) -> Result<(ProtocolValue, ProtocolValue), String> {
+    match data_type {
+        DataType::SignedInteger { bits } => match bits.unwrap_or(64) {
+            0..=8 => Ok((ProtocolValue::Int8(i8::MIN), ProtocolValue::Int8(i8::MAX))),
+            9..=16 => Ok((
+                ProtocolValue::Int16(i16::MIN),
+                ProtocolValue::Int16(i16::MAX),
+            )),
+            17..=32 => Ok((
+                ProtocolValue::Int32(i32::MIN),
+                ProtocolValue::Int32(i32::MAX),
+            )),
+            33..=64 => Ok((
+                ProtocolValue::Int64(i64::MIN),
+                ProtocolValue::Int64(i64::MAX),
+            )),
+            bits => Err(format!("signed_integer({bits})")),
+        },
+        DataType::UnsignedInteger { bits } => match bits.unwrap_or(64) {
+            0..=8 => Ok((ProtocolValue::UInt8(u8::MIN), ProtocolValue::UInt8(u8::MAX))),
+            9..=16 => Ok((
+                ProtocolValue::UInt16(u16::MIN),
+                ProtocolValue::UInt16(u16::MAX),
+            )),
+            17..=32 => Ok((
+                ProtocolValue::UInt32(u32::MIN),
+                ProtocolValue::UInt32(u32::MAX),
+            )),
+            33..=64 => Ok((
+                ProtocolValue::UInt64(u64::MIN),
+                ProtocolValue::UInt64(u64::MAX),
+            )),
+            bits => Err(format!("unsigned_integer({bits})")),
+        },
+        DataType::Decimal { precision, scale } => {
+            let precision = precision.unwrap_or(38);
+            decimal_shape(precision, scale.unwrap_or(0))?;
+            let limit = pow10_i128(precision)?
+                .checked_sub(1)
+                .ok_or_else(|| "decimal precision underflow".to_owned())?;
+            Ok((
+                ProtocolValue::Decimal128(-limit),
+                ProtocolValue::Decimal128(limit),
+            ))
+        }
+        DataType::FloatingPoint { bits } if bits.unwrap_or(64) <= 32 => Ok((
+            ProtocolValue::Float32((-f32::MAX).to_bits()),
+            ProtocolValue::Float32(f32::MAX.to_bits()),
+        )),
+        DataType::FloatingPoint { bits } if bits.unwrap_or(64) <= 64 => Ok((
+            ProtocolValue::Float64((-f64::MAX).to_bits()),
+            ProtocolValue::Float64(f64::MAX.to_bits()),
+        )),
+        DataType::FloatingPoint { bits } => Err(format!("floating_point({})", bits.unwrap_or(64))),
+        DataType::Date => Ok((
+            ProtocolValue::Date32(i32::MIN),
+            ProtocolValue::Date32(i32::MAX),
+        )),
+        DataType::Time { precision } if precision.is_none_or(|value| value <= 6) => Ok((
+            ProtocolValue::TimeMicroseconds(0),
+            ProtocolValue::TimeMicroseconds(86_399_999_999),
+        )),
+        DataType::Time { precision } if precision.is_some_and(|value| value <= 9) => Ok((
+            ProtocolValue::TimeNanoseconds(0),
+            ProtocolValue::TimeNanoseconds(86_399_999_999_999),
+        )),
+        DataType::Time { precision } => Err(format!("time({})", precision.unwrap_or_default())),
+        DataType::Timestamp { precision } if precision.is_none_or(|value| value <= 6) => Ok((
+            ProtocolValue::TimestampMicroseconds(i64::MIN),
+            ProtocolValue::TimestampMicroseconds(i64::MAX),
+        )),
+        DataType::Timestamp { precision } if precision.is_some_and(|value| value <= 9) => Ok((
+            ProtocolValue::TimestampNanoseconds(i64::MIN),
+            ProtocolValue::TimestampNanoseconds(i64::MAX),
+        )),
+        DataType::Timestamp { precision } => {
+            Err(format!("timestamp({})", precision.unwrap_or_default()))
+        }
+        DataType::Nullable(inner) => ordered_type_bounds(inner),
+        _ => Err("datatype does not support ordered protocol ranges".to_owned()),
+    }
+}
+
+fn sample_inclusive_interval<R: Rng + ?Sized>(
+    rng: &mut R,
+    lower: &ProtocolValue,
+    upper: &ProtocolValue,
+) -> Result<ProtocolValue, String> {
+    macro_rules! sample_signed {
+        ($low:expr, $high:expr, $variant:ident, $target:ty) => {{
+            let sampled = sample_i128_inclusive(rng, i128::from(*$low), i128::from(*$high))?;
+            let value = <$target>::try_from(sampled)
+                .map_err(|_| "sampled signed value is outside datatype range".to_owned())?;
+            Ok(ProtocolValue::$variant(value))
+        }};
+    }
+    macro_rules! sample_unsigned {
+        ($low:expr, $high:expr, $variant:ident, $target:ty) => {{
+            let sampled = sample_u128_inclusive(rng, u128::from(*$low), u128::from(*$high))?;
+            let value = <$target>::try_from(sampled)
+                .map_err(|_| "sampled unsigned value is outside datatype range".to_owned())?;
+            Ok(ProtocolValue::$variant(value))
+        }};
+    }
+
+    match (lower, upper) {
+        (ProtocolValue::Int8(low), ProtocolValue::Int8(high)) => {
+            sample_signed!(low, high, Int8, i8)
+        }
+        (ProtocolValue::Int16(low), ProtocolValue::Int16(high)) => {
+            sample_signed!(low, high, Int16, i16)
+        }
+        (ProtocolValue::Int32(low), ProtocolValue::Int32(high)) => {
+            sample_signed!(low, high, Int32, i32)
+        }
+        (ProtocolValue::Int64(low), ProtocolValue::Int64(high)) => {
+            sample_signed!(low, high, Int64, i64)
+        }
+        (ProtocolValue::UInt8(low), ProtocolValue::UInt8(high)) => {
+            sample_unsigned!(low, high, UInt8, u8)
+        }
+        (ProtocolValue::UInt16(low), ProtocolValue::UInt16(high)) => {
+            sample_unsigned!(low, high, UInt16, u16)
+        }
+        (ProtocolValue::UInt32(low), ProtocolValue::UInt32(high)) => {
+            sample_unsigned!(low, high, UInt32, u32)
+        }
+        (ProtocolValue::UInt64(low), ProtocolValue::UInt64(high)) => {
+            sample_unsigned!(low, high, UInt64, u64)
+        }
+        (ProtocolValue::Decimal128(low), ProtocolValue::Decimal128(high)) => Ok(
+            ProtocolValue::Decimal128(sample_i128_inclusive(rng, *low, *high)?),
+        ),
+        (ProtocolValue::Date32(low), ProtocolValue::Date32(high)) => {
+            sample_signed!(low, high, Date32, i32)
+        }
+        (ProtocolValue::TimeMicroseconds(low), ProtocolValue::TimeMicroseconds(high)) => {
+            Ok(ProtocolValue::TimeMicroseconds(sample_i128_inclusive(
+                rng,
+                i128::from(*low),
+                i128::from(*high),
+            )? as i64))
+        }
+        (ProtocolValue::TimeNanoseconds(low), ProtocolValue::TimeNanoseconds(high)) => {
+            Ok(ProtocolValue::TimeNanoseconds(sample_i128_inclusive(
+                rng,
+                i128::from(*low),
+                i128::from(*high),
+            )? as i64))
+        }
+        (ProtocolValue::TimestampMicroseconds(low), ProtocolValue::TimestampMicroseconds(high)) => {
+            Ok(ProtocolValue::TimestampMicroseconds(
+                i64::try_from(sample_i128_inclusive(
+                    rng,
+                    i128::from(*low),
+                    i128::from(*high),
+                )?)
+                .map_err(|_| "sampled timestamp is outside datatype range".to_owned())?,
+            ))
+        }
+        (ProtocolValue::TimestampNanoseconds(low), ProtocolValue::TimestampNanoseconds(high)) => {
+            Ok(ProtocolValue::TimestampNanoseconds(
+                i64::try_from(sample_i128_inclusive(
+                    rng,
+                    i128::from(*low),
+                    i128::from(*high),
+                )?)
+                .map_err(|_| "sampled timestamp is outside datatype range".to_owned())?,
+            ))
+        }
+        (ProtocolValue::Float32(low), ProtocolValue::Float32(high)) => {
+            let low = f32::from_bits(*low);
+            let high = f32::from_bits(*high);
+            let unit = (rng.next_u64() as f64) / (u64::MAX as f64);
+            let value = ((f64::from(low) * (1.0 - unit)) + (f64::from(high) * unit)) as f32;
+            Ok(ProtocolValue::Float32(value.clamp(low, high).to_bits()))
+        }
+        (ProtocolValue::Float64(low), ProtocolValue::Float64(high)) => {
+            let low = f64::from_bits(*low);
+            let high = f64::from_bits(*high);
+            let unit = (rng.next_u64() as f64) / (u64::MAX as f64);
+            let value = (low * (1.0 - unit)) + (high * unit);
+            Ok(ProtocolValue::Float64(value.clamp(low, high).to_bits()))
+        }
+        _ => Err("range bounds do not share a supported ordered datatype".to_owned()),
+    }
+}
+
+fn sample_i128_inclusive<R: Rng + ?Sized>(
+    rng: &mut R,
+    lower: i128,
+    upper: i128,
+) -> Result<i128, String> {
+    if lower > upper {
+        return Err("range lower bound exceeds upper bound".to_owned());
+    }
+
+    const SIGN: u128 = 1_u128 << 127;
+    let lower = (lower as u128) ^ SIGN;
+    let upper = (upper as u128) ^ SIGN;
+    let sampled = sample_u128_inclusive(rng, lower, upper)?;
+    Ok((sampled ^ SIGN) as i128)
+}
+
+fn sample_u128_inclusive<R: Rng + ?Sized>(
+    rng: &mut R,
+    lower: u128,
+    upper: u128,
+) -> Result<u128, String> {
+    if lower > upper {
+        return Err("range lower bound exceeds upper bound".to_owned());
+    }
+
+    let span = upper - lower;
+    if span == u128::MAX {
+        return Ok(random_u128(rng));
+    }
+    let width = span + 1;
+    Ok(lower + sample_u128_below(rng, width)?)
+}
+
+fn sample_u128_below<R: Rng + ?Sized>(rng: &mut R, upper: u128) -> Result<u128, String> {
+    if upper == 0 {
+        return Err("cannot sample from an empty range".to_owned());
+    }
+
+    let zone = u128::MAX - (u128::MAX % upper);
+    loop {
+        let candidate = random_u128(rng);
+        if candidate < zone {
+            return Ok(candidate % upper);
+        }
+    }
+}
+
+fn random_u128<R: Rng + ?Sized>(rng: &mut R) -> u128 {
+    (u128::from(rng.next_u64()) << 64) | u128::from(rng.next_u64())
+}
+
+fn sample_random_index<R: Rng + ?Sized>(rng: &mut R, len: usize) -> Result<usize, String> {
+    let upper = u64::try_from(len).map_err(|_| "range count is too large to sample".to_owned())?;
+    if upper == 0 {
+        return Err("cannot sample from an empty range list".to_owned());
+    }
+    let zone = u64::MAX - (u64::MAX % upper);
+    loop {
+        let candidate = rng.next_u64();
+        if candidate < zone {
+            return usize::try_from(candidate % upper)
+                .map_err(|_| "sampled range index does not fit usize".to_owned());
+        }
     }
 }
 

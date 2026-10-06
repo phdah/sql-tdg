@@ -56,11 +56,12 @@ source datatype that sql-tdg cannot represent exactly returns `UnsupportedSource
 coerced to a weaker generation type.
 
 For negative test data, `GenerationRowCounts` can be passed to `generate_classified_from_sql` or
-`generate_classified_from_bundle`. Matching rows are emitted first. Each rejected row
-deterministically selects one constrained scalar column with a safe complement domain, samples that
-column outside its allowed protocol domain, and samples every other column normally. Unbounded or
-otherwise insufficient domains fail explicitly when they cannot guarantee the requested
-classification.
+`generate_classified_from_bundle`. Matching scalar range values are sampled across their full
+representable allowed intervals, while rejected range values are sampled from the representable
+complement. Each rejected row deterministically selects one constrained scalar column with a safe
+complement domain and samples every other column normally. The seed makes this random sampling
+reproducible. Unbounded or otherwise insufficient domains fail explicitly when they cannot guarantee
+the requested classification.
 
 For supported inner equality relationships, multi-relation generation coordinates physical source
 keys using protocol join, graph, schema, and lineage metadata. Matching rows satisfy every connected
