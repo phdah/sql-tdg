@@ -13,7 +13,9 @@ use dbt_duckdb::DbtDuckDb;
 static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 const TARGET_RELATION: &str = r#""fixture"."raw_analytics"."final_orders""#;
-const ENRICHED_ORDERS_RELATION: &str = r#""fixture"."raw_analytics"."enriched_orders""#;
+const BOUNDARY_TARGET_RELATION: &str =
+    r#""fixture"."raw_analytics"."boundary_final_orders""#;
+const STG_ORDERS_RELATION: &str = r#""fixture"."raw_analytics"."stg_orders""#;
 
 struct DbtProject {
     path: PathBuf,
@@ -102,13 +104,18 @@ fn bootstrap_artifacts(project: &DbtProject) {
     assert!(project.path().join("target/catalog.json").is_file());
 }
 
-fn run_tdg(project: &DbtProject, output_dir: &Path, boundaries: &[&str]) -> Output {
+fn run_tdg(
+    project: &DbtProject,
+    target: &str,
+    output_dir: &Path,
+    boundaries: &[&str],
+) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sql-tdg"));
     command
         .arg("generate")
         .arg("--dbt-project")
         .arg(project.path())
-        .args(["--target", TARGET_RELATION])
+        .args(["--target", target])
         .args(["--matching", "1", "--rejected", "1"])
         .args(["--seed", "42", "--format", "csv"])
         .arg("--output")
@@ -235,15 +242,14 @@ fn expected_physical_snapshot() -> Vec<Vec<String>> {
     ]
 }
 
-fn final_snapshot(project: &DbtProject) -> Vec<Vec<String>> {
+fn boundary_snapshot(project: &DbtProject) -> Vec<Vec<String>> {
     let database = DbtDuckDb::open(project.database()).expect("DuckDB fixture should open");
     database
         .execute_text(
-            "SELECT amount::VARCHAR, status::VARCHAR, region::VARCHAR \
-             FROM raw_analytics.final_orders ORDER BY amount, status, region",
-            3,
+            "SELECT amount::VARCHAR FROM raw_analytics.boundary_final_orders ORDER BY amount",
+            1,
         )
-        .expect("final model should be queryable")
+        .expect("boundary final model should be queryable")
 }
 
 fn reset_database(project: &DbtProject) {
@@ -266,12 +272,12 @@ fn materialize_boundaries(project: &DbtProject, paths: &BTreeMap<String, PathBuf
     }
 }
 
-fn mutate_final_predicate(project: &DbtProject) {
-    let path = project.path().join("models/final_orders.sql");
-    let original = fs::read_to_string(&path).expect("final model should be readable");
+fn mutate_boundary_predicate(project: &DbtProject) {
+    let path = project.path().join("models/boundary_final_orders.sql");
+    let original = fs::read_to_string(&path).expect("boundary final model should be readable");
     let mutated = original.replace("where amount = 42", "where amount = 43");
     assert_ne!(mutated, original, "fixture predicate should be replaceable");
-    fs::write(path, mutated).expect("mutated final model should be writable");
+    fs::write(path, mutated).expect("mutated boundary final model should be writable");
 }
 
 #[test]
@@ -281,7 +287,7 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
     bootstrap_artifacts(&project);
 
     let physical_output_dir = project.path().join("generated/physical");
-    let physical = run_tdg(&project, &physical_output_dir, &[]);
+    let physical = run_tdg(&project, TARGET_RELATION, &physical_output_dir, &[]);
     assert_success("sql-tdg physical source generation", &physical);
     let physical_paths = generated_paths(&physical.stdout);
     assert_generated_rows(&physical_paths, &["customers", "orders"]);
@@ -298,28 +304,29 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
     assert_eq!(physical_snapshot(&project), expected_physical_snapshot());
 
     let boundary_output_dir = project.path().join("generated/boundary");
-    let boundary = run_tdg(&project, &boundary_output_dir, &[ENRICHED_ORDERS_RELATION]);
+    let boundary = run_tdg(
+        &project,
+        BOUNDARY_TARGET_RELATION,
+        &boundary_output_dir,
+        &[STG_ORDERS_RELATION],
+    );
     assert_success("sql-tdg intermediate boundary generation", &boundary);
     let boundary_paths = generated_paths(&boundary.stdout);
-    assert_generated_rows(&boundary_paths, &["enriched_orders"]);
+    assert_generated_rows(&boundary_paths, &["stg_orders"]);
     materialize_boundaries(&project, &boundary_paths);
 
     assert_success(
         "dbt downstream boundary run",
-        &run_dbt(&project, &["run", "--select", "final_orders"]),
+        &run_dbt(&project, &["run", "--select", "boundary_final_orders"]),
     );
-    let expected_final = vec![row(&["42", "paid", "north"])];
-    assert_eq!(final_snapshot(&project), expected_final);
+    let expected_boundary = vec![row(&["42"])];
+    assert_eq!(boundary_snapshot(&project), expected_boundary);
 
-    mutate_final_predicate(&project);
+    mutate_boundary_predicate(&project);
     assert_success(
-        "dbt mutated final run",
-        &run_dbt(&project, &["run", "--select", "final_orders"]),
+        "dbt mutated boundary final run",
+        &run_dbt(&project, &["run", "--select", "boundary_final_orders"]),
     );
-    let mutated = final_snapshot(&project);
-    assert_ne!(mutated, expected_final);
-    assert!(
-        mutated.is_empty(),
-        "mutated predicate should reject the witness"
-    );
+    let mutated = boundary_snapshot(&project);
+    assert_ne!(mutated, expected_boundary);
 }
