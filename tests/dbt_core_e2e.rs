@@ -220,12 +220,17 @@ ORDER BY 1, 2, 3, 4
 
 fn expected_physical_snapshot() -> Vec<Vec<String>> {
     vec![
-        row(&["aggregate_summary", "north", "1", "42"]),
+        row(&["aggregate_summary", "north", "2", "42"]),
         row(&["derived_orders", "medium", "1", ""]),
+        row(&["derived_orders", "medium", "1", ""]),
+        row(&["final_orders", "42", "paid", "north"]),
         row(&["final_orders", "42", "paid", "north"]),
         row(&["independent_return_summary", "full", "1", "70"]),
         row(&["ranked_orders", "north", "42", "1"]),
+        row(&["ranked_orders", "north", "42", "2"]),
         row(&["subquery_orders", "north", "42", ""]),
+        row(&["subquery_orders", "north", "42", ""]),
+        row(&["unioned_orders", "north", "42", ""]),
         row(&["unioned_orders", "north", "42", ""]),
         row(&["unioned_orders", "north", "42", ""]),
     ]
