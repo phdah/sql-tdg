@@ -14,11 +14,7 @@ impl DbtDuckDb {
             .map_err(|error| error.to_string())
     }
 
-    pub fn materialize_csv(
-        &self,
-        relation: &str,
-        path: impl AsRef<Path>,
-    ) -> Result<(), String> {
+    pub fn materialize_csv(&self, relation: &str, path: impl AsRef<Path>) -> Result<(), String> {
         let qualified = self.prepare_relation(relation)?;
         let path = path
             .as_ref()
