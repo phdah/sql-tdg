@@ -2,10 +2,7 @@ use std::process::Command;
 
 #[test]
 fn release_manifest_matches_package_version() {
-    let expected = format!(
-        "{{\n  \".\": \"{}\"\n}}\n",
-        env!("CARGO_PKG_VERSION")
-    );
+    let expected = format!("{{\n  \".\": \"{}\"\n}}\n", env!("CARGO_PKG_VERSION"));
     assert_eq!(
         include_str!("../.release-please-manifest.json"),
         expected.as_str(),
