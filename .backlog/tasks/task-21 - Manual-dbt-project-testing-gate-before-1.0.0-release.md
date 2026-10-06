@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@opencode'
 created_date: '2026-10-06 08:23'
-updated_date: '2026-10-06 09:18'
+updated_date: '2026-10-06 09:30'
 labels: []
 milestone: m-2
 dependencies: []
@@ -45,3 +45,9 @@ Subtasks (sequenced):
 3. TASK-21.2 manifest data_type fallback: requires a change and release in sql-semantic-protocol first, then a dependency bump here.
 4. Maintainer runs manual tests against real dbt projects and signs off; then TASK-20 can proceed.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-06 gate findings on branch feat/dbt-whole-project-generation (TASK-21.1 and TASK-21.3 done; TASK-21.2 pending protocol work). Further findings awaiting maintainer decision: (1) `--target` requires the exact quoted protocol identity (`"target"."main"."daily_revenue"`); `target.main.daily_revenue` fails with `unknown terminal outcome`, and the README dbt example shows an unquoted name. (2) Output filenames keep quote characters as underscores (`0001-_target_._main_._order_items_.csv`). (3) dbt data tests (unique, not_null, accepted_values, relationships) are not honored: on the maintainer fixture, `dbt build` fails 4 source tests on generated data. (4) Whole-project mode fails if any model has unsupported semantics (e.g. EXISTS in the e2e fixture's subquery_orders); there is no way to exclude models.
+<!-- SECTION:NOTES:END -->
