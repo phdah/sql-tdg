@@ -88,6 +88,8 @@ pub enum TargetKind {
     Relation,
     /// An anonymous terminal layer selected by its protocol layer identifier.
     AnonymousLayer,
+    /// Every terminal outcome, generated together as one shared source dataset.
+    AllTerminalOutcomes,
 }
 
 impl TargetKind {
@@ -95,6 +97,7 @@ impl TargetKind {
         match self {
             Self::Relation => "relation",
             Self::AnonymousLayer => "anonymous-layer",
+            Self::AllTerminalOutcomes => "all-terminal-outcomes",
         }
     }
 
@@ -102,6 +105,7 @@ impl TargetKind {
         match value {
             "relation" => Ok(Self::Relation),
             "anonymous-layer" => Ok(Self::AnonymousLayer),
+            "all-terminal-outcomes" => Ok(Self::AllTerminalOutcomes),
             _ => Err(TestCaseError::InvalidMetadata {
                 message: format!("unknown target kind {value:?}"),
             }),
@@ -127,6 +131,11 @@ impl TestTarget {
         Self::new(TargetKind::AnonymousLayer, identifier)
     }
 
+    /// Selects every terminal outcome, identified by their joined stable descriptions.
+    pub fn all_terminal_outcomes(outcomes: &[String]) -> Result<Self, TestCaseError> {
+        Self::new(TargetKind::AllTerminalOutcomes, outcomes.join(", "))
+    }
+
     pub(super) fn new(
         kind: TargetKind,
         identifier: impl Into<String>,
@@ -142,7 +151,8 @@ impl TestTarget {
         self.kind
     }
 
-    /// Returns the protocol relation or layer identifier.
+    /// Returns the protocol relation or layer identifier, or the joined outcome descriptions
+    /// for [`TargetKind::AllTerminalOutcomes`].
     pub fn identifier(&self) -> &str {
         &self.identifier
     }

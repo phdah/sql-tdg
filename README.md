@@ -46,8 +46,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 The SQL convenience API delegates analysis to SQL Semantic Protocol and then consumes the returned
-bundle exactly like `generate_from_bundle`. For bundles with more than one terminal outcome,
-callers must select an outcome explicitly rather than relying on an arbitrary default.
+bundle exactly like `generate_from_bundle`. Without an outcome selector, a bundle with more than one
+terminal outcome generates one shared set of physical source tables: every row of a source
+satisfies the supported conditions of every terminal outcome that reads it. Columns and
+relationship keys constrained by several outcomes use values that satisfy all of their domains,
+and conflicting outcomes fail with `ConflictingOutcomes` naming them. Rejected rows and
+intermediate boundaries require selecting one outcome.
 
 The Arrow-backed generator supports canonical protocol datatypes that it can represent losslessly,
 including signed and unsigned integers, floating-point and decimal values, temporal types, strings,
@@ -56,7 +60,10 @@ source datatype that sql-tdg cannot represent exactly returns `UnsupportedSource
 coerced to a weaker generation type.
 
 For negative test data, `GenerationRowCounts` can be passed to `generate_classified_from_sql` or
-`generate_classified_from_bundle`. Matching scalar range values are sampled across their full
+`generate_classified_from_bundle`. Columns without any protocol domain are sampled from varied,
+moderate values: integers 1..=1000 (capped by the type), decimals and floats 0..=1000, dates and
+timestamps in 2020-2025, numbered strings, and NULL for one in ten values of nullable columns.
+Matching scalar range values are sampled across their full
 representable allowed intervals, while rejected range values are sampled from the representable
 complement. Each rejected row deterministically selects one constrained scalar column with a safe
 complement domain and samples every other column normally. The seed makes this random sampling
@@ -111,8 +118,10 @@ Schema entries use `RELATION:COLUMN=SQL_TYPE`. SQL types are normalized by SQL S
 using the selected dialect. Parquet is the default and preferred lossless format. CSV is available
 for flat interoperability workflows.
 
-Use `--target <relation>` when a bundle has multiple named terminal outcomes, or
-`--target-layer <layer-id>` for an anonymous terminal outcome. By default the CLI materializes
+Use `--target <relation>` to generate for one named terminal outcome, or `--target-layer
+<layer-id>` for an anonymous terminal outcome. Omit both to generate one shared dataset for every
+terminal outcome, such as every model of a dbt project; the metadata then records an
+`all-terminal-outcomes` target. By default the CLI materializes
 physical source relations. Repeat `--boundary <relation>` to materialize explicitly selected
 intermediate relations instead.
 
@@ -132,6 +141,11 @@ sql-tdg generate \
   --format parquet \
   --output .sql-tdg/customer-summary
 ```
+
+Omit `--target` to generate every source of the whole project in one run.
+
+`catalog.json` is built from the warehouse, so every source table must exist there when
+`dbt docs generate` runs; otherwise sql-tdg reports the relation with no known column types.
 
 You can also pass artifacts directly:
 

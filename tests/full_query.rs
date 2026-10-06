@@ -191,23 +191,6 @@ fn contradictory_protocol_domain_is_an_explicit_error() {
 }
 
 #[test]
-fn multiple_terminal_outcomes_require_selection() {
-    let error = generate_from_sql(
-        "SELECT col_a FROM t; SELECT col_a FROM t",
-        "generic",
-        &[schema("t", &[("col_a", "INTEGER")])],
-        ROWS,
-        SEED,
-    )
-    .expect_err("multiple outcomes must not be selected arbitrarily");
-
-    assert!(matches!(
-        error,
-        ProtocolGenerationError::AmbiguousTerminalOutcome { .. }
-    ));
-}
-
-#[test]
 fn explicit_terminal_selection_generates_only_the_selected_outcome() {
     let schemas = [schema("t", &[("col_a", "INTEGER")])];
     let catalog = RelationCatalog::from_schemas(&schemas).expect("catalog should be valid");

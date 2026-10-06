@@ -112,6 +112,152 @@ fn compiled_cli_reads_sql_files_and_exports_csv() {
     assert!(csv.starts_with("amount\n"));
 }
 
+fn run_all_outcomes(workspace: &TestDir, sql: &str) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .args([
+            "generate",
+            "--sql",
+            sql,
+            "--schema",
+            "orders:amount=INTEGER",
+            "--schema",
+            "customers:id=INTEGER",
+            "--matching",
+            "6",
+            "--format",
+            "csv",
+            "--output",
+        ])
+        .arg(workspace.path().join("generated"))
+        .output()
+        .expect("compiled sql-tdg binary should execute")
+}
+
+#[test]
+fn compiled_cli_generates_one_shared_dataset_for_all_terminal_outcomes() {
+    let workspace = TestDir::new("all-outcomes");
+    let output = run_all_outcomes(
+        &workspace,
+        "CREATE VIEW high AS SELECT amount FROM orders WHERE amount >= 10;
+         CREATE VIEW capped AS SELECT amount FROM orders WHERE amount <= 20;
+         CREATE VIEW vip AS SELECT id FROM customers WHERE id > 100;",
+    );
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    assert!(
+        stdout.contains("target=all:relation:capped, relation:high, relation:vip"),
+        "stdout: {stdout}"
+    );
+
+    let generated = workspace.path().join("generated");
+    let amounts = fs::read_to_string(generated.join("0002-orders.csv"))
+        .expect("shared orders source should be exported once");
+    let amounts = amounts
+        .lines()
+        .skip(1)
+        .map(|line| line.parse::<i32>().expect("amount should be an integer"))
+        .collect::<Vec<_>>();
+    assert_eq!(amounts.len(), 6);
+    assert!(amounts.iter().all(|value| (10..=20).contains(value)));
+    assert!(generated.join("0001-customers.csv").is_file());
+
+    let metadata =
+        fs::read_to_string(generated.join("metadata.sqltdg")).expect("metadata should be readable");
+    let metadata =
+        sql_tdg::TestCaseMetadata::deserialize(&metadata).expect("metadata should round-trip");
+    assert_eq!(
+        metadata.target().kind(),
+        sql_tdg::TargetKind::AllTerminalOutcomes
+    );
+}
+
+#[test]
+fn compiled_cli_rejects_conflicting_terminal_outcomes_without_target() {
+    let workspace = TestDir::new("all-outcomes-conflict");
+    let output = run_all_outcomes(
+        &workspace,
+        "CREATE VIEW big AS SELECT amount FROM orders WHERE amount > 100;
+         CREATE VIEW small AS SELECT amount FROM orders WHERE amount < 50;",
+    );
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(
+        stderr.contains("relation:big, relation:small") && stderr.contains("orders.amount"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn compiled_cli_explains_dbt_sources_missing_from_catalog() {
+    let workspace = TestDir::new("dbt-empty-catalog");
+    let manifest_path = workspace.path().join("manifest.json");
+    let catalog_path = workspace.path().join("catalog.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+            "metadata": {
+                "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+                "adapter_type": "duckdb"
+            },
+            "nodes": {
+                "model.demo.daily_revenue": {
+                    "unique_id": "model.demo.daily_revenue",
+                    "resource_type": "model",
+                    "relation_name": "\"warehouse\".\"main\".\"daily_revenue\"",
+                    "language": "sql",
+                    "compiled_code": "select amount from \"warehouse\".\"main\".\"orders\" where amount > 10",
+                    "depends_on": {"nodes": ["source.demo.raw.orders"]},
+                    "database": "warehouse",
+                    "schema": "main"
+                }
+            },
+            "sources": {
+                "source.demo.raw.orders": {
+                    "unique_id": "source.demo.raw.orders",
+                    "relation_name": "\"warehouse\".\"main\".\"orders\""
+                }
+            }
+        }"#,
+    )
+    .expect("manifest fixture should be writable");
+    fs::write(
+        &catalog_path,
+        r#"{
+            "metadata": {
+                "dbt_schema_version": "https://schemas.getdbt.com/dbt/catalog/v1.json",
+                "dbt_version": "1.12.3"
+            },
+            "nodes": {},
+            "sources": {},
+            "errors": null
+        }"#,
+    )
+    .expect("catalog fixture should be writable");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .args(["generate", "--dbt-manifest"])
+        .arg(&manifest_path)
+        .arg("--output")
+        .arg(workspace.path().join("generated"))
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("orders"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("every source table must exist")
+            && stderr.contains("rerun `dbt docs generate`"),
+        "stderr: {stderr}"
+    );
+}
+
 #[test]
 fn compiled_cli_returns_nonzero_for_missing_raw_schema() {
     let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
