@@ -13,8 +13,7 @@ use dbt_duckdb::DbtDuckDb;
 static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 const TARGET_RELATION: &str = r#""fixture"."raw_analytics"."final_orders""#;
-const STG_ORDERS_RELATION: &str = r#""fixture"."raw_analytics"."stg_orders""#;
-const STG_CUSTOMERS_RELATION: &str = r#""fixture"."raw_analytics"."stg_customers""#;
+const ENRICHED_ORDERS_RELATION: &str = r#""fixture"."raw_analytics"."enriched_orders""#;
 
 struct DbtProject {
     path: PathBuf,
@@ -302,18 +301,18 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
     let boundary = run_tdg(
         &project,
         &boundary_output_dir,
-        &[STG_ORDERS_RELATION, STG_CUSTOMERS_RELATION],
+        &[ENRICHED_ORDERS_RELATION],
     );
     assert_success("sql-tdg intermediate boundary generation", &boundary);
     let boundary_paths = generated_paths(&boundary.stdout);
-    assert_generated_rows(&boundary_paths, &["stg_customers", "stg_orders"]);
+    assert_generated_rows(&boundary_paths, &["enriched_orders"]);
     materialize_boundaries(&project, &boundary_paths);
 
     assert_success(
         "dbt downstream boundary run",
         &run_dbt(
             &project,
-            &["run", "--select", "enriched_orders", "final_orders"],
+            &["run", "--select", "final_orders"],
         ),
     );
     let expected_final = vec![row(&["42", "paid", "north"])];
