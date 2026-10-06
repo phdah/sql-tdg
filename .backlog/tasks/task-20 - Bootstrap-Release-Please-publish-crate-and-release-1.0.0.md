@@ -4,10 +4,12 @@ title: Bootstrap Release Please publish crate and release 1.0.0
 status: In Progress
 assignee: []
 created_date: '2026-10-04'
+updated_date: '2026-10-06 08:23'
 labels: []
 milestone: m-2
 dependencies:
   - TASK-19
+  - TASK-21
 ---
 
 ## Description

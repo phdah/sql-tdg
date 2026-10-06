@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use sql_semantic_protocol::{
-    AnalysisBundle, ConfiguredSqlInput, DatasetRef, RelationCatalog, RelationSchema, SchemaColumn,
-    SqlInput, analyze_configured_inputs_with_catalog, analyze_dbt_artifacts, dialect_from_name,
-    parse_dbt_catalog, parse_dbt_manifest, to_bundle_json,
+    AnalysisBundle, ConfiguredSqlInput, DatasetRef, DbtArtifactsError, RelationCatalog,
+    RelationSchema, SchemaColumn, SqlInput, analyze_configured_inputs_with_catalog,
+    analyze_dbt_artifacts, dialect_from_name, parse_dbt_catalog, parse_dbt_manifest,
+    to_bundle_json,
 };
 use sql_tdg::{
     GeneratedData, GeneratedRelation, GenerationBoundary, GenerationRowCounts, OutcomeSelector,
@@ -461,7 +462,7 @@ fn analyze_dbt(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
         ))
     })?;
     let bundle = analyze_dbt_artifacts(&manifest, &catalog, &dialect_name, dialect.as_ref())
-        .map_err(|error| CliError::new(format!("dbt protocol analysis failed: {error}")))?;
+        .map_err(|error| dbt_analysis_error(&error))?;
 
     let workload_name = args.workload_name.clone().unwrap_or(default_name);
     let workload =
@@ -473,6 +474,18 @@ fn analyze_dbt(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
         dialect: dialect_name,
         workload,
     })
+}
+
+fn dbt_analysis_error(error: &DbtArtifactsError) -> CliError {
+    let hint = match error {
+        DbtArtifactsError::MissingCatalogSchema { .. } => {
+            "\nhint: catalog.json is built from the warehouse, so every source table must exist \
+             there when `dbt docs generate` runs; create the missing tables (for example with \
+             `dbt seed` or DDL), rerun `dbt docs generate`, and retry"
+        }
+        _ => "",
+    };
+    CliError::new(format!("dbt protocol analysis failed: {error}{hint}"))
 }
 
 fn resolve_dbt_paths(args: &GenerateArgs) -> Result<(PathBuf, PathBuf, String), CliError> {

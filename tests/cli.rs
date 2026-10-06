@@ -113,6 +113,71 @@ fn compiled_cli_reads_sql_files_and_exports_csv() {
 }
 
 #[test]
+fn compiled_cli_explains_dbt_sources_missing_from_catalog() {
+    let workspace = TestDir::new("dbt-empty-catalog");
+    let manifest_path = workspace.path().join("manifest.json");
+    let catalog_path = workspace.path().join("catalog.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+            "metadata": {
+                "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+                "adapter_type": "duckdb"
+            },
+            "nodes": {
+                "model.demo.daily_revenue": {
+                    "unique_id": "model.demo.daily_revenue",
+                    "resource_type": "model",
+                    "relation_name": "\"warehouse\".\"main\".\"daily_revenue\"",
+                    "language": "sql",
+                    "compiled_code": "select amount from \"warehouse\".\"main\".\"orders\" where amount > 10",
+                    "depends_on": {"nodes": ["source.demo.raw.orders"]},
+                    "database": "warehouse",
+                    "schema": "main"
+                }
+            },
+            "sources": {
+                "source.demo.raw.orders": {
+                    "unique_id": "source.demo.raw.orders",
+                    "relation_name": "\"warehouse\".\"main\".\"orders\""
+                }
+            }
+        }"#,
+    )
+    .expect("manifest fixture should be writable");
+    fs::write(
+        &catalog_path,
+        r#"{
+            "metadata": {
+                "dbt_schema_version": "https://schemas.getdbt.com/dbt/catalog/v1.json",
+                "dbt_version": "1.12.3"
+            },
+            "nodes": {},
+            "sources": {},
+            "errors": null
+        }"#,
+    )
+    .expect("catalog fixture should be writable");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .args(["generate", "--dbt-manifest"])
+        .arg(&manifest_path)
+        .arg("--output")
+        .arg(workspace.path().join("generated"))
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("orders"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("every source table must exist")
+            && stderr.contains("rerun `dbt docs generate`"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
 fn compiled_cli_returns_nonzero_for_missing_raw_schema() {
     let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
         .args([
