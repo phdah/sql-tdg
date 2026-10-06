@@ -435,14 +435,11 @@ fn sample_protocol_domain<R: Rng + ?Sized>(
                 })?;
             Ok(value)
         }
-        GenerationDomain::Range { data_type, ranges } => {
-            sample_range_value(data_type, ranges, rng).map_err(|message| {
-                GeneratorError::ProtocolSampling {
-                    column: column.to_owned(),
-                    message,
-                }
-            })
-        }
+        GenerationDomain::Range { data_type, ranges } => sample_range_value(data_type, ranges, rng)
+            .map_err(|message| GeneratorError::ProtocolSampling {
+                column: column.to_owned(),
+                message,
+            }),
         GenerationDomain::RejectedRange { data_type, ranges } => {
             sample_rejected_range_value(data_type, ranges, rng).map_err(|message| {
                 GeneratorError::ProtocolSampling {
