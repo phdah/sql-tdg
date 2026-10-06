@@ -13,8 +13,7 @@ use dbt_duckdb::DbtDuckDb;
 static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 const TARGET_RELATION: &str = r#""fixture"."raw_analytics"."final_orders""#;
-const BOUNDARY_TARGET_RELATION: &str =
-    r#""fixture"."raw_analytics"."boundary_final_orders""#;
+const BOUNDARY_TARGET_RELATION: &str = r#""fixture"."raw_analytics"."boundary_final_orders""#;
 const STG_ORDERS_RELATION: &str = r#""fixture"."raw_analytics"."stg_orders""#;
 
 struct DbtProject {
@@ -104,12 +103,7 @@ fn bootstrap_artifacts(project: &DbtProject) {
     assert!(project.path().join("target/catalog.json").is_file());
 }
 
-fn run_tdg(
-    project: &DbtProject,
-    target: &str,
-    output_dir: &Path,
-    boundaries: &[&str],
-) -> Output {
+fn run_tdg(project: &DbtProject, target: &str, output_dir: &Path, boundaries: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sql-tdg"));
     command
         .arg("generate")
