@@ -720,16 +720,34 @@ fn ordered_type_bounds(data_type: &DataType) -> Result<(ProtocolValue, ProtocolV
     match data_type {
         DataType::SignedInteger { bits } => match bits.unwrap_or(64) {
             0..=8 => Ok((ProtocolValue::Int8(i8::MIN), ProtocolValue::Int8(i8::MAX))),
-            9..=16 => Ok((ProtocolValue::Int16(i16::MIN), ProtocolValue::Int16(i16::MAX))),
-            17..=32 => Ok((ProtocolValue::Int32(i32::MIN), ProtocolValue::Int32(i32::MAX))),
-            33..=64 => Ok((ProtocolValue::Int64(i64::MIN), ProtocolValue::Int64(i64::MAX))),
+            9..=16 => Ok((
+                ProtocolValue::Int16(i16::MIN),
+                ProtocolValue::Int16(i16::MAX),
+            )),
+            17..=32 => Ok((
+                ProtocolValue::Int32(i32::MIN),
+                ProtocolValue::Int32(i32::MAX),
+            )),
+            33..=64 => Ok((
+                ProtocolValue::Int64(i64::MIN),
+                ProtocolValue::Int64(i64::MAX),
+            )),
             bits => Err(format!("signed_integer({bits})")),
         },
         DataType::UnsignedInteger { bits } => match bits.unwrap_or(64) {
             0..=8 => Ok((ProtocolValue::UInt8(u8::MIN), ProtocolValue::UInt8(u8::MAX))),
-            9..=16 => Ok((ProtocolValue::UInt16(u16::MIN), ProtocolValue::UInt16(u16::MAX))),
-            17..=32 => Ok((ProtocolValue::UInt32(u32::MIN), ProtocolValue::UInt32(u32::MAX))),
-            33..=64 => Ok((ProtocolValue::UInt64(u64::MIN), ProtocolValue::UInt64(u64::MAX))),
+            9..=16 => Ok((
+                ProtocolValue::UInt16(u16::MIN),
+                ProtocolValue::UInt16(u16::MAX),
+            )),
+            17..=32 => Ok((
+                ProtocolValue::UInt32(u32::MIN),
+                ProtocolValue::UInt32(u32::MAX),
+            )),
+            33..=64 => Ok((
+                ProtocolValue::UInt64(u64::MIN),
+                ProtocolValue::UInt64(u64::MAX),
+            )),
             bits => Err(format!("unsigned_integer({bits})")),
         },
         DataType::Decimal { precision, scale } => {
@@ -834,42 +852,40 @@ fn sample_inclusive_interval<R: Rng + ?Sized>(
         (ProtocolValue::Date32(low), ProtocolValue::Date32(high)) => {
             sample_signed!(low, high, Date32, i32)
         }
-        (ProtocolValue::TimeMicroseconds(low), ProtocolValue::TimeMicroseconds(high)) => Ok(
-            ProtocolValue::TimeMicroseconds(sample_i128_inclusive(
+        (ProtocolValue::TimeMicroseconds(low), ProtocolValue::TimeMicroseconds(high)) => {
+            Ok(ProtocolValue::TimeMicroseconds(sample_i128_inclusive(
                 rng,
                 i128::from(*low),
                 i128::from(*high),
-            )? as i64),
-        ),
-        (ProtocolValue::TimeNanoseconds(low), ProtocolValue::TimeNanoseconds(high)) => Ok(
-            ProtocolValue::TimeNanoseconds(sample_i128_inclusive(
+            )? as i64))
+        }
+        (ProtocolValue::TimeNanoseconds(low), ProtocolValue::TimeNanoseconds(high)) => {
+            Ok(ProtocolValue::TimeNanoseconds(sample_i128_inclusive(
                 rng,
                 i128::from(*low),
                 i128::from(*high),
-            )? as i64),
-        ),
-        (
-            ProtocolValue::TimestampMicroseconds(low),
-            ProtocolValue::TimestampMicroseconds(high),
-        ) => Ok(ProtocolValue::TimestampMicroseconds(
-            i64::try_from(sample_i128_inclusive(
-                rng,
-                i128::from(*low),
-                i128::from(*high),
-            )?)
-            .map_err(|_| "sampled timestamp is outside datatype range".to_owned())?,
-        )),
-        (
-            ProtocolValue::TimestampNanoseconds(low),
-            ProtocolValue::TimestampNanoseconds(high),
-        ) => Ok(ProtocolValue::TimestampNanoseconds(
-            i64::try_from(sample_i128_inclusive(
-                rng,
-                i128::from(*low),
-                i128::from(*high),
-            )?)
-            .map_err(|_| "sampled timestamp is outside datatype range".to_owned())?,
-        )),
+            )? as i64))
+        }
+        (ProtocolValue::TimestampMicroseconds(low), ProtocolValue::TimestampMicroseconds(high)) => {
+            Ok(ProtocolValue::TimestampMicroseconds(
+                i64::try_from(sample_i128_inclusive(
+                    rng,
+                    i128::from(*low),
+                    i128::from(*high),
+                )?)
+                .map_err(|_| "sampled timestamp is outside datatype range".to_owned())?,
+            ))
+        }
+        (ProtocolValue::TimestampNanoseconds(low), ProtocolValue::TimestampNanoseconds(high)) => {
+            Ok(ProtocolValue::TimestampNanoseconds(
+                i64::try_from(sample_i128_inclusive(
+                    rng,
+                    i128::from(*low),
+                    i128::from(*high),
+                )?)
+                .map_err(|_| "sampled timestamp is outside datatype range".to_owned())?,
+            ))
+        }
         (ProtocolValue::Float32(low), ProtocolValue::Float32(high)) => {
             let low = f32::from_bits(*low);
             let high = f32::from_bits(*high);
