@@ -151,6 +151,24 @@ Each successful run writes one deterministic relation file per generated relatio
 dialect, seed, generated relation row classifications, and the normalized SQL Semantic Protocol
 snapshot needed to reproduce the generation inputs.
 
+## Installation and releases
+
+After the first stable release is published, install the CLI from crates.io with:
+
+```console
+cargo install sql-tdg
+sql-tdg --version
+```
+
+Release Please owns version bumps, changelog entries, `vX.Y.Z` tags, and GitHub releases from
+Conventional Commits. The bootstrap release is forced to `1.0.0`; generated release branches run
+the full Rust and dbt acceptance checks, `cargo publish --dry-run --locked`, and an installed CLI
+smoke test before the release can be published. The release workflow publishes to crates.io with
+the repository `CARGO_REGISTRY_TOKEN` secret and can recover a tagged release that was not
+published, while skipping versions already present on crates.io.
+
+The one-time `release-as: 1.0.0` override must be removed after the initial stable release.
+
 ## Verification
 
 Run the complete Rust verification suite with:

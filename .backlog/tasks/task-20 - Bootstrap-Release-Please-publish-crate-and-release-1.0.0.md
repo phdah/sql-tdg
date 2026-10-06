@@ -1,7 +1,7 @@
 ---
 id: TASK-20
 title: Bootstrap Release Please publish crate and release 1.0.0
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-04'
 labels: []
@@ -23,17 +23,25 @@ The release workflow must follow the same release model already proven in
 `phdah/sql-semantic-protocol`: Release Please owns version/changelog/release PR creation, and the
 release path verifies the crate before publishing it to crates.io.
 
+## Progress
+
+Release Please configuration, crates.io package metadata, version-contract tests, release-candidate
+verification, CLI installation checks, publication, and tagged-release recovery are implemented.
+TASK-20 remains in progress until the generated 1.0.0 release PR is merged, the `v1.0.0` GitHub
+release exists, version 1.0.0 is published to crates.io, and the one-time `release-as` bootstrap
+override is removed.
+
 ## Acceptance Criteria
 
-- [ ] Release Please is configured for the Rust crate and creates release PRs from Conventional Commits.
-- [ ] The initial Release Please bootstrap targets version `1.0.0`.
-- [ ] `Cargo.toml` contains the package metadata required for a public crates.io release.
-- [ ] The sql-tdg CLI is installable from the packaged crate and the installed binary exposes the documented command surface.
-- [ ] Release Please keeps the Cargo package version, changelog, Git tag, and GitHub release aligned.
-- [ ] The release workflow performs `cargo publish --dry-run` or an equivalent package verification before publication.
-- [ ] A successful Release Please release publishes the exact released crate to crates.io using `CARGO_REGISTRY_TOKEN`.
-- [ ] crates.io publication occurs only for a real Release Please release and is safe against duplicate publication attempts.
-- [ ] CI/release checks fail if the package cannot be built, tested, packaged, or installed as the released CLI.
+- [x] Release Please is configured for the Rust crate and creates release PRs from Conventional Commits.
+- [x] The initial Release Please bootstrap targets version `1.0.0`.
+- [x] `Cargo.toml` contains the package metadata required for a public crates.io release.
+- [x] The sql-tdg CLI is installable from the packaged crate and the installed binary exposes the documented command surface.
+- [x] Release Please keeps the Cargo package version, changelog, Git tag, and GitHub release aligned.
+- [x] The release workflow performs `cargo publish --dry-run` or an equivalent package verification before publication.
+- [x] A successful Release Please release publishes the exact released crate to crates.io using `CARGO_REGISTRY_TOKEN`.
+- [x] crates.io publication occurs only for a real Release Please release and is safe against duplicate publication attempts.
+- [x] CI/release checks fail if the package cannot be built, tested, packaged, or installed as the released CLI.
 - [ ] The `v1.0.0` GitHub release is created from the merged Release Please PR.
 - [ ] Version `1.0.0` is available from crates.io and can be installed with Cargo.
 - [ ] Any one-time Release Please bootstrap override is removed after the initial `1.0.0` release.

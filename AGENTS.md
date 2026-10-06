@@ -27,8 +27,9 @@ that can be represented without semantic loss and return an explicit error for t
 generation support should consume the existing canonical protocol datatype rather than introducing
 a parallel datatype taxonomy.
 
-There is currently no CLI entry point. If a CLI is introduced, it must sit on top of the library
-pipeline and contain no semantic analysis, solving, generation, or storage logic.
+The `sql-tdg` CLI sits on top of the library pipeline and must remain thin. It contains no semantic
+analysis, solving, generation, or storage logic; those responsibilities stay in the existing library
+modules.
 
 ## Guiding principles
 

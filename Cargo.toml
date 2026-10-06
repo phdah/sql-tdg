@@ -3,7 +3,10 @@ name = "sql-tdg"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Generate test data that satisfies SQL query conditions"
+description = "Generate deterministic test data for SQL workloads from semantic constraints"
+repository = "https://github.com/phdah/sql-tdg"
+readme = "README.md"
+keywords = ["sql", "testing", "test-data", "arrow", "dbt"]
 
 [lib]
 path = "src/lib.rs"
