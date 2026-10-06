@@ -1,7 +1,7 @@
 ---
 id: TASK-19
 title: Add full dbt Core DuckDB end-to-end workflow
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-04'
 labels: []

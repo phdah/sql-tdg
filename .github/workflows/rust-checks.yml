@@ -23,3 +23,9 @@ jobs:
 
       - name: Run Rust checks
         run: make rust-checks
+
+      - name: Install dbt end-to-end dependencies
+        run: python -m pip install --disable-pip-version-check -r tests/requirements-dbt-e2e.txt
+
+      - name: Run dbt end-to-end workflow
+        run: make dbt-e2e
