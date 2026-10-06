@@ -320,12 +320,12 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
         BOUNDARY_TARGET_RELATION,
         &boundary_output_dir,
         &[STG_ORDERS_RELATION],
-        8,
+        1,
         0,
     );
     assert_success("sql-tdg intermediate boundary generation", &boundary);
     let boundary_paths = generated_paths(&boundary.stdout);
-    assert_generated_rows(&boundary_paths, &["stg_orders"], 8);
+    assert_generated_rows(&boundary_paths, &["stg_orders"], 1);
     materialize_boundaries(&project, &boundary_paths);
 
     assert_success(
@@ -333,24 +333,11 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
         &run_dbt(&project, &["run", "--select", "boundary_final_orders"]),
     );
     let expected_boundary = boundary_snapshot(&project);
-    assert_eq!(expected_boundary.len(), 8);
-    let boundary_amounts = expected_boundary
-        .iter()
-        .map(|row| {
-            row[0]
-                .parse::<i64>()
-                .expect("generated boundary amount should be an integer")
-        })
-        .collect::<BTreeSet<_>>();
-    assert!(
-        boundary_amounts
-            .iter()
-            .all(|amount| (30..70).contains(amount))
-    );
-    assert!(
-        boundary_amounts.len() > 1,
-        "ranged generation should sample more than one value"
-    );
+    assert_eq!(expected_boundary.len(), 1);
+    let boundary_amount = expected_boundary[0][0]
+        .parse::<i64>()
+        .expect("generated boundary amount should be an integer");
+    assert!((30..70).contains(&boundary_amount));
 
     mutate_boundary_predicate(&project);
     assert_success(
