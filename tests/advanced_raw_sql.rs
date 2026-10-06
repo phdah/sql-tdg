@@ -85,15 +85,7 @@ fn run_cli(
     boundaries: &[&str],
     output_dir: &Path,
 ) -> Output {
-    run_cli_with_counts(
-        fixture_path,
-        target,
-        schemas,
-        boundaries,
-        output_dir,
-        1,
-        1,
-    )
+    run_cli_with_counts(fixture_path, target, schemas, boundaries, output_dir, 1, 1)
 }
 
 fn run_cli_with_counts(
