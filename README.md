@@ -158,3 +158,29 @@ Run the complete Rust verification suite with:
 ```console
 make rust-checks
 ```
+
+The dedicated dbt Core acceptance workflow requires dbt with the DuckDB adapter and then runs the
+real fixture project through source generation, native `dbt seed`, model execution, intermediate
+boundary generation, and result verification:
+
+```console
+python -m pip install -r tests/requirements-dbt-e2e.txt
+make dbt-e2e
+```
+
+The same production CLI path is used outside the harness after normal dbt artifacts exist:
+
+```console
+dbt seed
+dbt run
+dbt docs generate
+
+sql-tdg generate \
+  --dbt-project . \
+  --target '"warehouse"."analytics"."customer_summary"' \
+  --matching 50 \
+  --rejected 10 \
+  --seed 42 \
+  --format csv \
+  --output .sql-tdg/customer-summary
+```
