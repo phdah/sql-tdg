@@ -342,7 +342,11 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
                 .expect("generated boundary amount should be an integer")
         })
         .collect::<BTreeSet<_>>();
-    assert!(boundary_amounts.iter().all(|amount| (30..70).contains(amount)));
+    assert!(
+        boundary_amounts
+            .iter()
+            .all(|amount| (30..70).contains(amount))
+    );
     assert!(
         boundary_amounts.len() > 1,
         "ranged generation should sample more than one value"
