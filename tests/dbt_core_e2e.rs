@@ -103,14 +103,24 @@ fn bootstrap_artifacts(project: &DbtProject) {
     assert!(project.path().join("target/catalog.json").is_file());
 }
 
-fn run_tdg(project: &DbtProject, target: &str, output_dir: &Path, boundaries: &[&str]) -> Output {
+fn run_tdg(
+    project: &DbtProject,
+    target: &str,
+    output_dir: &Path,
+    boundaries: &[&str],
+    matching: usize,
+    rejected: usize,
+) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sql-tdg"));
     command
         .arg("generate")
         .arg("--dbt-project")
         .arg(project.path())
         .args(["--target", target])
-        .args(["--matching", "1", "--rejected", "1"])
+        .arg("--matching")
+        .arg(matching.to_string())
+        .arg("--rejected")
+        .arg(rejected.to_string())
         .args(["--seed", "42", "--format", "csv"])
         .arg("--output")
         .arg(output_dir);
@@ -145,7 +155,11 @@ fn relation_leaf(relation: &str) -> String {
         .to_owned()
 }
 
-fn assert_generated_rows(paths: &BTreeMap<String, PathBuf>, expected_relations: &[&str]) {
+fn assert_generated_rows(
+    paths: &BTreeMap<String, PathBuf>,
+    expected_relations: &[&str],
+    expected_rows: usize,
+) {
     let actual = paths
         .keys()
         .map(|relation| relation_leaf(relation))
@@ -161,8 +175,8 @@ fn assert_generated_rows(paths: &BTreeMap<String, PathBuf>, expected_relations: 
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         assert_eq!(
             contents.lines().skip(1).count(),
-            2,
-            "expected one matching and one rejected row in {}",
+            expected_rows,
+            "unexpected generated row count in {}",
             path.display()
         );
     }
@@ -281,10 +295,10 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
     bootstrap_artifacts(&project);
 
     let physical_output_dir = project.path().join("generated/physical");
-    let physical = run_tdg(&project, TARGET_RELATION, &physical_output_dir, &[]);
+    let physical = run_tdg(&project, TARGET_RELATION, &physical_output_dir, &[], 1, 1);
     assert_success("sql-tdg physical source generation", &physical);
     let physical_paths = generated_paths(&physical.stdout);
-    assert_generated_rows(&physical_paths, &["customers", "orders"]);
+    assert_generated_rows(&physical_paths, &["customers", "orders"], 2);
     install_source_seeds(&project, &physical_paths);
 
     assert_success(
@@ -303,10 +317,12 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
         BOUNDARY_TARGET_RELATION,
         &boundary_output_dir,
         &[STG_ORDERS_RELATION],
+        1,
+        0,
     );
     assert_success("sql-tdg intermediate boundary generation", &boundary);
     let boundary_paths = generated_paths(&boundary.stdout);
-    assert_generated_rows(&boundary_paths, &["stg_orders"]);
+    assert_generated_rows(&boundary_paths, &["stg_orders"], 1);
     materialize_boundaries(&project, &boundary_paths);
 
     assert_success(

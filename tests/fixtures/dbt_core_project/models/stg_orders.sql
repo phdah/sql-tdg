@@ -14,6 +14,6 @@ select
         else 0
     end as paid_flag
 from {{ source('raw', 'orders') }}
-where amount between 10 and 100
+where amount = 42
   and status = 'paid'
   and region = 'north'
