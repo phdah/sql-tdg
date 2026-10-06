@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[path = "support/cli_duckdb.rs"]
-mod cli_duckdb;
+#[path = "support/dbt_duckdb.rs"]
+mod dbt_duckdb;
 
-use cli_duckdb::CliDuckDb;
+use dbt_duckdb::DbtDuckDb;
 
 static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -187,7 +187,7 @@ fn row(values: &[&str]) -> Vec<String> {
 }
 
 fn physical_snapshot(project: &DbtProject) -> Vec<Vec<String>> {
-    let database = CliDuckDb::open(project.database()).expect("DuckDB fixture should open");
+    let database = DbtDuckDb::open(project.database()).expect("DuckDB fixture should open");
     database
         .execute_text(
             r#"
@@ -232,7 +232,7 @@ fn expected_physical_snapshot() -> Vec<Vec<String>> {
 }
 
 fn final_snapshot(project: &DbtProject) -> Vec<Vec<String>> {
-    let database = CliDuckDb::open(project.database()).expect("DuckDB fixture should open");
+    let database = DbtDuckDb::open(project.database()).expect("DuckDB fixture should open");
     database
         .execute_text(
             "SELECT amount::VARCHAR, status::VARCHAR, region::VARCHAR \
@@ -254,7 +254,7 @@ fn reset_database(project: &DbtProject) {
 
 fn materialize_boundaries(project: &DbtProject, paths: &BTreeMap<String, PathBuf>) {
     reset_database(project);
-    let database = CliDuckDb::open(project.database()).expect("DuckDB fixture should open");
+    let database = DbtDuckDb::open(project.database()).expect("DuckDB fixture should open");
     for (relation, path) in paths {
         database
             .materialize_csv(relation, path)

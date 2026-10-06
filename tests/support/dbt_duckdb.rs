@@ -2,42 +2,34 @@ use std::path::Path;
 
 use duckdb::Connection;
 
-/// Small DuckDB boundary for executing files produced by the public CLI.
-pub struct CliDuckDb {
+/// DuckDB boundary for executing dbt end-to-end fixtures.
+pub struct DbtDuckDb {
     connection: Connection,
 }
 
-impl CliDuckDb {
-    pub fn in_memory() -> Result<Self, String> {
-        Connection::open_in_memory()
+impl DbtDuckDb {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
+        Connection::open(path)
             .map(|connection| Self { connection })
             .map_err(|error| error.to_string())
     }
 
-    pub fn materialize_parquet(
+    pub fn materialize_csv(
         &self,
         relation: &str,
         path: impl AsRef<Path>,
     ) -> Result<(), String> {
-        let qualified = qualified_relation(relation)?;
+        let qualified = self.prepare_relation(relation)?;
         let path = path
             .as_ref()
             .to_str()
-            .ok_or_else(|| "Parquet path is not valid UTF-8".to_owned())?;
-
-        if let Some((schema, _)) = relation.split_once('.') {
-            self.connection
-                .execute_batch(&format!(
-                    "CREATE SCHEMA IF NOT EXISTS {}",
-                    quote_identifier(schema)
-                ))
-                .map_err(|error| error.to_string())?;
-        }
+            .ok_or_else(|| "CSV path is not valid UTF-8".to_owned())?;
 
         self.connection
             .execute_batch(&format!(
                 "DROP TABLE IF EXISTS {qualified}; \
-                 CREATE TABLE {qualified} AS SELECT * FROM read_parquet({})",
+                 CREATE TABLE {qualified} AS \
+                 SELECT * FROM read_csv_auto({}, header = true)",
                 quote_literal(path)
             ))
             .map_err(|error| error.to_string())
@@ -65,21 +57,39 @@ impl CliDuckDb {
 
         Ok(result)
     }
+
+    fn prepare_relation(&self, relation: &str) -> Result<String, String> {
+        let parts = relation_parts(relation)?;
+        if parts.len() >= 2 {
+            let schema = &parts[parts.len() - 2];
+            self.connection
+                .execute_batch(&format!(
+                    "CREATE SCHEMA IF NOT EXISTS {}",
+                    quote_identifier(schema)
+                ))
+                .map_err(|error| error.to_string())?;
+        }
+
+        Ok(parts
+            .iter()
+            .map(|part| quote_identifier(part))
+            .collect::<Vec<_>>()
+            .join("."))
+    }
 }
 
-fn qualified_relation(relation: &str) -> Result<String, String> {
-    let parts = relation.split('.').collect::<Vec<_>>();
-    match parts.as_slice() {
-        [table] if !table.is_empty() => Ok(quote_identifier(table)),
-        [schema, table] if !schema.is_empty() && !table.is_empty() => Ok(format!(
-            "{}.{}",
-            quote_identifier(schema),
-            quote_identifier(table)
-        )),
-        _ => Err(format!(
+fn relation_parts(relation: &str) -> Result<Vec<String>, String> {
+    let parts = relation
+        .split('.')
+        .map(|part| part.trim().trim_matches('"').to_owned())
+        .collect::<Vec<_>>();
+    if !(1..=3).contains(&parts.len()) || parts.iter().any(String::is_empty) {
+        return Err(format!(
             "relation {relation:?} is not a valid DuckDB table identity"
-        )),
+        ));
     }
+
+    Ok(parts)
 }
 
 fn quote_identifier(value: &str) -> String {
