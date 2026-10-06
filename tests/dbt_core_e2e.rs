@@ -234,19 +234,19 @@ ORDER BY 1, 2, 3, 4
 
 fn expected_physical_snapshot() -> Vec<Vec<String>> {
     vec![
-        row(&["aggregate_summary", "north", "2", "57"]),
+        row(&["aggregate_summary", "north", "2", "56"]),
         row(&["derived_orders", "medium", "1", ""]),
         row(&["derived_orders", "medium", "1", ""]),
-        row(&["final_orders", "40", "paid", "north"]),
-        row(&["final_orders", "57", "paid", "north"]),
+        row(&["final_orders", "55", "paid", "north"]),
+        row(&["final_orders", "56", "paid", "north"]),
         row(&["independent_return_summary", "full", "1", "70"]),
-        row(&["ranked_orders", "north", "40", "2"]),
-        row(&["ranked_orders", "north", "57", "1"]),
-        row(&["subquery_orders", "north", "40", ""]),
-        row(&["subquery_orders", "north", "57", ""]),
-        row(&["unioned_orders", "north", "40", ""]),
+        row(&["ranked_orders", "north", "55", "2"]),
+        row(&["ranked_orders", "north", "56", "1"]),
+        row(&["subquery_orders", "north", "55", ""]),
+        row(&["subquery_orders", "north", "56", ""]),
         row(&["unioned_orders", "north", "42", ""]),
-        row(&["unioned_orders", "north", "57", ""]),
+        row(&["unioned_orders", "north", "55", ""]),
+        row(&["unioned_orders", "north", "56", ""]),
     ]
 }
 

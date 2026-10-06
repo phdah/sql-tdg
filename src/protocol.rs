@@ -969,9 +969,18 @@ fn prepare_intermediate_relation_plans(
             RelationshipColumn::new(relation, schema_column.name()),
             matching_values.clone(),
         );
+        let unconstrained = matches!(produced.domain(), ValueDomain::Unbounded)
+            && matches!(downstream, None | Some(ValueDomain::Unbounded));
+        let matching_domain = if unconstrained {
+            GenerationDomain::Unconstrained {
+                data_type: schema_column.data_type().clone(),
+            }
+        } else {
+            GenerationDomain::Values(matching_values)
+        };
         plans.push(ColumnPlan::new(
             schema_column.name(),
-            GenerationDomain::Values(matching_values),
+            matching_domain,
             (!rejected_values.is_empty()).then_some(GenerationDomain::Values(rejected_values)),
         ));
     }
@@ -1813,7 +1822,10 @@ fn shared_column_plan(
         message,
     };
 
-    if constraints.len() <= 1 {
+    let all_unbounded = constraints
+        .iter()
+        .all(|(_, domain)| matches!(domain, ValueDomain::Unbounded));
+    if constraints.len() <= 1 || all_unbounded {
         let domain = constraints.first().map(|(_, domain)| *domain);
         let plan = ColumnPlan::new(
             column,
@@ -2848,13 +2860,15 @@ fn generic_generation_domain(
         });
     }
 
-    if let Some(ValueDomain::Ranges(ranges)) = domain {
-        Ok(GenerationDomain::Range {
+    match domain {
+        Some(ValueDomain::Ranges(ranges)) => Ok(GenerationDomain::Range {
             data_type: data_type.clone(),
             ranges: ranges.ranges().to_vec(),
-        })
-    } else {
-        Ok(GenerationDomain::Values(values))
+        }),
+        None | Some(ValueDomain::Unbounded) => Ok(GenerationDomain::Unconstrained {
+            data_type: data_type.clone(),
+        }),
+        Some(_) => Ok(GenerationDomain::Values(values)),
     }
 }
 

@@ -60,7 +60,10 @@ source datatype that sql-tdg cannot represent exactly returns `UnsupportedSource
 coerced to a weaker generation type.
 
 For negative test data, `GenerationRowCounts` can be passed to `generate_classified_from_sql` or
-`generate_classified_from_bundle`. Matching scalar range values are sampled across their full
+`generate_classified_from_bundle`. Columns without any protocol domain are sampled from varied,
+moderate values: integers 1..=1000 (capped by the type), decimals and floats 0..=1000, dates and
+timestamps in 2020-2025, numbered strings, and NULL for one in ten values of nullable columns.
+Matching scalar range values are sampled across their full
 representable allowed intervals, while rejected range values are sampled from the representable
 complement. Each rejected row deterministically selects one constrained scalar column with a safe
 complement domain and samples every other column normally. The seed makes this random sampling

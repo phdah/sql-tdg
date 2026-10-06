@@ -7,7 +7,9 @@ use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
 use sql_semantic_protocol::{DataType, ValueRange};
 
-use crate::protocol_value::{ProtocolValue, sample_range_value, sample_rejected_range_value};
+use crate::protocol_value::{
+    ProtocolValue, sample_range_value, sample_rejected_range_value, sample_unconstrained_value,
+};
 use crate::solver::{BoolDomain, IntDomain, SolverError, TimestampDomain};
 use crate::table::{Table, TableError, TableValue};
 use crate::types::{Column, ColumnType, Constraint};
@@ -369,7 +371,8 @@ impl ColumnPlan {
             GenerationDomain::Bool(domain) => Ok(TableValue::Bool(domain.value())),
             GenerationDomain::Values(_)
             | GenerationDomain::Range { .. }
-            | GenerationDomain::RejectedRange { .. } => Err(GeneratorError::ProtocolOnlyDomain {
+            | GenerationDomain::RejectedRange { .. }
+            | GenerationDomain::Unconstrained { .. } => Err(GeneratorError::ProtocolOnlyDomain {
                 column: self.name.clone(),
             }),
         }
@@ -440,6 +443,11 @@ fn sample_protocol_domain<R: Rng + ?Sized>(
                 column: column.to_owned(),
                 message,
             }),
+        GenerationDomain::Unconstrained { data_type } => sample_unconstrained_value(data_type, rng)
+            .map_err(|message| GeneratorError::ProtocolSampling {
+                column: column.to_owned(),
+                message,
+            }),
         GenerationDomain::RejectedRange { data_type, ranges } => {
             sample_rejected_range_value(data_type, ranges, rng).map_err(|message| {
                 GeneratorError::ProtocolSampling {
@@ -464,6 +472,10 @@ pub(crate) enum GenerationDomain {
     RejectedRange {
         data_type: DataType,
         ranges: Vec<ValueRange>,
+    },
+    /// Any value of the datatype, sampled from varied moderate values.
+    Unconstrained {
+        data_type: DataType,
     },
 }
 

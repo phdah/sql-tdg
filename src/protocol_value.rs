@@ -593,6 +593,174 @@ pub(crate) fn sample_range_value<R: Rng + ?Sized>(
     sample_inclusive_interval(rng, &lower, &upper)
 }
 
+/// Largest magnitude sampled for numeric columns without a protocol domain.
+const UNCONSTRAINED_MAGNITUDE: i128 = 1_000;
+/// 2020-01-01 as days since the Unix epoch; first day sampled for unconstrained temporal columns.
+const UNCONSTRAINED_FIRST_DAY: i32 = 18_262;
+/// 2025-12-31 as days since the Unix epoch; last day sampled for unconstrained temporal columns.
+const UNCONSTRAINED_LAST_DAY: i32 = 20_453;
+/// One in this many values of an unconstrained nullable column is NULL.
+const UNCONSTRAINED_NULL_ONE_IN: u64 = 10;
+const SECONDS_PER_DAY: i128 = 86_400;
+
+/// Sample a varied, moderate value for a column that has no protocol domain.
+///
+/// Type extremes are valid but make realistic arithmetic overflow and give little variety, so
+/// numbers stay within a moderate magnitude, temporal values within recent years, and strings
+/// carry a numbered suffix. Types without a meaningful moderate range sample their defaults.
+pub(crate) fn sample_unconstrained_value<R: Rng + ?Sized>(
+    data_type: &DataType,
+    rng: &mut R,
+) -> Result<ProtocolValue, String> {
+    match data_type {
+        DataType::Nullable(inner) => {
+            if rng.next_u64().is_multiple_of(UNCONSTRAINED_NULL_ONE_IN) {
+                Ok(ProtocolValue::Null)
+            } else {
+                sample_unconstrained_value(inner, rng)
+            }
+        }
+        DataType::Boolean => Ok(ProtocolValue::Boolean(rng.next_u64() & 1 == 1)),
+        DataType::SignedInteger { .. } | DataType::UnsignedInteger { .. } => {
+            let (_, type_max) = ordered_type_bounds(data_type)?;
+            let upper = integer_magnitude(&type_max)?.min(UNCONSTRAINED_MAGNITUDE);
+            let sampled = sample_i128_inclusive(rng, 1, upper)?;
+            integer_like(&type_max, sampled)
+        }
+        DataType::Decimal { precision, scale } => {
+            let precision = precision.unwrap_or(38);
+            let scale = scale.unwrap_or(0);
+            decimal_shape(precision, scale)?;
+            let type_limit = pow10_i128(precision)?
+                .checked_sub(1)
+                .ok_or_else(|| "decimal precision underflow".to_owned())?;
+            let moderate = UNCONSTRAINED_MAGNITUDE
+                .checked_mul(pow10_i128(scale)?)
+                .unwrap_or(type_limit);
+            Ok(ProtocolValue::Decimal128(sample_i128_inclusive(
+                rng,
+                0,
+                moderate.min(type_limit),
+            )?))
+        }
+        DataType::FloatingPoint { bits } => {
+            let cents = sample_i128_inclusive(rng, 0, UNCONSTRAINED_MAGNITUDE * 100)? as f64;
+            let value = cents / 100.0;
+            match bits.unwrap_or(64) {
+                0..=32 => Ok(ProtocolValue::Float32((value as f32).to_bits())),
+                33..=64 => Ok(ProtocolValue::Float64(value.to_bits())),
+                bits => Err(format!("floating_point({bits})")),
+            }
+        }
+        DataType::Date => {
+            let day = sample_i128_inclusive(
+                rng,
+                i128::from(UNCONSTRAINED_FIRST_DAY),
+                i128::from(UNCONSTRAINED_LAST_DAY),
+            )?;
+            i32::try_from(day)
+                .map(ProtocolValue::Date32)
+                .map_err(|_| "sampled date is outside datatype range".to_owned())
+        }
+        DataType::Timestamp { precision } => {
+            let first = i128::from(UNCONSTRAINED_FIRST_DAY) * SECONDS_PER_DAY;
+            let last = (i128::from(UNCONSTRAINED_LAST_DAY) + 1) * SECONDS_PER_DAY - 1;
+            let seconds = sample_i128_inclusive(rng, first, last)?;
+            let out_of_range = |_| "sampled timestamp is outside datatype range".to_owned();
+            if precision.is_none_or(|value| value <= 6) {
+                i64::try_from(seconds * 1_000_000)
+                    .map(ProtocolValue::TimestampMicroseconds)
+                    .map_err(out_of_range)
+            } else if precision.is_some_and(|value| value <= 9) {
+                i64::try_from(seconds * 1_000_000_000)
+                    .map(ProtocolValue::TimestampNanoseconds)
+                    .map_err(out_of_range)
+            } else {
+                Err(format!("timestamp({})", precision.unwrap_or_default()))
+            }
+        }
+        DataType::Time { precision } => {
+            let seconds = sample_i128_inclusive(rng, 0, SECONDS_PER_DAY - 1)?;
+            let out_of_range = |_| "sampled time is outside datatype range".to_owned();
+            if precision.is_none_or(|value| value <= 6) {
+                i64::try_from(seconds * 1_000_000)
+                    .map(ProtocolValue::TimeMicroseconds)
+                    .map_err(out_of_range)
+            } else if precision.is_some_and(|value| value <= 9) {
+                i64::try_from(seconds * 1_000_000_000)
+                    .map(ProtocolValue::TimeNanoseconds)
+                    .map_err(out_of_range)
+            } else {
+                Err(format!("time({})", precision.unwrap_or_default()))
+            }
+        }
+        DataType::String {
+            length,
+            fixed: false,
+        } => {
+            let number = sample_i128_inclusive(rng, 1, UNCONSTRAINED_MAGNITUDE)?;
+            let max_chars = usize::try_from(length.unwrap_or(u64::MAX)).unwrap_or(usize::MAX);
+            Ok(ProtocolValue::String(
+                format!("value-{number}").chars().take(max_chars).collect(),
+            ))
+        }
+        _ => {
+            let values = default_values(data_type)?;
+            let index = sample_random_index(rng, values.len())?;
+            values
+                .get(index)
+                .cloned()
+                .ok_or_else(|| "selected default value is missing".to_owned())
+        }
+    }
+}
+
+fn integer_magnitude(value: &ProtocolValue) -> Result<i128, String> {
+    match value {
+        ProtocolValue::Int8(value) => Ok(i128::from(*value)),
+        ProtocolValue::Int16(value) => Ok(i128::from(*value)),
+        ProtocolValue::Int32(value) => Ok(i128::from(*value)),
+        ProtocolValue::Int64(value) => Ok(i128::from(*value)),
+        ProtocolValue::UInt8(value) => Ok(i128::from(*value)),
+        ProtocolValue::UInt16(value) => Ok(i128::from(*value)),
+        ProtocolValue::UInt32(value) => Ok(i128::from(*value)),
+        ProtocolValue::UInt64(value) => Ok(i128::from(*value)),
+        _ => Err("value is not an integer".to_owned()),
+    }
+}
+
+/// Build an integer value with the same storage variant as `template`.
+fn integer_like(template: &ProtocolValue, value: i128) -> Result<ProtocolValue, String> {
+    let out_of_range = |_| "sampled integer is outside datatype range".to_owned();
+    match template {
+        ProtocolValue::Int8(_) => i8::try_from(value)
+            .map(ProtocolValue::Int8)
+            .map_err(out_of_range),
+        ProtocolValue::Int16(_) => i16::try_from(value)
+            .map(ProtocolValue::Int16)
+            .map_err(out_of_range),
+        ProtocolValue::Int32(_) => i32::try_from(value)
+            .map(ProtocolValue::Int32)
+            .map_err(out_of_range),
+        ProtocolValue::Int64(_) => i64::try_from(value)
+            .map(ProtocolValue::Int64)
+            .map_err(out_of_range),
+        ProtocolValue::UInt8(_) => u8::try_from(value)
+            .map(ProtocolValue::UInt8)
+            .map_err(out_of_range),
+        ProtocolValue::UInt16(_) => u16::try_from(value)
+            .map(ProtocolValue::UInt16)
+            .map_err(out_of_range),
+        ProtocolValue::UInt32(_) => u32::try_from(value)
+            .map(ProtocolValue::UInt32)
+            .map_err(out_of_range),
+        ProtocolValue::UInt64(_) => u64::try_from(value)
+            .map(ProtocolValue::UInt64)
+            .map_err(out_of_range),
+        _ => Err("value is not an integer".to_owned()),
+    }
+}
+
 pub(crate) fn sample_rejected_range_value<R: Rng + ?Sized>(
     data_type: &DataType,
     ranges: &[ValueRange],
