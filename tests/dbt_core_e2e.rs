@@ -298,11 +298,7 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
     assert_eq!(physical_snapshot(&project), expected_physical_snapshot());
 
     let boundary_output_dir = project.path().join("generated/boundary");
-    let boundary = run_tdg(
-        &project,
-        &boundary_output_dir,
-        &[ENRICHED_ORDERS_RELATION],
-    );
+    let boundary = run_tdg(&project, &boundary_output_dir, &[ENRICHED_ORDERS_RELATION]);
     assert_success("sql-tdg intermediate boundary generation", &boundary);
     let boundary_paths = generated_paths(&boundary.stdout);
     assert_generated_rows(&boundary_paths, &["enriched_orders"]);
@@ -310,10 +306,7 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
 
     assert_success(
         "dbt downstream boundary run",
-        &run_dbt(
-            &project,
-            &["run", "--select", "final_orders"],
-        ),
+        &run_dbt(&project, &["run", "--select", "final_orders"]),
     );
     let expected_final = vec![row(&["42", "paid", "north"])];
     assert_eq!(final_snapshot(&project), expected_final);
