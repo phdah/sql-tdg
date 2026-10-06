@@ -24,10 +24,8 @@ struct DbtProject {
 impl DbtProject {
     fn new() -> Self {
         let counter = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "sql-tdg-dbt-e2e-{}-{counter}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("sql-tdg-dbt-e2e-{}-{counter}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         copy_dir_all(&fixture_root(), &path).expect("dbt fixture should copy");
         let database = path.join("fixture.duckdb");
@@ -96,7 +94,10 @@ fn assert_success(label: &str, output: &Output) {
 fn bootstrap_artifacts(project: &DbtProject) {
     assert_success("dbt seed", &run_dbt(project, &["seed", "--full-refresh"]));
     assert_success("dbt run", &run_dbt(project, &["run", "--full-refresh"]));
-    assert_success("dbt docs generate", &run_dbt(project, &["docs", "generate"]));
+    assert_success(
+        "dbt docs generate",
+        &run_dbt(project, &["docs", "generate"]),
+    );
 
     assert!(project.path().join("target/manifest.json").is_file());
     assert!(project.path().join("target/catalog.json").is_file());
@@ -320,5 +321,8 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
     );
     let mutated = final_snapshot(&project);
     assert_ne!(mutated, expected_final);
-    assert!(mutated.is_empty(), "mutated predicate should reject the witness");
+    assert!(
+        mutated.is_empty(),
+        "mutated predicate should reject the witness"
+    );
 }
