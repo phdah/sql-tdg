@@ -39,6 +39,9 @@ DBT INPUT:
 GENERATION:
     --target <RELATION>             Select a named terminal relation.
     --target-layer <LAYER_ID>       Select an anonymous terminal layer.
+                                     Omit both to generate one shared source
+                                     dataset whose rows satisfy every terminal
+                                     outcome (for example every dbt model).
     --boundary <RELATION>           Materialize an intermediate relation. Repeatable.
                                      Omit to generate physical sources.
     --seed <N>                      Deterministic seed. Default: 42.
@@ -583,20 +586,34 @@ fn target_for_metadata(
                 .iter()
                 .flat_map(|component| component.final_outcomes())
                 .collect::<Vec<_>>();
-            let [outcome] = outcomes.as_slice() else {
-                return Err(CliError::new(
-                    "protocol bundle does not have exactly one terminal outcome; select one with --target or --target-layer",
-                ));
-            };
-
-            match outcome {
-                DatasetRef::Relation { name } => TestTarget::relation(name.clone())
+            match outcomes.as_slice() {
+                [] => Err(CliError::new("protocol bundle has no terminal outcome")),
+                [DatasetRef::Relation { name }] => TestTarget::relation(name.clone())
                     .map_err(|error| CliError::new(error.to_string())),
-                DatasetRef::Anonymous { layer_id } => TestTarget::anonymous_layer(layer_id.clone())
-                    .map_err(|error| CliError::new(error.to_string())),
-                _ => Err(CliError::new(
+                [DatasetRef::Anonymous { layer_id }] => {
+                    TestTarget::anonymous_layer(layer_id.clone())
+                        .map_err(|error| CliError::new(error.to_string()))
+                }
+                [_] => Err(CliError::new(
                     "selected protocol outcome cannot be represented by the CLI",
                 )),
+                _ => {
+                    let mut descriptions = outcomes
+                        .iter()
+                        .map(|outcome| match outcome {
+                            DatasetRef::Relation { name } => Ok(format!("relation:{name}")),
+                            DatasetRef::Anonymous { layer_id } => {
+                                Ok(format!("anonymous:{layer_id}"))
+                            }
+                            _ => Err(CliError::new(
+                                "terminal protocol outcome cannot be represented by the CLI",
+                            )),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    descriptions.sort();
+                    TestTarget::all_terminal_outcomes(&descriptions)
+                        .map_err(|error| CliError::new(error.to_string()))
+                }
             }
         }
     }
@@ -699,5 +716,6 @@ fn describe_target(target: &TestTarget) -> String {
     match target.kind() {
         TargetKind::Relation => format!("relation:{}", target.identifier()),
         TargetKind::AnonymousLayer => format!("anonymous:{}", target.identifier()),
+        TargetKind::AllTerminalOutcomes => format!("all:{}", target.identifier()),
     }
 }

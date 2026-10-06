@@ -164,6 +164,20 @@ pub enum ProtocolGenerationError {
         /// Stable terminal outcome descriptions.
         candidates: Vec<String>,
     },
+    /// Several terminal outcomes generated together have no shared dataset that satisfies all of them.
+    ConflictingOutcomes {
+        /// Stable descriptions of the outcomes whose conditions conflict.
+        outcomes: Vec<String>,
+        /// Explanation naming the conflicting source columns.
+        message: String,
+    },
+    /// One terminal outcome cannot be generated while generating for all terminal outcomes.
+    TerminalOutcome {
+        /// Stable description of the failing outcome.
+        outcome: String,
+        /// Reason the outcome cannot be generated.
+        source: Box<ProtocolGenerationError>,
+    },
     /// The requested terminal outcome does not exist.
     UnknownTerminalOutcome {
         /// Requested outcome description.
@@ -334,6 +348,15 @@ impl fmt::Display for ProtocolGenerationError {
                 formatter,
                 "protocol bundle has multiple terminal outcomes; select one explicitly: {}",
                 candidates.join(", ")
+            ),
+            Self::ConflictingOutcomes { outcomes, message } => write!(
+                formatter,
+                "terminal outcomes {} cannot share one generated dataset: {message}",
+                outcomes.join(", ")
+            ),
+            Self::TerminalOutcome { outcome, source } => write!(
+                formatter,
+                "terminal outcome {outcome} cannot be generated: {source}"
             ),
             Self::UnknownTerminalOutcome { selector } => {
                 write!(formatter, "unknown terminal outcome {selector}")
@@ -608,7 +631,11 @@ pub fn generate_from_bundle_at_boundary(
     )
 }
 
-/// Generate classified rows at an explicit boundary of one selected terminal outcome.
+/// Generate classified rows at an explicit boundary of the selected terminal outcome.
+///
+/// Without a selector, a bundle with several terminal outcomes generates one shared set of
+/// physical source tables whose rows satisfy every outcome at once. Intermediate boundaries
+/// always require a single terminal outcome.
 pub fn generate_classified_from_bundle_at_boundary(
     bundle: &AnalysisBundle,
     selector: Option<&OutcomeSelector>,
@@ -616,6 +643,13 @@ pub fn generate_classified_from_bundle_at_boundary(
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
+    if selector.is_none() && boundary.kind() == BoundaryKind::PhysicalSources {
+        let finals = terminal_outcomes(bundle);
+        if finals.len() > 1 {
+            return generate_all_outcomes_data(bundle, &finals, row_counts, seed);
+        }
+    }
+
     let (layer_id, outcome_description) = select_terminal_layer(bundle, selector)?;
     let layer = bundle
         .layers()
@@ -1490,6 +1524,342 @@ fn generate_relational_data(
     Ok(GeneratedData { tables, row_counts })
 }
 
+/// One terminal outcome participating in shared all-outcomes generation.
+struct OutcomeSemantics<'a> {
+    description: String,
+    semantics: &'a ResolvedComposedSemantics,
+}
+
+/// Generate one set of physical source tables whose rows satisfy every terminal outcome.
+///
+/// Each source column takes the intersection of the domains every outcome places on it, and
+/// relationship keys take a value allowed by every outcome. Conflicts are explicit errors.
+fn generate_all_outcomes_data(
+    bundle: &AnalysisBundle,
+    finals: &[&DatasetRef],
+    row_counts: GenerationRowCounts,
+    seed: u64,
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    if row_counts.rejected() > 0 {
+        return Err(ProtocolGenerationError::InvalidRowConfiguration {
+            message: "rejected rows are not defined when generating for all terminal outcomes; select one terminal outcome".to_owned(),
+        });
+    }
+
+    let schemas = bundle
+        .source_schemas()
+        .iter()
+        .map(|schema| (schema.relation().to_owned(), schema))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut outcomes = Vec::with_capacity(finals.len());
+    let mut relationships = BTreeSet::new();
+    let mut outcomes_by_column = BTreeMap::<RelationshipColumn, BTreeSet<String>>::new();
+    for outcome in finals {
+        let (layer_id, description) = outcome_layer(bundle, outcome)?;
+        let (semantics, outcome_relationships) =
+            prepare_outcome(bundle, &layer_id, &description, &schemas).map_err(|source| {
+                ProtocolGenerationError::TerminalOutcome {
+                    outcome: description.clone(),
+                    source: Box::new(source),
+                }
+            })?;
+
+        for relationship in outcome_relationships {
+            for column in [&relationship.left, &relationship.right] {
+                outcomes_by_column
+                    .entry(column.clone())
+                    .or_default()
+                    .insert(description.clone());
+            }
+            relationships.insert(relationship);
+        }
+        outcomes.push(OutcomeSemantics {
+            description,
+            semantics,
+        });
+    }
+    outcomes.sort_by(|left, right| left.description.cmp(&right.description));
+
+    let relations = outcomes
+        .iter()
+        .flat_map(|outcome| outcome.semantics.dependencies().iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let relationships = relationships.into_iter().collect::<Vec<_>>();
+    let relationship_columns = relationships
+        .iter()
+        .flat_map(|relationship| [&relationship.left, &relationship.right])
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    let mut generated_by_relation = BTreeMap::new();
+    let mut candidates_by_column = BTreeMap::new();
+    let mut domains_by_column = BTreeMap::new();
+    for relation in &relations {
+        let schema = source_schema(&schemas, relation)?;
+        let mut plans = Vec::with_capacity(schema.columns().len());
+        for schema_column in schema.columns() {
+            let column = RelationshipColumn::new(relation.as_str(), schema_column.name());
+            let constraints = outcome_column_domains(&outcomes, relation, schema_column.name())?;
+            for (description, _) in &constraints {
+                outcomes_by_column
+                    .entry(column.clone())
+                    .or_default()
+                    .insert((*description).to_owned());
+            }
+            let (plan, values) = shared_column_plan(relation, schema_column, &constraints)?;
+            if relationship_columns.contains(&column) {
+                let values = values
+                    .into_iter()
+                    .filter(|value| !matches!(value, ProtocolValue::Null))
+                    .collect::<Vec<_>>();
+                if values.is_empty() {
+                    return Err(ProtocolGenerationError::UnsatisfiableRelationship {
+                        relationship: column.describe(),
+                    });
+                }
+                domains_by_column.insert(
+                    column.clone(),
+                    RelationshipDomains {
+                        data_type: schema_column.data_type(),
+                        domains: constraints.iter().map(|(_, domain)| *domain).collect(),
+                    },
+                );
+                candidates_by_column.insert(column, values);
+            }
+            plans.push(plan);
+        }
+
+        let generated = Generator::new()
+            .generate_classified_protocol_values(row_counts.matching(), 0, seed, &plans)
+            .map_err(|source| ProtocolGenerationError::Generator {
+                relation: relation.clone(),
+                source,
+            })?;
+        generated_by_relation.insert(relation.clone(), generated);
+    }
+
+    if !relationships.is_empty() {
+        let adjacency = relationship_adjacency(&relationships);
+        let mut shared_candidates = BTreeMap::new();
+        for component in relationship_components(&candidates_by_column, &adjacency) {
+            let common =
+                shared_component_values(&candidates_by_column, &domains_by_column, &component)?;
+            if common.is_empty() {
+                let involved = component
+                    .iter()
+                    .filter_map(|column| outcomes_by_column.get(column))
+                    .flatten()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                return Err(ProtocolGenerationError::ConflictingOutcomes {
+                    outcomes: involved.into_iter().collect(),
+                    message: format!(
+                        "relationship {} has no common non-null value",
+                        component
+                            .iter()
+                            .map(RelationshipColumn::describe)
+                            .collect::<Vec<_>>()
+                            .join(" = ")
+                    ),
+                });
+            }
+            for column in component {
+                shared_candidates.insert(column, common.clone());
+            }
+        }
+
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let matching_values = choose_component_values(&shared_candidates, &adjacency, &mut rng)?;
+        for (column, value) in &matching_values {
+            for row in 0..row_counts.matching() {
+                set_generated_value(
+                    &mut generated_by_relation,
+                    &schemas,
+                    column,
+                    row,
+                    value.clone(),
+                )?;
+            }
+        }
+    }
+
+    let mut tables = BTreeMap::new();
+    for relation in &relations {
+        let schema = source_schema(&schemas, relation)?;
+        let generated = generated_by_relation.remove(relation).ok_or_else(|| {
+            ProtocolGenerationError::MissingSourceSchema {
+                relation: relation.clone(),
+            }
+        })?;
+        let table = build_protocol_table(relation, schema, row_counts.matching(), generated)?;
+        tables.insert(relation.clone(), table);
+    }
+
+    Ok(GeneratedData { tables, row_counts })
+}
+
+/// Validate one terminal outcome for shared generation and collect its relationships.
+fn prepare_outcome<'a>(
+    bundle: &'a AnalysisBundle,
+    layer_id: &str,
+    description: &str,
+    schemas: &BTreeMap<String, &RelationSchema>,
+) -> Result<(&'a ResolvedComposedSemantics, Vec<EqualityRelationship>), ProtocolGenerationError> {
+    let layer = bundle
+        .layers()
+        .iter()
+        .find(|layer| layer.id() == layer_id)
+        .ok_or_else(|| ProtocolGenerationError::MissingOutcomeLayer {
+            outcome: description.to_owned(),
+        })?;
+    let semantics = resolved_layer_semantics(layer)?;
+    if let Some(diagnostic) = semantics.diagnostics().first() {
+        return Err(ProtocolGenerationError::UnsupportedSemantics {
+            layer_id: layer.id().to_owned(),
+            code: diagnostic.code().to_owned(),
+            message: diagnostic.message().to_owned(),
+        });
+    }
+    validate_composed_domains(semantics, schemas)?;
+    let relationships = collect_equality_relationships(bundle, layer.id(), semantics, schemas)?;
+    Ok((semantics, relationships))
+}
+
+/// Datatype and outcome domains of one relationship key column.
+struct RelationshipDomains<'a> {
+    data_type: &'a DataType,
+    domains: Vec<&'a ValueDomain>,
+}
+
+/// Non-null values allowed by every outcome domain on every column of a relationship component.
+///
+/// Candidates are pooled across all component columns because overlapping domains on
+/// different columns can share a value that neither column's own candidates contain.
+fn shared_component_values(
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    domains_by_column: &BTreeMap<RelationshipColumn, RelationshipDomains<'_>>,
+    component: &[RelationshipColumn],
+) -> Result<Vec<ProtocolValue>, ProtocolGenerationError> {
+    let mut pool = Vec::new();
+    for column in component {
+        for value in candidates_by_column.get(column).into_iter().flatten() {
+            if !pool.contains(value) {
+                pool.push(value.clone());
+            }
+        }
+    }
+
+    let mut common = Vec::new();
+    for value in pool {
+        let mut satisfies_all = true;
+        for column in component {
+            let Some(constraints) = domains_by_column.get(column) else {
+                continue;
+            };
+            for domain in &constraints.domains {
+                let satisfies = value_satisfies_domain(constraints.data_type, &value, domain)
+                    .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
+                        relation: column.relation.clone(),
+                        column: column.column.clone(),
+                        message,
+                    })?;
+                if !satisfies {
+                    satisfies_all = false;
+                }
+            }
+        }
+        if satisfies_all {
+            common.push(value);
+        }
+    }
+    Ok(common)
+}
+
+/// Domains that terminal outcomes place on one source column, keyed by outcome description.
+fn outcome_column_domains<'a>(
+    outcomes: &'a [OutcomeSemantics<'a>],
+    relation: &str,
+    column: &str,
+) -> Result<Vec<(&'a str, &'a ValueDomain)>, ProtocolGenerationError> {
+    let mut constraints = Vec::new();
+    for outcome in outcomes {
+        if let Some(domain) =
+            find_column_domain(outcome.semantics.column_domains(), relation, column)?
+        {
+            constraints.push((outcome.description.as_str(), domain));
+        }
+    }
+    Ok(constraints)
+}
+
+/// Build the generation plan and candidate values for a column shared by several outcomes.
+///
+/// A column constrained by at most one outcome keeps that outcome's exact domain. A column
+/// constrained by several outcomes samples from candidate values that satisfy all of them.
+fn shared_column_plan(
+    relation: &str,
+    schema_column: &sql_semantic_protocol::SchemaColumn,
+    constraints: &[(&str, &ValueDomain)],
+) -> Result<(ColumnPlan, Vec<ProtocolValue>), ProtocolGenerationError> {
+    let column = schema_column.name();
+    let data_type = schema_column.data_type();
+    is_supported(data_type).map_err(|_| unsupported_source_type(relation, column, data_type))?;
+    let unsupported = |message: String| ProtocolGenerationError::UnsupportedDomain {
+        relation: relation.to_owned(),
+        column: column.to_owned(),
+        message,
+    };
+
+    if constraints.len() <= 1 {
+        let domain = constraints.first().map(|(_, domain)| *domain);
+        let plan = ColumnPlan::new(
+            column,
+            map_domain(relation, column, data_type, domain)?,
+            None,
+        );
+        let values = candidates(data_type, domain).map_err(unsupported)?;
+        return Ok((plan, values));
+    }
+
+    let mut pool = Vec::new();
+    for (_, domain) in constraints {
+        validate_boundary_domain(relation, column, domain)?;
+        for candidate in candidates(data_type, Some(domain)).map_err(unsupported)? {
+            if !pool.contains(&candidate) {
+                pool.push(candidate);
+            }
+        }
+    }
+
+    let mut values = Vec::new();
+    for candidate in pool {
+        let mut satisfies_all = true;
+        for (_, domain) in constraints {
+            if !value_satisfies_domain(data_type, &candidate, domain).map_err(unsupported)? {
+                satisfies_all = false;
+                break;
+            }
+        }
+        if satisfies_all {
+            values.push(candidate);
+        }
+    }
+
+    if values.is_empty() {
+        return Err(ProtocolGenerationError::ConflictingOutcomes {
+            outcomes: constraints
+                .iter()
+                .map(|(description, _)| (*description).to_owned())
+                .collect(),
+            message: format!("no value of {relation}.{column} satisfies every outcome's domain"),
+        });
+    }
+
+    let plan = ColumnPlan::new(column, GenerationDomain::Values(values.clone()), None);
+    Ok((plan, values))
+}
+
 fn prepare_relation_plans(
     semantics: &ResolvedComposedSemantics,
     relation: &str,
@@ -2016,42 +2386,10 @@ fn choose_component_values<R: Rng + ?Sized>(
     adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
     rng: &mut R,
 ) -> Result<BTreeMap<RelationshipColumn, ProtocolValue>, ProtocolGenerationError> {
-    let mut visited = BTreeSet::new();
     let mut selected = BTreeMap::new();
 
-    for start in candidates_by_column.keys() {
-        if visited.contains(start) {
-            continue;
-        }
-
-        let mut component = Vec::new();
-        let mut pending = vec![start.clone()];
-        while let Some(column) = pending.pop() {
-            if !visited.insert(column.clone()) {
-                continue;
-            }
-            component.push(column.clone());
-            if let Some(neighbors) = adjacency.get(&column) {
-                pending.extend(neighbors.iter().rev().cloned());
-            }
-        }
-        component.sort();
-
-        let Some(first) = component.first() else {
-            continue;
-        };
-        let mut common = candidates_by_column.get(first).cloned().ok_or_else(|| {
-            ProtocolGenerationError::UnsatisfiableRelationship {
-                relationship: first.describe(),
-            }
-        })?;
-        common.retain(|value| {
-            component.iter().skip(1).all(|column| {
-                candidates_by_column
-                    .get(column)
-                    .is_some_and(|values| values.contains(value))
-            })
-        });
+    for component in relationship_components(candidates_by_column, adjacency) {
+        let common = component_common_values(candidates_by_column, &component);
 
         if common.is_empty() {
             return Err(ProtocolGenerationError::UnsatisfiableRelationship {
@@ -2075,6 +2413,56 @@ fn choose_component_values<R: Rng + ?Sized>(
     }
 
     Ok(selected)
+}
+
+/// Group relationship columns into sorted connected components in deterministic order.
+fn relationship_components(
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
+) -> Vec<Vec<RelationshipColumn>> {
+    let mut visited = BTreeSet::new();
+    let mut components = Vec::new();
+
+    for start in candidates_by_column.keys() {
+        if visited.contains(start) {
+            continue;
+        }
+
+        let mut component = Vec::new();
+        let mut pending = vec![start.clone()];
+        while let Some(column) = pending.pop() {
+            if !visited.insert(column.clone()) {
+                continue;
+            }
+            component.push(column.clone());
+            if let Some(neighbors) = adjacency.get(&column) {
+                pending.extend(neighbors.iter().rev().cloned());
+            }
+        }
+        component.sort();
+        components.push(component);
+    }
+
+    components
+}
+
+/// Values allowed for every column of one relationship component, in the first column's order.
+fn component_common_values(
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    component: &[RelationshipColumn],
+) -> Vec<ProtocolValue> {
+    let Some((first, rest)) = component.split_first() else {
+        return Vec::new();
+    };
+    let mut common = candidates_by_column.get(first).cloned().unwrap_or_default();
+    common.retain(|value| {
+        rest.iter().all(|column| {
+            candidates_by_column
+                .get(column)
+                .is_some_and(|values| values.contains(value))
+        })
+    });
+    common
 }
 
 fn relationship_witnesses<R: Rng + ?Sized>(
@@ -2204,16 +2592,20 @@ fn sample_relationship_index<R: Rng + ?Sized>(
     }
 }
 
-fn select_terminal_layer(
-    bundle: &AnalysisBundle,
-    selector: Option<&OutcomeSelector>,
-) -> Result<(String, String), ProtocolGenerationError> {
-    let finals = bundle
+fn terminal_outcomes(bundle: &AnalysisBundle) -> Vec<&DatasetRef> {
+    bundle
         .graph()
         .components()
         .iter()
         .flat_map(|component| component.final_outcomes())
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+fn select_terminal_layer(
+    bundle: &AnalysisBundle,
+    selector: Option<&OutcomeSelector>,
+) -> Result<(String, String), ProtocolGenerationError> {
+    let finals = terminal_outcomes(bundle);
 
     let selected = match selector {
         None => match finals.as_slice() {
@@ -2237,6 +2629,14 @@ fn select_terminal_layer(
             })?,
     };
 
+    outcome_layer(bundle, selected)
+}
+
+/// Resolve a terminal outcome to its producing layer identifier and stable description.
+fn outcome_layer(
+    bundle: &AnalysisBundle,
+    selected: &DatasetRef,
+) -> Result<(String, String), ProtocolGenerationError> {
     match selected {
         DatasetRef::Anonymous { layer_id } => Ok((layer_id.clone(), describe_outcome(selected))),
         DatasetRef::Relation { name } => {

@@ -347,3 +347,27 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
     let mutated = boundary_snapshot(&project);
     assert!(mutated.is_empty());
 }
+
+#[test]
+#[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
+fn dbt_core_duckdb_whole_project_names_unsupported_model() {
+    let project = DbtProject::new();
+    bootstrap_artifacts(&project);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-project")
+        .arg(project.path())
+        .args(["--matching", "1", "--format", "csv", "--output"])
+        .arg(project.path().join("generated/all"))
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(r#"terminal outcome relation:"fixture"."raw_analytics"."subquery_orders""#)
+            && stderr.contains("EXISTS"),
+        "stderr: {stderr}"
+    );
+}
