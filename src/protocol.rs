@@ -179,6 +179,25 @@ impl GeneratedData {
     }
 }
 
+/// One self-contained dataset for a compatible subset of terminal outcomes.
+#[derive(Debug)]
+pub struct GeneratedScenario {
+    outcomes: Vec<String>,
+    data: GeneratedData,
+}
+
+impl GeneratedScenario {
+    /// Canonical terminal outcome identities satisfied together by this dataset.
+    pub fn outcomes(&self) -> &[String] {
+        &self.outcomes
+    }
+
+    /// Generated physical sources for exactly this compatible outcome group.
+    pub fn data(&self) -> &GeneratedData {
+        &self.data
+    }
+}
+
 /// Errors returned while consuming protocol semantics or generating source data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolGenerationError {
@@ -839,6 +858,85 @@ pub fn generate_classified_from_bundle_at_boundary(
             generate_intermediate_boundary_data(bundle, layer, &schemas, boundary, row_counts, seed)
         }
     }
+}
+
+/// Partition terminal protocol outcomes into deterministic, independently generated scenarios.
+///
+/// Outcomes are considered in stable canonical order and added to the first group for which
+/// the existing exact shared-outcomes generator proves compatibility. This is a deterministic
+/// first-fit partition, not a promise of the smallest possible number of scenarios. No outcome
+/// is weakened or omitted; unsupported individual outcomes fail instead of being skipped.
+/// Each scenario contains only matching physical-source rows.
+pub fn generate_scenarios_from_bundle(
+    bundle: &AnalysisBundle,
+    rows: usize,
+    seed: u64,
+) -> Result<Vec<GeneratedScenario>, ProtocolGenerationError> {
+    if let Some(diagnostic) = bundle.constraint_diagnostics().first() {
+        return Err(ProtocolGenerationError::RelationConstraint {
+            relation: "<bundle>".to_owned(),
+            message: format!("{}: {}", diagnostic.code(), diagnostic.message()),
+        });
+    }
+
+    let mut finals = terminal_outcomes(bundle);
+    if finals.is_empty() {
+        return Err(ProtocolGenerationError::NoTerminalOutcome);
+    }
+    finals.sort_by_key(|outcome| describe_outcome(outcome));
+
+    let counts = GenerationRowCounts::matching_only(rows);
+    let mut groups: Vec<(Vec<&DatasetRef>, GeneratedData)> = Vec::new();
+    for outcome in finals {
+        let description = describe_outcome(outcome);
+        let selector = match outcome {
+            DatasetRef::Relation { name } => OutcomeSelector::Relation(name.clone()),
+            DatasetRef::Anonymous { layer_id } => OutcomeSelector::AnonymousLayer(layer_id.clone()),
+            _ => {
+                return Err(ProtocolGenerationError::UnknownTerminalOutcome {
+                    selector: description,
+                });
+            }
+        };
+        let single = generate_classified_from_bundle_at_boundary(
+            bundle,
+            Some(&selector),
+            &GenerationBoundary::physical_sources(),
+            counts,
+            seed,
+        )
+        .map_err(|source| ProtocolGenerationError::TerminalOutcome {
+            outcome: description,
+            source: Box::new(source),
+        })?;
+
+        let mut pending = Some(single);
+        for (members, generated) in &mut groups {
+            let mut proposal = members.clone();
+            proposal.push(outcome);
+            match generate_all_outcomes_data(bundle, &proposal, counts, seed) {
+                Ok(candidate) => {
+                    members.push(outcome);
+                    *generated = candidate;
+                    pending = None;
+                    break;
+                }
+                Err(ProtocolGenerationError::ConflictingOutcomes { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        if let Some(single) = pending {
+            groups.push((vec![outcome], single));
+        }
+    }
+
+    Ok(groups
+        .into_iter()
+        .map(|(members, data)| GeneratedScenario {
+            outcomes: members.into_iter().map(describe_outcome).collect(),
+            data,
+        })
+        .collect())
 }
 
 fn stable_reason<T: fmt::Debug>(value: T) -> String {
