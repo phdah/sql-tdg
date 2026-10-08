@@ -1,10 +1,10 @@
 ---
 id: TASK-21.2
 title: Use manifest-declared source column data_type when catalog lacks the relation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-06 09:18'
-updated_date: '2026-10-08 11:36'
+updated_date: '2026-10-08 16:03'
 labels: []
 milestone: m-2
 dependencies:
@@ -41,10 +41,10 @@ Remaining sql-tdg work:
 - [x] #1 sql-semantic-protocol accepts manifest-declared column data_type for physical dependencies absent from catalog.json
 - [x] #2 Catalog types take precedence over declared types when both exist
 - [x] #3 A relation missing types for any referenced column still fails with an explicit error
-- [ ] #4 sql-tdg depends on the protocol 2.x release and an end-to-end test generates data for a dbt project whose sources exist only in YAML with declared types
-- [ ] #5 dbt generation works when catalog.json is absent, using the protocol's catalog-less dbt analysis
-- [ ] #6 A model referencing a column missing from its source's declared YAML columns fails with an explicit error naming the relation and column, never a table without that column
-- [ ] #7 CLI hints cover missing catalog schemas and missing declared data_type, and the README describes declaring source column types in YAML
+- [x] #4 sql-tdg depends on the protocol 2.x release and an end-to-end test generates data for a dbt project whose sources exist only in YAML with declared types
+- [x] #5 dbt generation works when catalog.json is absent, using the protocol's catalog-less dbt analysis
+- [x] #6 A model referencing a column missing from its source's declared YAML columns fails with an explicit error naming the relation and column, never a table without that column
+- [x] #7 CLI hints cover missing catalog schemas and missing declared data_type, and the README describes declaring source column types in YAML
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -52,3 +52,14 @@ Remaining sql-tdg work:
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-08: AC #1-#3 are protocol-side and verified against sql-semantic-protocol 3a4d3c6. #1 was checked by generating from a manifest with declared types and an empty catalog. #2 is covered by the protocol test dbt_catalog_schema_takes_precedence_over_manifest_declared_types. #3 was checked: a declared column without data_type fails with MissingDeclaredColumnTypes, and an undeclared referenced column yields an unknown_schema_column residual.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The CLI uses the protocol's typed manifest analysis when the default dbt catalog is absent.
+An explicit --dbt-catalog remains mandatory. Missing source schemas and declared datatypes
+produce actionable hints, and the protocol rejects compiled references to undeclared source
+columns. CLI integration tests cover typed manifest and project input, range-constrained
+generated CSV output, schema provenance, missing types, unknown columns, and missing explicit
+catalog paths. README usage documents dbt YAML data_type declarations and catalog precedence.
+<!-- SECTION:FINAL_SUMMARY:END -->

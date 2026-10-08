@@ -384,3 +384,56 @@ fn dbt_core_duckdb_whole_project_names_residual_model() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+#[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
+fn dbt_core_generates_from_yaml_source_types_without_catalog() {
+    let project = DbtProject::new();
+    let sources = r#"version: 2
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: orders
+        columns:
+          - {name: id, data_type: INTEGER}
+          - {name: customer_id, data_type: INTEGER}
+          - {name: amount, data_type: BIGINT}
+          - {name: status, data_type: VARCHAR}
+          - {name: created_at, data_type: TIMESTAMP}
+          - {name: region, data_type: VARCHAR}
+      - name: customers
+        columns:
+          - {name: id, data_type: INTEGER}
+          - {name: score, data_type: INTEGER}
+          - {name: active, data_type: BOOLEAN}
+      - name: legacy_orders
+        columns:
+          - {name: id, data_type: INTEGER}
+          - {name: customer_id, data_type: INTEGER}
+          - {name: amount, data_type: BIGINT}
+          - {name: status, data_type: VARCHAR}
+          - {name: created_at, data_type: TIMESTAMP}
+          - {name: region, data_type: VARCHAR}
+      - name: returns
+        columns:
+          - {name: order_id, data_type: INTEGER}
+          - {name: refund_amount, data_type: BIGINT}
+          - {name: reason, data_type: VARCHAR}
+"#;
+    fs::write(project.path().join("models/sources.yml"), sources)
+        .expect("typed dbt source declarations should be writable");
+
+    assert_success("dbt compile", &run_dbt(&project, &["compile"]));
+    assert!(project.path().join("target/manifest.json").is_file());
+    assert!(
+        !project.path().join("target/catalog.json").exists(),
+        "catalog-less generation must not depend on a warehouse catalog"
+    );
+
+    let output_dir = project.path().join("generated/manifest-only");
+    let output = run_tdg(&project, TARGET_RELATION, &output_dir, &[], 3, 0);
+    assert_success("catalog-less dbt source generation", &output);
+    let paths = generated_paths(&output.stdout);
+    assert_generated_rows(&paths, &["customers", "orders"], 3);
+}
