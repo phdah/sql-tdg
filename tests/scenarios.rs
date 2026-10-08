@@ -78,7 +78,7 @@ fn compatible_terminal_outcomes_share_a_scenario_and_conflicts_split() {
     for (first, second) in scenarios.iter().zip(&again) {
         assert_eq!(first.outcomes(), second.outcomes());
         for (name, table) in first.data().tables() {
-            assert_eq!(table.num_rows(), second.data().table(name).expect("same table").num_rows());
+            assert_eq!(table.dim().rows(), second.data().table(name).expect("same table").dim().rows());
         }
         for name in first.data().tables().keys() {
             for column in ["amount", "id"] {
