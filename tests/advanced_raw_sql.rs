@@ -295,9 +295,8 @@ fn cli_set_operations_and_limit_fail_explicitly_while_distinct_is_exact() {
         "limited_result",
     ] {
         let output_dir = TestDir::new(target);
-        let output = run_cli_with_counts(
-            &fixture_path, target, schemas, &[], output_dir.path(), 1, 0,
-        );
+        let output =
+            run_cli_with_counts(&fixture_path, target, schemas, &[], output_dir.path(), 1, 0);
         assert!(!output.status.success(), "{target} must be residual");
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
@@ -308,7 +307,13 @@ fn cli_set_operations_and_limit_fail_explicitly_while_distinct_is_exact() {
 
     let output_dir = TestDir::new("distinct");
     let output = run_cli_with_counts(
-        &fixture_path, "distinct_result", schemas, &[], output_dir.path(), 1, 0,
+        &fixture_path,
+        "distinct_result",
+        schemas,
+        &[],
+        output_dir.path(),
+        1,
+        0,
     );
     assert_cli_success(&output);
 }
