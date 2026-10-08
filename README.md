@@ -81,9 +81,11 @@ assumptions as equivalent filters.
 
 For supported inner equality relationships, multi-relation generation coordinates physical source
 keys using protocol join, graph, schema, and lineage metadata. Matching rows satisfy every connected
-equality relationship. Rejected relational rows deterministically break one safely isolatable
-relationship while keeping scalar domains and the remaining relationships valid. Relationship
-shapes that cannot guarantee those properties fail explicitly.
+equality relationship and distribute keys across distinct, moderate values when their protocol
+domains permit it. Foreign-key constraints reference existing generated parent keys and spread
+children over several parents when possible. Rejected relational rows deterministically break one
+safely isolatable relationship while keeping scalar domains and the remaining relationships valid.
+Relationship shapes that cannot guarantee those properties fail explicitly.
 
 ## Exactness and comparison assumptions
 
