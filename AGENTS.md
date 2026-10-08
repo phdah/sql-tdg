@@ -137,6 +137,11 @@ unordered iteration, or scheduling.
 **Shared helpers over repetition** Extract repeated schema, query, and assertion setup rather than
 copying it across tests.
 
+**Dialect evidence** When adding SQL semantic generation features, update
+[the dialect conformance matrix](docs/dialect-conformance.md) and its tests
+in the same PR. Distinguish protocol parsing, exact generation, and verified
+engine execution; dialect acceptance alone is not execution conformance.
+
 **Benchmarks for hot paths** Performance claims for generation, solving, or table operations should
 include a benchmark and before/after measurements.
 
