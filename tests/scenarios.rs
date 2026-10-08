@@ -2,7 +2,9 @@ use sql_semantic_protocol::{
     AnalysisBundle, ConfiguredSqlInput, RelationCatalog, RelationSchema, SchemaColumn, SqlInput,
     analyze_configured_inputs_with_catalog, dialect_from_name,
 };
-use sql_tdg::{GeneratedData, ProtocolGenerationError, generate_scenarios_from_bundle, generate_from_sql};
+use sql_tdg::{
+    GeneratedData, ProtocolGenerationError, generate_from_sql, generate_scenarios_from_bundle,
+};
 
 fn bundle(sql: &str) -> AnalysisBundle {
     let dialect = dialect_from_name("generic").expect("generic dialect must exist");
@@ -19,8 +21,7 @@ fn bundle(sql: &str) -> AnalysisBundle {
             vec![
                 SchemaColumn::from_sql_type("amount", "INTEGER", "generic")
                     .expect("valid amount type"),
-                SchemaColumn::from_sql_type("id", "INTEGER", "generic")
-                    .expect("valid id type"),
+                SchemaColumn::from_sql_type("id", "INTEGER", "generic").expect("valid id type"),
             ],
         )
         .expect("valid schema"),
@@ -70,22 +71,40 @@ fn compatible_terminal_outcomes_share_a_scenario_and_conflicts_split() {
     let high = ints(scenarios[0].data(), "orders", "amount");
     assert_eq!(high.len(), 12);
     assert!(high.iter().all(|value| (101..=200).contains(value)));
-    assert!(ints(scenarios[0].data(), "customers", "id").iter().all(|id| *id >= 5));
-    assert!(ints(scenarios[1].data(), "orders", "amount").iter().all(|value| *value < 50));
+    assert!(
+        ints(scenarios[0].data(), "customers", "id")
+            .iter()
+            .all(|id| *id >= 5)
+    );
+    assert!(
+        ints(scenarios[1].data(), "orders", "amount")
+            .iter()
+            .all(|value| *value < 50)
+    );
     assert!(scenarios[1].data().table("customers").is_none());
 
     let again = generate_scenarios_from_bundle(&analyzed, 12, 42).expect("repeat succeeds");
     for (first, second) in scenarios.iter().zip(&again) {
         assert_eq!(first.outcomes(), second.outcomes());
         for (name, table) in first.data().tables() {
-            assert_eq!(table.dim().rows(), second.data().table(name).expect("same table").dim().rows());
+            assert_eq!(
+                table.dim().rows(),
+                second.data().table(name).expect("same table").dim().rows()
+            );
         }
         for name in first.data().tables().keys() {
             for column in ["amount", "id"] {
-                if let Ok(Some(values)) = first.data().table(name).expect("table").get_ints(column) {
+                if let Ok(Some(values)) = first.data().table(name).expect("table").get_ints(column)
+                {
                     assert_eq!(
                         values,
-                        second.data().table(name).expect("table").get_ints(column).expect("read").expect("same column")
+                        second
+                            .data()
+                            .table(name)
+                            .expect("table")
+                            .get_ints(column)
+                            .expect("read")
+                            .expect("same column")
                     );
                 }
             }
@@ -112,12 +131,14 @@ fn compatible_terminal_outcomes_share_a_scenario_and_conflicts_split() {
 
 #[test]
 fn unsupported_individual_outcome_cannot_be_silently_skipped() {
-    let analyzed = bundle("
+    let analyzed = bundle(
+        "
         CREATE VIEW supported AS SELECT amount FROM orders WHERE amount >= 10;
         CREATE VIEW unsupported AS
         SELECT o.amount FROM orders AS o
         WHERE EXISTS (SELECT 1 FROM customers AS c WHERE c.id = o.id);
-    ");
+    ",
+    );
     let error = generate_scenarios_from_bundle(&analyzed, 8, 42)
         .expect_err("unsupported terminal outcome must fail closed");
     assert!(matches!(
