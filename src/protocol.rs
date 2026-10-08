@@ -1397,7 +1397,11 @@ fn generate_prepared_scalar_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts, case_coverage: Vec::new() })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage: Vec::new(),
+    })
 }
 
 struct PreparedRelationships<'a> {
@@ -1498,7 +1502,11 @@ fn generate_prepared_relational_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts, case_coverage: Vec::new() })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage: Vec::new(),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1649,7 +1657,11 @@ fn generate_scalar_data(
             build_protocol_table(relation, schema, row_counts.total(), generated)?,
         );
     }
-    Ok(GeneratedData { tables, row_counts, case_coverage })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage,
+    })
 }
 
 fn generate_relational_data(
@@ -1750,7 +1762,11 @@ fn generate_relational_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts, case_coverage })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage,
+    })
 }
 
 /// One terminal outcome participating in shared all-outcomes generation.
@@ -1948,7 +1964,11 @@ fn generate_all_outcomes_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts, case_coverage })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage,
+    })
 }
 
 /// Validate one terminal outcome for shared generation and collect its relationships.
