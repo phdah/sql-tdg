@@ -378,7 +378,8 @@ fn dbt_core_duckdb_whole_project_names_residual_model() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains(r#"terminal outcome relation:"fixture"."raw_analytics"."aggregate_summary""#)
+        stderr
+            .contains(r#"terminal outcome relation:"fixture"."raw_analytics"."aggregate_summary""#)
             && stderr.contains("reason=having"),
         "stderr: {stderr}"
     );
