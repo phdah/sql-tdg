@@ -507,10 +507,12 @@ fn compiled_cli_rejects_unattributed_dbt_test_diagnostics() {
     let workspace = TestDir::new("dbt-unattributed-constraint");
     let manifest_path = workspace.path().join("manifest.json");
     let original = include_str!("fixtures/dbt_manifest_source_relationships.json");
-    let invalid = original.replace(
-        r#""model": "{{ get_where_subquery(source('raw', 'order_items')) }}""#,
-        r#""model": "{{ unsupported() }}""#,
-    );
+    let invalid = original
+        .replace(r#""name": "relationships""#, r#""name": "unique""#)
+        .replace(
+            r#""model": "{{ get_where_subquery(source('raw', 'order_items')) }}""#,
+            r#""model": "{{ unsupported() }}""#,
+        );
     assert_ne!(invalid, original);
     fs::write(&manifest_path, invalid).expect("manifest should be writable");
     let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
