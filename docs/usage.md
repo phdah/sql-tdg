@@ -68,7 +68,20 @@ rejected data cannot be generated safely.
 ## dbt projects
 
 Run `dbt compile` first so the project has a current `target/manifest.json`.
-Then pass `--dbt-project` to point to the directory containing `target/`.
+Run `dbt docs generate` as well when a database connection is available to
+produce `target/catalog.json` with warehouse-introspected column types.
+Then pass `--dbt-project` to point to the directory containing `target/`:
+
+```console
+dbt compile
+dbt docs generate
+sql-tdg generate --dbt-project . --matching 50 --rejected 0 --seed 42 --output sql-tdg-output
+```
+
+A catalog is not a prerequisite for generating sources that do not yet exist
+in the warehouse. In that case it may have no entries for those relations,
+and the compiled manifest must provide complete `data_type` declarations
+for every required physical source column.
 The CLI uses `target/catalog.json` if it exists, and otherwise uses complete
 `data_type` declarations on source columns in the compiled manifest. Catalog
 types win when both are present. Missing or inconsistent source type evidence

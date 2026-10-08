@@ -152,12 +152,20 @@ sources:
             data_type: INTEGER
 ```
 
-From a configured dbt project directory:
+From a configured dbt project directory, compile the model SQL and generate
+the catalog when the warehouse is available:
 
 ```console
 dbt compile
+dbt docs generate
 sql-tdg generate --dbt-project . --matching 50 --rejected 0 --seed 42 --output sql-tdg-output
 ```
+
+`dbt docs generate` builds `target/catalog.json` using warehouse metadata, including
+column types for relations that already exist. For fresh projects whose physical
+sources do not yet exist in the warehouse, the catalog may be empty or
+incomplete; declare every physical source column's `data_type` in source YAML
+so generation can use the compiled manifest instead.
 
 sql-tdg reads `target/manifest.json` and, when present, `target/catalog.json`.
 Catalog types take precedence over the source YAML's `data_type` declarations.
