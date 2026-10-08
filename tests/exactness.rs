@@ -69,7 +69,7 @@ fn conditional_string_filters_require_explicit_declarations() {
         &[ComparisonAssumption::BinaryCollation],
     )
     .expect("declared comparison assumptions allow exact generation");
-    assert_eq!(generated.table("t").expect("table").rows(), 5);
+    assert_eq!(generated.row_counts().matching(), 5);
 }
 
 #[test]
