@@ -2,13 +2,13 @@
 
 #![forbid(unsafe_code)]
 
+mod case_coverage;
 pub mod export;
 pub mod generator;
 pub mod protocol;
 mod protocol_value;
 pub mod solver;
 pub mod table;
-mod case_coverage;
 pub mod test_case;
 pub mod types;
 
