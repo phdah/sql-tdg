@@ -1,0 +1,157 @@
+# Usage and semantic guarantees
+
+sql-tdg generates reproducible relation data from a
+[SQL Semantic Protocol](https://github.com/phdah/sql-semantic-protocol) analysis.
+It does not connect to a database or execute the input SQL. The generated
+Parquet/CSV files can be loaded by a separate test harness or application.
+
+## Raw SQL
+
+Pass one or more inline queries with `--sql`, files with `--file`, and
+typed physical source columns with repeated `--schema`:
+
+```console
+sql-tdg generate \
+  --dialect generic \
+  --sql 'SELECT amount FROM orders WHERE amount >= 10 AND amount < 20' \
+  --schema 'orders:amount=INTEGER' \
+  --matching 50 \
+  --rejected 10 \
+  --seed 42 \
+  --format parquet \
+  --output sql-tdg-output
+```
+
+Columns not constrained by the protocol get varied, moderate values; constrained
+scalar ranges are sampled across their allowed intervals. Use a fixed `--seed`
+to reproduce the same samples. The CLI defaults to 100 matching rows, 0
+rejected rows, seed 42, and Parquet output.
+
+## dbt projects
+
+Run `dbt compile` first so the project has a current `target/manifest.json`.
+Then pass `--dbt-project` to point to the directory containing `target/`.
+The CLI uses `target/catalog.json` if it exists, and otherwise uses complete
+`data_type` declarations on source columns in the compiled manifest. Catalog
+types win when both are present. Missing or inconsistent source type evidence
+causes an actionable error; sql-tdg does not infer it from SQL.
+
+The `--dbt-manifest` option accepts an explicit artifact path; combine it with
+`--dbt-catalog` when the catalog is required. The SQL dialect comes from the
+dbt manifest adapter, not a CLI `--dialect` override. Compiled model SQL is the
+source of query semantics; raw dbt Jinja/model text is never parsed by sql-tdg.
+
+Tests and dbt constraints are consumed through the protocol, including unique
+and composite keys, not-null, accepted values, and supported foreign keys.
+Self-references are supported when they can be generated consistently.
+Unsupported test configurations, constraint diagnostic codes, and conflicting
+domains produce explicit errors. Constraints on **nongenerated** model
+relations are printed as `status=not_honored` rather than claimed to be
+satisfied. Singular tests and arbitrary model-specific totals are not
+synthesized into test fixtures.
+
+### Outcome selection
+
+Without a selector, sql-tdg generates one shared set of physical sources whose
+rows satisfy **every** terminal outcome. If two terminal models demand mutually
+exclusive values from the same source, generation fails with
+`ConflictingOutcomes` and identifies the affected outcomes.
+
+Use `--target` to select one named terminal relation or `--target-layer`
+for an anonymous layer. A named dbt target must match the protocol's exact
+canonical relation identity, including quotation when present in
+`manifest.json` (for example
+`"fixture"."raw_analytics"."final_orders"` in the committed dbt fixture).
+
+Repeat `--boundary` to materialize named intermediate relations instead of
+physical sources for a selected outcome. Only select a boundary if the protocol
+resolves its semantics exactly. Rejected rows and intermediate boundaries
+require selecting a single outcome instead of whole-project mode.
+
+### Loading and verifying
+
+Exported files are backend-neutral. You are responsible for importing them
+into the test database or providing them as dbt seeds, then running `dbt build`
+or your SQL test harness. The repository's `make dbt-e2e` target demonstrates
+the full generation, load, execution, and verification sequence using DuckDB
+and the committed fixture; it does not alter production databases.
+
+## Classification and exactness
+
+Matching rows satisfy the selected protocol conditions. For `--rejected N`,
+sql-tdg deliberately violates one supported scalar condition or breakable
+relationship while preserving all the remaining conditions. If it cannot
+guarantee that classification, it returns an explicit error rather than
+emitting misleading rejected rows.
+
+Every relevant transformation layer must provide an **exact row-membership
+contract**. The protocol must represent the composed predicates and
+inner-join equalities across CTEs and derived tables. Examples that may prevent
+exact generation include:
+
+- cross-column OR and LIKE predicates;
+- computed-column filters and computed join keys;
+- HAVING, QUALIFY, LIMIT, OFFSET, FETCH, and TABLESAMPLE;
+- non-inner joins and unresolvable transformation lineage.
+
+These are not merely ignored: errors identify the residual condition, clause,
+or originating layer where the protocol can supply that information. The same
+exactness rule applies in whole-project mode, for selected outcomes, and for
+rejected-row generation.
+
+Projected CASE branches are exercised when the protocol supplies safe
+physical-source branch domains. The library exposes `case_coverage()`, and
+the CLI prints `case_branch=...` with `covered`, `unreachable`,
+`unknown`, or `insufficient_rows`. Aggregate and unsafe-lineage CASE
+expressions may be reported as `unknown`, not silently declared covered.
+
+## Comparison assumptions
+
+A protocol condition may require a caller-attested comparison setting.
+Attest only properties guaranteed by the target SQL execution environment:
+
+| Setting | When it matters |
+| --- | --- |
+| `binary_collation` | String comparisons use binary collation |
+| `no_char_padding` | Text comparisons have no blank-padding behavior |
+| `no_nan` | Floating-point comparisons exclude NaN |
+| `signed_zero_equivalent` | Floating-point signed-zero semantics are equivalent |
+| `session_time_zone` | Timestamp comparisons use a fixed session timezone |
+
+For example, when binary collation is guaranteed:
+
+```console
+sql-tdg generate \
+  --dialect generic \
+  --sql "SELECT name FROM customers WHERE name = 'Alice'" \
+  --schema 'customers:name=VARCHAR' \
+  --assume-comparison binary_collation \
+  --output sql-tdg-output
+```
+
+Repeat `--assume-comparison` for additional attested settings. The library
+also accepts explicit comparison assumptions through
+`generate_classified_from_sql_with_assumptions`,
+`SqlGenerationSettings`, or
+`AnalysisBundle::declare_comparison_assumptions`.
+
+## Formats and reproducibility
+
+Parquet is the default and supports the broadest lossless Arrow-backed types:
+integers, floating point, decimals, temporal types, strings, binary, nullable
+values, arrays, maps, structs, and JSON-like storage where their canonical
+protocol datatypes can be represented without loss. Unrepresentable types
+fail with `UnsupportedSourceType`; they are not silently coerced. CSV is
+intended for flat interoperability, including dbt seed workflows.
+
+Each successful CLI run emits:
+
+- one deterministically named file per generated relation;
+- `metadata.sqltdg` containing workload identity, selection, boundaries, seed,
+  row classifications, and the normalized protocol snapshot;
+- CLI output describing generated paths, CASE coverage, and constraints that
+  were not honored because their relations were not generated.
+
+With identical analysis inputs, source schemas, row counts, and seed, generated
+data is deterministic. A separate database harness is responsible for
+executing SQL and comparing downstream results.
