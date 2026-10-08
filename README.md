@@ -80,7 +80,9 @@ Snowflake, and SQLite.**
 dbt input uses its manifest's adapter dialect automatically. Dialect support
 means the SQL can be parsed and analyzed using that dialect; **exact generation
 still depends on the semantics of the particular query**, not just its dialect.
-See [SQL scope and exactness](docs/usage.md#sql-scope-and-dialects).
+See [SQL scope and exactness](docs/usage.md#sql-scope-and-dialects) and the
+[dialect-by-feature conformance matrix](docs/dialect-conformance.md) for the
+separate levels of parse, generation, and execution verification.
 
 ## Contents
 
@@ -240,6 +242,7 @@ output metadata, and rejected-row restrictions, see [Usage and semantics](docs/u
 ## Documentation and contributing
 
 - [Usage and semantics](docs/usage.md)
+- [Dialect conformance matrix](docs/dialect-conformance.md)
 - [Contributor and architecture conventions](AGENTS.md)
 - [Changelog](CHANGELOG.md)
 - [Issue tracker](https://github.com/phdah/sql-tdg/issues)
