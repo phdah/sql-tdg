@@ -1890,7 +1890,7 @@ fn decimal_shape(precision: u64, scale: u64) -> Result<(), String> {
     }
 }
 
-fn parse_decimal_scaled(text: &str, precision: u64, scale: u64) -> Result<i128, String> {
+pub(crate) fn parse_decimal_scaled(text: &str, precision: u64, scale: u64) -> Result<i128, String> {
     decimal_shape(precision, scale)?;
     let text = text.trim();
     let (negative, unsigned) = match text.as_bytes().first() {
