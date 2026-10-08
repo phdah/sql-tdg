@@ -1594,7 +1594,8 @@ fn generate_prepared_relational_data(
             relationship_plan.relationships,
             relationship_plan.candidates_by_column,
             &adjacency,
-            &matching_values,
+            &generated_by_relation,
+            prepared.schemas,
             &mut rng,
         )?;
         if witnesses.is_empty() {
@@ -2043,7 +2044,8 @@ fn generate_relational_data(
             relationships,
             &candidates_by_column,
             &adjacency,
-            &matching_values,
+            &generated_by_relation,
+            schemas,
             &mut rng,
         )?;
         if witnesses.is_empty() {
@@ -3128,7 +3130,8 @@ fn relationship_witnesses<R: Rng + ?Sized>(
     relationships: &[EqualityRelationship],
     candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
     adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
-    matching_values: &BTreeMap<RelationshipColumn, ProtocolValue>,
+    generated: &BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
     rng: &mut R,
 ) -> Result<Vec<RelationshipWitness>, ProtocolGenerationError> {
     let mut witnesses = Vec::new();
@@ -3136,37 +3139,65 @@ fn relationship_witnesses<R: Rng + ?Sized>(
     for relationship in relationships {
         let left_degree = adjacency.get(&relationship.left).map_or(0, BTreeSet::len);
         let right_degree = adjacency.get(&relationship.right).map_or(0, BTreeSet::len);
-
-        let candidate_column = if left_degree == 1 {
-            Some(&relationship.left)
+        let (column, neighbor) = if left_degree == 1 {
+            (&relationship.left, &relationship.right)
         } else if right_degree == 1 {
-            Some(&relationship.right)
+            (&relationship.right, &relationship.left)
         } else {
-            None
+            continue;
         };
 
-        let Some(column) = candidate_column else {
-            continue;
-        };
-        let Some(matching_value) = matching_values.get(column) else {
-            continue;
-        };
+        let schema = source_schema(schemas, &neighbor.relation)?;
+        let column_index = schema
+            .columns()
+            .iter()
+            .position(|item| item.name() == neighbor.column)
+            .ok_or_else(|| ProtocolGenerationError::MissingSchemaColumn {
+                relation: neighbor.relation.clone(),
+                column: neighbor.column.clone(),
+            })?;
+        let neighbor_values = generated
+            .get(&neighbor.relation)
+            .and_then(|columns| columns.get(column_index))
+            .ok_or_else(|| ProtocolGenerationError::MissingSourceSchema {
+                relation: neighbor.relation.clone(),
+            })?;
+
+        // A rejected row must not join ANY generated parent row, not just the
+        // row at the same index. The neighbor's values include matching and
+        // rejected baseline rows.
         let alternates = candidates_by_column
             .get(column)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter(|value| *value != matching_value)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+            .into_iter()
+            .flatten()
+            .filter(|value| !neighbor_values.contains(value))
+            .cloned()
+            .collect::<Vec<_>>();
         if alternates.is_empty() {
             continue;
         }
 
-        let index = sample_relationship_index(rng, alternates.len(), "relationship break")?;
-        let value = alternates.get(index).cloned().ok_or_else(|| {
+        let data_type = relationship_data_type(schemas, column)?;
+        let preferred = moderate_key_values(data_type).map_err(|message| {
+            ProtocolGenerationError::UnsupportedDomain {
+                relation: column.relation.clone(),
+                column: column.column.clone(),
+                message,
+            }
+        })?;
+        let moderate = alternates
+            .iter()
+            .filter(|value| preferred.contains(value))
+            .cloned()
+            .collect::<Vec<_>>();
+        let options = if moderate.is_empty() {
+            &alternates
+        } else {
+            &moderate
+        };
+
+        let index = sample_relationship_index(rng, options.len(), "relationship break")?;
+        let value = options.get(index).cloned().ok_or_else(|| {
             ProtocolGenerationError::UnsatisfiableRelationship {
                 relationship: relationship.describe(),
             }
