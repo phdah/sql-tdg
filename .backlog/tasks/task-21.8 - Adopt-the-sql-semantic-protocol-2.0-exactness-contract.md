@@ -1,10 +1,10 @@
 ---
 id: TASK-21.8
 title: Adopt the sql-semantic-protocol 2.0 exactness contract
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-08 11:36'
-updated_date: '2026-10-08 11:36'
+updated_date: '2026-10-08 15:59'
 labels: []
 milestone: m-2
 dependencies: []
@@ -40,14 +40,31 @@ Removing the CTE guard and CTE end-to-end coverage belong to TASK-21.5; this tas
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 sql-tdg depends on the published sql-semantic-protocol 2.x release instead of a path dependency, and make rust-checks and make dbt-e2e pass
-- [ ] #2 Generation for a selected outcome, for every terminal outcome in whole-project mode, and at intermediate boundaries fails with an explicit error naming each residual reason, clause, and originating layer whenever the relevant exactness status is residual
-- [ ] #3 Conditional semantics generate only when every listed assumption is declared by the caller; otherwise generation fails naming the open assumptions and their dependent conditions
-- [ ] #4 The CLI and library accept comparison-semantics assumptions, pass them to the protocol, and record them in metadata.sqltdg
-- [ ] #5 Relational generation coordinates keys from join_equalities rather than walking per-layer join trees, and still refuses outer joins and repeated relation instances explicitly
-- [ ] #6 Rejected-row generation is allowed only for exact semantics (including declared assumptions)
-- [ ] #7 Tests assert explicit errors for cross-column OR, LIKE, CAST, HAVING, QUALIFY, LIMIT, OFFSET, FETCH, TABLESAMPLE, unknown schema columns, and lossy literal coercion
-- [ ] #8 Tests cover conditional string, float, and timestamp filters with and without declared assumptions, and the dbt end-to-end fixture runs with its required assumptions declared
-- [ ] #9 README documents exactness handling, assumption declaration, and the resulting errors
-- [ ] #10 Existing fixtures that rely on semantics the protocol now marks residual (for example tests/fixtures window_ranked.sql with QUALIFY and LIMIT) are rewritten or converted to explicit-error tests, never kept passing by ignoring exactness
+- [x] #1 sql-tdg depends on the published sql-semantic-protocol 2.x release instead of a path dependency, and make rust-checks and make dbt-e2e pass
+- [x] #2 Generation for a selected outcome, for every terminal outcome in whole-project mode, and at intermediate boundaries fails with an explicit error naming each residual reason, clause, and originating layer whenever the relevant exactness status is residual
+- [x] #3 Conditional semantics generate only when every listed assumption is declared by the caller; otherwise generation fails naming the open assumptions and their dependent conditions
+- [x] #4 The CLI and library accept comparison-semantics assumptions, pass them to the protocol, and record them in metadata.sqltdg
+- [x] #5 Relational generation coordinates keys from join_equalities rather than walking per-layer join trees, and still refuses outer joins and repeated relation instances explicitly
+- [x] #6 Rejected-row generation is allowed only for exact semantics (including declared assumptions)
+- [x] #7 Tests assert explicit errors for cross-column OR, LIKE, CAST, HAVING, QUALIFY, LIMIT, OFFSET, FETCH, TABLESAMPLE, unknown schema columns, and lossy literal coercion
+- [x] #8 Tests cover conditional string, float, and timestamp filters with and without declared assumptions, and the dbt end-to-end fixture runs with its required assumptions declared
+- [x] #9 README documents exactness handling, assumption declaration, and the resulting errors
+- [x] #10 Existing fixtures that rely on semantics the protocol now marks residual (for example tests/fixtures window_ranked.sql with QUALIFY and LIMIT) are rewritten or converted to explicit-error tests, never kept passing by ignoring exactness
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Published `sql-semantic-protocol 2.0.0` was already selected in `Cargo.toml` and `Cargo.lock`.
+- `src/protocol.rs` now rejects every unresolved composed residual and undeclared comparison assumption before generation for single, multi-outcome, and intermediate producer boundaries.
+- Physical-source joins consume `ResolvedComposedSemantics::join_equalities()` directly. Intermediate relations continue using selected-boundary query relationships because physical join equality endpoints are not intermediate relation identities; the same exactness gate applies before generation.
+- CLI `--assume-comparison`, library SQL generation settings, and bundle declarations carry caller guarantees into the emitted protocol snapshot within reproducibility metadata.
+- Dedicated `tests/exactness.rs` cases exercise residual clauses, comparison assumptions, whole-project generation, intermediate boundaries, and implicit equality joins. Legacy advanced SQL and dbt fixtures reject residual operations explicitly.
+- Pull-request CI now runs independent formatting, Clippy, unit/integration test, documentation, and dbt E2E jobs, each using Makefile targets; matrix failure does not suppress other check results.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Generation is fail-closed on any residual protocol condition and on comparison assumptions that were not declared by the caller. Physical join keys derive from the protocol's composed join equalities. SQL library and CLI callers can declare comparison semantics explicitly, and metadata preserves those declarations. Updated regression, advanced SQL, and dbt tests and documentation to reflect the exactness contract. CI checks execute independently. CTE/derived-table generation remains tracked in TASK-21.5.
+<!-- SECTION:FINAL_SUMMARY:END -->
