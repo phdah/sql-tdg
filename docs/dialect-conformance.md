@@ -24,21 +24,21 @@ projection-only `COUNT`/`GROUP BY` (P/G for source rows only), and
 aggregate-dependent `HAVING` (P/R). The tests also exercise quoted identifiers
 with BigQuery, MySQL, SQL Server, and PostgreSQL syntax.
 
-| Protocol dialect | Scalar filter | Inner equality join | CTE filters | Projected aggregate | HAVING membership | Engine E2E |
-| --- | --- | --- | --- | --- | --- | --- |
-| ansi | P/G | P/G | P/G | P/G | P/R | Not run |
-| bigquery | P/G | P/G | P/G | P/G | P/R | Not run |
-| clickhouse | P/G | P/G | P/G | P/G | P/R | Not run |
-| databricks | P/G | P/G | P/G | P/G | P/R | Not run |
-| duckdb | P/G | P/G | P/G | P/G | P/R | DuckDB only |
-| generic | P/G | P/G | P/G | P/G | P/R | Not run |
-| hive | P/G | P/G | P/G | P/G | P/R | Not run |
-| mssql | P/G | P/G | P/G | P/G | P/R | Not run |
-| mysql | P/G | P/G | P/G | P/G | P/R | Not run |
-| postgresql (alias: postgres) | P/G | P/G | P/G | P/G | P/R | Not run |
-| redshift | P/G | P/G | P/G | P/G | P/R | Not run |
-| snowflake | P/G | P/G | P/G | P/G | P/R | Not run |
-| sqlite | P/G | P/G | P/G | P/G | P/R | Not run |
+| Protocol dialect | Scalar filter | Inner equality join | CTE filters | Projected aggregate | HAVING membership | dbt constraints | Engine E2E |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ansi | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| bigquery | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| clickhouse | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| databricks | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| duckdb | P/G | P/G | P/G | P/G | P/R | P/G/E | DuckDB only |
+| generic | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| hive | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| mssql | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| mysql | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| postgresql (alias: postgres) | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| redshift | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| snowflake | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
+| sqlite | P/G | P/G | P/G | P/G | P/R | Not run | Not run |
 
 ## Additional coverage and limits
 
