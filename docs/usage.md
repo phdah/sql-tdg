@@ -24,8 +24,9 @@ sql-tdg generate \
 
 Columns not constrained by the protocol get varied, moderate values; constrained
 scalar ranges are sampled across their allowed intervals. Use a fixed `--seed`
-to reproduce the same samples. The CLI defaults to 100 matching rows, 0
-rejected rows, seed 42, and Parquet output.
+to reproduce the same samples. The CLI defaults to 100 matching rows, 10
+rejected rows, seed 42, and Parquet output. Pass `--rejected 0` when
+rejected data cannot be generated safely.
 
 ## dbt projects
 
@@ -53,7 +54,9 @@ synthesized into test fixtures.
 ### Outcome selection
 
 Without a selector, sql-tdg generates one shared set of physical sources whose
-rows satisfy **every** terminal outcome. If two terminal models demand mutually
+rows satisfy **every** terminal outcome. Use `--rejected 0` in this mode:
+the CLI otherwise defaults to 10 rejected rows, which require one selected
+terminal outcome. If two terminal models demand mutually
 exclusive values from the same source, generation fails with
 `ConflictingOutcomes` and identifies the affected outcomes.
 

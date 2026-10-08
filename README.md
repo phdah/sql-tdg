@@ -3,12 +3,21 @@
 [![Rust checks](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml/badge.svg)](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Generate deterministic, Arrow-backed test data for SQL queries and dbt projects without connecting to a database.**
+**Synthetic test data that satisfies your SQL predicates and join conditions.**
 
-sql-tdg uses [SQL Semantic Protocol](https://github.com/phdah/sql-semantic-protocol)
-to resolve query conditions, source schemas, and dbt data-test constraints. It generates
-source or intermediate relation files that satisfy the supported semantics, so you can
-exercise real transformations with controlled data rather than hand-maintaining fixtures.
+Randomly generated data often fails to exercise the query you want to test:
+`WHERE` predicates filter out every row, join keys do not match, or dbt data tests
+reject the inputs. **sql-tdg generates coherent source tables whose rows satisfy
+the supported filters and inner equality joins of your SQL workload.** It also
+honors supported keys, foreign-key relationships, and dbt data-test constraints
+on generated relations.
+
+Give it SQL or a compiled dbt project. Using
+[SQL Semantic Protocol](https://github.com/phdah/sql-semantic-protocol)
+as its semantic boundary, sql-tdg chooses valid values and matching join keys,
+then exports deterministic Arrow-backed data as Parquet or CSV. When it cannot
+guarantee an exact match, it returns an explicit error instead of producing
+misleading synthetic data. No database connection is required.
 
 - **Semantic guarantees:** fail explicitly when query conditions cannot be represented exactly.
 - **Reproducible data:** the same input, row counts, and seed yield the same generated rows.
@@ -57,7 +66,9 @@ sql-tdg generate \
 The command writes `sql-tdg-output/0001-orders.csv` and
 `sql-tdg-output/metadata.sqltdg`. The first 50 rows satisfy the filter, and the
 10 rejected rows fall outside it. Use `--format parquet` (the default) for a
-lossless representation of the supported Arrow types.
+lossless representation of the supported Arrow types. The CLI defaults to 100
+matching and 10 rejected rows per relation. Pass `--rejected 0` when generating
+for all terminal outcomes or when rejected rows cannot be generated safely.
 
 Multiple `--sql`, `--file`, and `--schema` options are accepted. The
 `--schema` form is `RELATION:COLUMN=SQL_TYPE`; SQL types are normalized by the
@@ -88,14 +99,16 @@ From a configured dbt project directory:
 
 ```console
 dbt compile
-sql-tdg generate --dbt-project . --matching 50 --seed 42 --output sql-tdg-output
+sql-tdg generate --dbt-project . --matching 50 --rejected 0 --seed 42 --output sql-tdg-output
 ```
 
 sql-tdg reads `target/manifest.json` and, when present, `target/catalog.json`.
 Catalog types take precedence over the source YAML's `data_type` declarations.
 With no `--target`, it generates **one shared physical-source dataset** satisfying
-all compatible terminal models. Conflicting outcomes fail explicitly instead of
-producing falsely labeled data.
+all compatible terminal models. This whole-project mode requires
+`--rejected 0` because deliberately rejected rows require a single selected
+terminal outcome. Conflicting outcomes fail explicitly instead of producing
+falsely labeled data.
 
 Supported dbt generic data tests and constraints (unique, not_null, accepted_values,
 and relationships) are enforced **on generated relations** through the protocol.

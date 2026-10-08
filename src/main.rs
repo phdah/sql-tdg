@@ -58,9 +58,9 @@ GENERAL
   -V, --version                   Show package version
 
 EXAMPLES
-  sql-tdg generate --sql 'SELECT amount FROM orders' --schema orders:amount=INT
-  sql-tdg generate --dbt-project . --format csv --output generated
-  sql-tdg generate --dbt-manifest target/manifest.json --matching 50
+  sql-tdg generate --sql 'SELECT x FROM t WHERE x>10' --schema t:x=INT
+  sql-tdg generate --dbt-project . --rejected 0 --format csv
+  sql-tdg generate --dbt-manifest target/manifest.json --rejected 0
 
 NOTES
   Choose raw --sql/--file inputs or dbt artifacts, not both.
@@ -72,7 +72,7 @@ NOTES
   dbt reads a neighboring catalog.json when present; otherwise complete
   manifest-declared source types are required, including FK-only sources.
   The CLI writes data and metadata files; it never modifies databases.
-  More: https://github.com/phdah/sql-tdg#cli-generation
+  More: https://github.com/phdah/sql-tdg#quick-start
 "#;
 
 fn render_help(color: bool) -> String {
