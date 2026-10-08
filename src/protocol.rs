@@ -1093,9 +1093,11 @@ fn generate_intermediate_boundary_data(
             bundle,
             target_layer.id(),
             boundary.relations(),
-            schemas,
-            &plans_by_relation,
-            &boundary_domains,
+            &PreparedBoundary {
+                schemas,
+                plans_by_relation: &plans_by_relation,
+                domains: &boundary_domains,
+            },
             &relationship_plan,
             row_counts,
             seed,
@@ -1409,7 +1411,7 @@ fn generate_prepared_scalar_data(
     let mut generated_by_relation = BTreeMap::new();
 
     for relation in relations {
-        let schema = source_schema(schemas, relation).map_err(|_| {
+        source_schema(schemas, relation).map_err(|_| {
             ProtocolGenerationError::MissingBoundarySchema {
                 relation: relation.clone(),
             }
@@ -1464,13 +1466,17 @@ struct PreparedRelationships<'a> {
     relationships: &'a [EqualityRelationship],
 }
 
+struct PreparedBoundary<'a> {
+    schemas: &'a BTreeMap<String, &'a RelationSchema>,
+    plans_by_relation: &'a BTreeMap<String, Vec<ColumnPlan>>,
+    domains: &'a ColumnDomains,
+}
+
 fn generate_prepared_relational_data(
     bundle: &AnalysisBundle,
     layer_id: &str,
     relations: &[String],
-    schemas: &BTreeMap<String, &RelationSchema>,
-    plans_by_relation: &BTreeMap<String, Vec<ColumnPlan>>,
-    domains: &ColumnDomains,
+    prepared: &PreparedBoundary<'_>,
     relationship_plan: &PreparedRelationships<'_>,
     row_counts: GenerationRowCounts,
     seed: u64,
@@ -1478,7 +1484,7 @@ fn generate_prepared_relational_data(
     let mut generated_by_relation = BTreeMap::new();
 
     for relation in relations {
-        let plans = plans_by_relation.get(relation).ok_or_else(|| {
+        let plans = prepared.plans_by_relation.get(relation).ok_or_else(|| {
             ProtocolGenerationError::InvalidGenerationBoundary {
                 layer_id: layer_id.to_owned(),
                 message: format!("prepared plan for relation {relation:?} is missing"),
@@ -1502,7 +1508,7 @@ fn generate_prepared_relational_data(
         for row in 0..row_counts.total() {
             set_generated_value(
                 &mut generated_by_relation,
-                schemas,
+                prepared.schemas,
                 column,
                 row,
                 value.clone(),
@@ -1534,7 +1540,7 @@ fn generate_prepared_relational_data(
             })?;
             set_generated_value(
                 &mut generated_by_relation,
-                schemas,
+                prepared.schemas,
                 &witness.column,
                 row_counts.matching() + offset,
                 witness.value.clone(),
@@ -1543,14 +1549,14 @@ fn generate_prepared_relational_data(
     }
 
     let unhonored_constraints = constraint_generation::enforce(
-        bundle, schemas, &mut generated_by_relation, domains, row_counts.matching(), seed,
+        bundle, prepared.schemas, &mut generated_by_relation, prepared.domains, row_counts.matching(), seed,
     )?;
     validate_generated_relationships(
-        &generated_by_relation, schemas, relationship_plan.relationships, row_counts.matching(),
+        &generated_by_relation, prepared.schemas, relationship_plan.relationships, row_counts.matching(),
     )?;
     let mut tables = BTreeMap::new();
     for relation in relations {
-        let schema = schemas.get(relation).copied().ok_or_else(|| {
+        let schema = prepared.schemas.get(relation).copied().ok_or_else(|| {
             ProtocolGenerationError::MissingBoundarySchema {
                 relation: relation.clone(),
             }
