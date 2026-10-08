@@ -366,7 +366,15 @@ fn dbt_core_duckdb_whole_project_names_residual_model() {
         .arg("generate")
         .arg("--dbt-project")
         .arg(project.path())
-        .args(["--matching", "1", "--format", "csv", "--output"])
+        .args([
+            "--matching",
+            "1",
+            "--rejected",
+            "0",
+            "--format",
+            "csv",
+            "--output",
+        ])
         .arg(project.path().join("generated/all"))
         .output()
         .expect("compiled sql-tdg binary should execute");

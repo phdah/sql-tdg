@@ -3,7 +3,7 @@ use std::env;
 use std::error::Error;
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -21,42 +21,116 @@ use sql_tdg::{
 };
 
 const HELP: &str = r#"sql-tdg
+Generate deterministic, backend-neutral SQL test data.
 
-Generate deterministic backend-neutral SQL test data.
+USAGE
+  sql-tdg generate [OPTIONS]
+  sql-tdg --help
+  sql-tdg --version
 
-USAGE:
-    sql-tdg generate [OPTIONS]
+RAW SQL INPUT
+  --sql <SQL>                     Inline SQL (repeatable)
+  --file <path>                   SQL file (repeatable)
+  --schema <relation:column=type> Typed source column (repeatable)
+  --dialect <name>                SQL dialect (default: generic)
 
-RAW SQL INPUT:
-    --sql <SQL>                     Add inline SQL input. Repeatable.
-    --file <PATH>                   Add SQL file input. Repeatable.
-    --schema <RELATION:COLUMN=TYPE> Declare a typed source column. Repeatable.
-    --dialect <NAME>                SQL dialect for raw SQL. Default: generic.
+DBT INPUT
+  --dbt-project <dir>             Read target/manifest.json in a dbt project
+  --dbt-manifest <path>           Read a dbt manifest.json artifact
+  --dbt-catalog <path>            Require a specific catalog.json file
 
-DBT INPUT:
-    --dbt-project <DIR>             Read DIR/target/manifest.json (and catalog.json if present).
-    --dbt-manifest <PATH>           Read a dbt manifest artifact.
-    --dbt-catalog <PATH>            Require the specified dbt catalog path.
+GENERATION OPTIONS
+  --target <relation>             Select a named terminal outcome
+  --target-layer <layer-id>       Select an anonymous terminal outcome
+  --boundary <relation>           Materialize an intermediate (repeatable)
+  --assume-comparison <name>      Attest comparison semantics (repeatable)
+  --matching <n>                  Matching rows per relation (default: 100)
+  --rejected <n>                  Rejected rows per relation (default: 10)
+  --seed <n>                      Deterministic seed (default: 42)
 
-GENERATION:
-    --target <RELATION>             Select a named terminal relation.
-    --target-layer <LAYER_ID>       Select an anonymous terminal layer.
-                                     Omit both to generate one shared source
-                                     dataset whose rows satisfy every terminal
-                                     outcome (for example every dbt model).
-    --boundary <RELATION>           Materialize an intermediate relation. Repeatable.
-                                     Omit to generate physical sources.
-    --assume-comparison <NAME>      Attest a comparison setting. Repeatable.\n                                     binary_collation, no_char_padding, no_nan,\n                                     signed_zero_equivalent, session_time_zone.\n    --seed <N>                      Deterministic seed. Default: 42.
-    --matching <N>                  Matching rows per relation. Default: 100.
-    --rejected <N>                  Deliberately rejected rows per relation. Default: 0.
-    --format <parquet|csv>          Export format. Default: parquet.
-    --output <DIR>                  Output directory. Default: sql-tdg-output.
-    --name <NAME>                   Stable workload name stored in metadata.
+OUTPUT OPTIONS
+  --format <parquet|csv>          Export format (default: parquet)
+  --output <dir>                  Output directory (default: sql-tdg-output)
+  --name <name>                   Stable workload name stored in metadata
 
-OTHER:
-    -h, --help                      Show this help.
-    -V, --version                   Show package version.
+GENERAL
+  -h, --help                      Show help (also: generate --help)
+  -V, --version                   Show package version
+
+EXAMPLES
+  sql-tdg generate --sql 'SELECT amount FROM orders' --schema orders:amount=INT
+  sql-tdg generate --dbt-project . --format csv --output generated
+  sql-tdg generate --dbt-manifest target/manifest.json --matching 50
+
+NOTES
+  Choose raw --sql/--file inputs or dbt artifacts, not both.
+  Raw SQL requires --schema; dbt uses artifact source schemas and types.
+  Without --target or --target-layer, one dataset covers all terminal outcomes.
+  Without --boundary, physical source relations are generated.
+  --assume-comparison: binary_collation, no_char_padding, no_nan,
+                       signed_zero_equivalent, session_time_zone
+  dbt reads a neighboring catalog.json when present; otherwise complete
+  manifest-declared source types are required, including FK-only sources.
+  The CLI writes data and metadata files; it never modifies databases.
+  More: https://github.com/phdah/sql-tdg#cli-generation
 "#;
+
+fn render_help(color: bool) -> String {
+    if !color {
+        return HELP.to_owned();
+    }
+
+    let mut rendered = String::with_capacity(HELP.len() + 256);
+    for line in HELP.lines() {
+        if line == "sql-tdg" {
+            rendered.push_str("\x1b[1m");
+            rendered.push_str(line);
+            rendered.push_str("\x1b[0m");
+        } else if matches!(
+            line,
+            "USAGE"
+                | "RAW SQL INPUT"
+                | "DBT INPUT"
+                | "GENERATION OPTIONS"
+                | "OUTPUT OPTIONS"
+                | "GENERAL"
+                | "EXAMPLES"
+                | "NOTES"
+        ) {
+            rendered.push_str("\x1b[1;36m");
+            rendered.push_str(line);
+            rendered.push_str("\x1b[0m");
+        } else if line.starts_with("  -") {
+            if let Some(index) = line[2..].find("  ") {
+                let end = index + 2;
+                rendered.push_str("\x1b[32m");
+                rendered.push_str(&line[..end]);
+                rendered.push_str("\x1b[0m");
+                rendered.push_str(&line[end..]);
+            } else {
+                rendered.push_str(line);
+            }
+        } else {
+            rendered.push_str(line);
+        }
+        rendered.push('\n');
+    }
+    rendered
+}
+
+fn help_color_enabled(is_terminal: bool, no_color: bool, term: Option<&str>) -> bool {
+    is_terminal && !no_color && term != Some("dumb")
+}
+
+fn print_help() {
+    let term = env::var("TERM").ok();
+    let color = help_color_enabled(
+        io::stdout().is_terminal(),
+        env::var_os("NO_COLOR").is_some(),
+        term.as_deref(),
+    );
+    print!("{}", render_help(color));
+}
 
 #[derive(Debug)]
 struct CliError(String);
@@ -149,13 +223,13 @@ fn main() -> ExitCode {
 fn run() -> Result<(), CliError> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     let Some(first) = arguments.first().map(String::as_str) else {
-        println!("{HELP}");
+        print_help();
         return Ok(());
     };
 
     match first {
         "-h" | "--help" | "help" => {
-            println!("{HELP}");
+            print_help();
             Ok(())
         }
         "-V" | "--version" => {
@@ -189,7 +263,7 @@ where
         comparison_assumptions: Vec::new(),
         seed: 42,
         matching: 100,
-        rejected: 0,
+        rejected: 10,
         output_format: OutputFormat::Parquet,
         output_dir: PathBuf::from("sql-tdg-output"),
         workload_name: None,
@@ -198,7 +272,7 @@ where
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "-h" | "--help" => {
-                println!("{HELP}");
+                print_help();
                 std::process::exit(0);
             }
             "--sql" => args
@@ -758,5 +832,51 @@ fn describe_target(target: &TestTarget) -> String {
         TargetKind::Relation => format!("relation:{}", target.identifier()),
         TargetKind::AnonymousLayer => format!("anonymous:{}", target.identifier()),
         TargetKind::AllTerminalOutcomes => format!("all:{}", target.identifier()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn help_is_plain_and_within_eighty_columns() {
+        let plain = render_help(false);
+        assert_eq!(plain, HELP);
+        assert!(!plain.contains("\x1b["));
+        assert!(plain.lines().all(|line| line.len() <= 80));
+        for heading in [
+            "USAGE",
+            "RAW SQL INPUT",
+            "DBT INPUT",
+            "GENERATION OPTIONS",
+            "OUTPUT OPTIONS",
+            "EXAMPLES",
+        ] {
+            assert!(plain.lines().any(|line| line == heading));
+        }
+        assert!(plain.contains("--assume-comparison"));
+        assert!(plain.contains("--target-layer"));
+    }
+
+    #[test]
+    fn colored_help_preserves_plain_content() {
+        let colored = render_help(true);
+        assert!(colored.contains("\x1b[1;36mUSAGE\x1b[0m"));
+        assert!(colored.contains("\x1b[32m  -h, --help\x1b[0m"));
+        let stripped = colored
+            .replace("\x1b[1;36m", "")
+            .replace("\x1b[32m", "")
+            .replace("\x1b[1m", "")
+            .replace("\x1b[0m", "");
+        assert_eq!(stripped, HELP);
+    }
+
+    #[test]
+    fn help_color_respects_terminal_and_environment() {
+        assert!(help_color_enabled(true, false, Some("xterm-256color")));
+        assert!(!help_color_enabled(false, false, Some("xterm-256color")));
+        assert!(!help_color_enabled(true, true, Some("xterm-256color")));
+        assert!(!help_color_enabled(true, false, Some("dumb")));
     }
 }

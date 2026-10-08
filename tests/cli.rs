@@ -3,6 +3,39 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[test]
+fn help_is_readable_and_plain_when_redirected() {
+    for args in [
+        vec![],
+        vec!["--help"],
+        vec!["-h"],
+        vec!["help"],
+        vec!["generate", "--help"],
+        vec!["generate", "-h"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+            .args(&args)
+            .env("TERM", "xterm-256color")
+            .output()
+            .expect("CLI help should run");
+
+        assert!(output.status.success(), "help failed for {args:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr for {args:?}");
+        let stdout = String::from_utf8(output.stdout).expect("help should be UTF-8");
+        assert!(
+            !stdout.contains("\x1b["),
+            "redirected help must not have ANSI"
+        );
+        assert!(stdout.contains("RAW SQL INPUT\n"));
+        assert!(stdout.contains("DBT INPUT\n"));
+        assert!(stdout.contains("GENERATION OPTIONS\n"));
+        assert!(stdout.contains("OUTPUT OPTIONS\n"));
+        assert!(stdout.contains("EXAMPLES\n"));
+        assert!(stdout.contains("--assume-comparison"));
+        assert!(stdout.lines().all(|line| line.len() <= 80));
+    }
+}
+
 static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -110,6 +143,13 @@ fn compiled_cli_reads_sql_files_and_exports_csv() {
     assert!(csv_path.is_file());
     let csv = fs::read_to_string(csv_path).expect("CSV output should be readable");
     assert!(csv.starts_with("amount\n"));
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    assert!(
+        stdout.contains("rejected_rows=10"),
+        "rejected rows default to 10: {stdout}"
+    );
+    assert_eq!(csv.lines().skip(1).count(), 12);
 }
 
 fn run_all_outcomes(workspace: &TestDir, sql: &str) -> std::process::Output {
@@ -124,6 +164,8 @@ fn run_all_outcomes(workspace: &TestDir, sql: &str) -> std::process::Output {
             "customers:id=INTEGER",
             "--matching",
             "6",
+            "--rejected",
+            "0",
             "--format",
             "csv",
             "--output",
@@ -338,7 +380,15 @@ fn run_manifest_cli(manifest_path: &Path, output_dir: &Path) -> std::process::Ou
         .arg("--dbt-manifest")
         .arg(manifest_path)
         .args(["--target", "warehouse.analytics.final_orders"])
-        .args(["--matching", "8", "--format", "csv", "--output"])
+        .args([
+            "--matching",
+            "8",
+            "--rejected",
+            "0",
+            "--format",
+            "csv",
+            "--output",
+        ])
         .arg(output_dir)
         .output()
         .expect("compiled sql-tdg binary should execute")
@@ -405,7 +455,15 @@ fn compiled_cli_generates_dbt_sources_with_unattached_source_relationships_test(
         .arg("--dbt-manifest")
         .arg(&manifest_path)
         .args(["--target", "warehouse.analytics.big_items"])
-        .args(["--matching", "4", "--format", "csv", "--output"])
+        .args([
+            "--matching",
+            "4",
+            "--rejected",
+            "0",
+            "--format",
+            "csv",
+            "--output",
+        ])
         .arg(&output_dir)
         .output()
         .expect("compiled sql-tdg binary should execute");
@@ -456,6 +514,8 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
         .args([
             "--matching",
             "4",
+            "--rejected",
+            "0",
             "--seed",
             "43",
             "--format",
@@ -536,6 +596,8 @@ fn compiled_cli_generates_relationship_parent_without_a_model_dependency() {
         .args([
             "--matching",
             "4",
+            "--rejected",
+            "0",
             "--seed",
             "42",
             "--format",
@@ -588,7 +650,15 @@ fn compiled_cli_rejects_accepted_values_conflicting_with_query_domain() {
         .arg("--dbt-manifest")
         .arg(&manifest_path)
         .args(["--target", "warehouse.analytics.big_items"])
-        .args(["--matching", "4", "--format", "csv", "--output"])
+        .args([
+            "--matching",
+            "4",
+            "--rejected",
+            "0",
+            "--format",
+            "csv",
+            "--output",
+        ])
         .arg(workspace.path().join("generated"))
         .output()
         .expect("compiled sql-tdg binary should execute");

@@ -144,6 +144,11 @@ is not part of the active implementation.
 
 ## CLI generation
 
+Run `sql-tdg --help` (or `sql-tdg generate --help`) for grouped options and
+copyable examples. Terminal help highlights headings and flags when stdout is an
+interactive terminal; redirected output, `NO_COLOR`, and `TERM=dumb` produce plain
+text suitable for piping or documentation. Generation output is unchanged.
+
 The production CLI only generates backend-neutral relation files and reproducibility metadata. It
 does not connect to, seed, execute against, or verify a database.
 
@@ -165,6 +170,11 @@ sql-tdg generate \
 Schema entries use `RELATION:COLUMN=SQL_TYPE`. SQL types are normalized by SQL Semantic Protocol
 using the selected dialect. Parquet is the default and preferred lossless format. CSV is available
 for flat interoperability workflows.
+
+By default the CLI generates 100 matching and 10 rejected rows per relation. Rejected rows require
+one selected terminal outcome and a safe complement domain, so pass `--rejected 0` when generating
+for every terminal outcome, for dbt sources with relationship constraints, or for queries whose
+domains cannot be complemented.
 
 Use `--target <relation>` to generate for one named terminal outcome, or `--target-layer
 <layer-id>` for an anonymous terminal outcome. Omit both to generate one shared dataset for every
