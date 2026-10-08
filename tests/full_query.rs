@@ -1,6 +1,6 @@
 use sql_semantic_protocol::{
-    ComparisonAssumption, ConfiguredSqlInput, RelationCatalog, SqlInput, analyze_configured_inputs_with_catalog,
-    dialect_from_name,
+    ComparisonAssumption, ConfiguredSqlInput, RelationCatalog, SqlInput,
+    analyze_configured_inputs_with_catalog, dialect_from_name,
 };
 use sql_tdg::{
     DataType, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError, RelationSchema,
@@ -251,7 +251,10 @@ fn constrained_column_missing_from_source_schema_is_an_explicit_error() {
     )
     .expect_err("a constrained column cannot be silently omitted from schema");
 
-    assert!(matches!(error, ProtocolGenerationError::ResidualConditions { .. }));
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::ResidualConditions { .. }
+    ));
     assert!(error.to_string().contains("reason=unknown_schema_column"));
 }
 
@@ -695,7 +698,10 @@ fn non_equality_relationship_is_an_explicit_error() {
     )
     .expect_err("non-equality relationships must not be approximated");
 
-    assert!(matches!(error, ProtocolGenerationError::ResidualConditions { .. }));
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::ResidualConditions { .. }
+    ));
     assert!(error.to_string().contains("reason=column_comparison"));
 }
 
@@ -722,7 +728,10 @@ fn relational_subquery_predicates_are_explicit_errors() {
         let error = generate_from_sql(sql, "generic", &schemas, ROWS, SEED)
             .expect_err("unsupported relational subquery must not be ignored");
 
-        assert!(matches!(error, ProtocolGenerationError::ResidualConditions { .. }));
+        assert!(matches!(
+            error,
+            ProtocolGenerationError::ResidualConditions { .. }
+        ));
         assert!(error.to_string().contains("reason=subquery_predicate"));
     }
 }
