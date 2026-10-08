@@ -3,6 +3,36 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[test]
+fn help_is_readable_and_plain_when_redirected() {
+    for args in [
+        vec![],
+        vec!["--help"],
+        vec!["-h"],
+        vec!["help"],
+        vec!["generate", "--help"],
+        vec!["generate", "-h"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+            .args(&args)
+            .env("TERM", "xterm-256color")
+            .output()
+            .expect("CLI help should run");
+
+        assert!(output.status.success(), "help failed for {args:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr for {args:?}");
+        let stdout = String::from_utf8(output.stdout).expect("help should be UTF-8");
+        assert!(!stdout.contains("\x1b["), "redirected help must not have ANSI");
+        assert!(stdout.contains("RAW SQL INPUT\n"));
+        assert!(stdout.contains("DBT INPUT\n"));
+        assert!(stdout.contains("GENERATION OPTIONS\n"));
+        assert!(stdout.contains("OUTPUT OPTIONS\n"));
+        assert!(stdout.contains("EXAMPLES\n"));
+        assert!(stdout.contains("--assume-comparison"));
+        assert!(stdout.lines().all(|line| line.len() <= 80));
+    }
+}
+
 static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {

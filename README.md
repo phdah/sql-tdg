@@ -144,6 +144,11 @@ is not part of the active implementation.
 
 ## CLI generation
 
+Run `sql-tdg --help` (or `sql-tdg generate --help`) for grouped options and
+copyable examples. Terminal help highlights headings and flags when stdout is an
+interactive terminal; redirected output, `NO_COLOR`, and `TERM=dumb` produce plain
+text suitable for piping or documentation. Generation output is unchanged.
+
 The production CLI only generates backend-neutral relation files and reproducibility metadata. It
 does not connect to, seed, execute against, or verify a database.
 
