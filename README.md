@@ -125,8 +125,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         42,
     )?;
 
-    let amounts = generated.table("orders").unwrap()
-        .get_ints("amount")?.unwrap();
+    let amounts = generated
+        .table("orders")
+        .ok_or_else(|| std::io::Error::other("orders source was not generated"))?
+        .get_ints("amount")?
+        .ok_or_else(|| std::io::Error::other("amount column was not generated"))?;
 
     assert!(amounts.iter().all(|value| (10..20).contains(value)));
     Ok(())
