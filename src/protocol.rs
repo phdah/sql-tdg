@@ -8,7 +8,7 @@ use std::error::Error;
 use std::fmt;
 
 use sql_semantic_protocol::{
-    AnalysisBundle, ColumnExpression, ComparisonOperator, ComposedSemantics, ConfiguredSqlInput,
+    AnalysisBundle, ColumnExpression, ComparisonAssumption, ComparisonOperator, ComposedSemantics, ConfiguredSqlInput,
     DataType, DatasetRef, Expression, JoinKind, Predicate, ProtocolStatement, QueryStatement,
     RelationCatalog, RelationResolution, RelationSchema, ResolvedComposedSemantics, SqlInput,
     TransformationLayer, ValueDomain, analyze_configured_inputs_with_catalog, dialect_from_name,
@@ -204,6 +204,10 @@ pub enum ProtocolGenerationError {
         /// Diagnostic explanation.
         message: String,
     },
+    /// Residual conditions that prevent guaranteed row matching.
+    ResidualConditions { layer_id: String, conditions: Vec<String> },
+    /// Conditional comparisons that need explicit caller declarations.
+    MissingComparisonAssumptions { layer_id: String, conditions: Vec<String> },
     /// A physical source relation does not have declared schema metadata.
     MissingSourceSchema {
         /// Canonical source relation identity.
@@ -379,6 +383,12 @@ impl fmt::Display for ProtocolGenerationError {
                 formatter,
                 "terminal layer {layer_id} contains unsupported semantics {code}: {message}"
             ),
+            Self::ResidualConditions { layer_id, conditions } => write!(
+                formatter, "layer {layer_id} has residual protocol conditions: {}", conditions.join("; ")
+            ),
+            Self::MissingComparisonAssumptions { layer_id, conditions } => write!(
+                formatter, "layer {layer_id} requires declared comparison assumptions: {}", conditions.join("; ")
+            ),
             Self::MissingSourceSchema { relation } => {
                 write!(
                     formatter,
@@ -530,6 +540,21 @@ pub fn generate_classified_from_sql(
     )
 }
 
+/// Analyze SQL with caller-attested comparison settings.
+pub fn generate_classified_from_sql_with_assumptions(
+    sql: &str,
+    dialect_name: &str,
+    source_schemas: &[RelationSchema],
+    row_counts: GenerationRowCounts,
+    seed: u64,
+    assumptions: &[ComparisonAssumption],
+) -> Result<GeneratedData, ProtocolGenerationError> {
+    generate_classified_from_sql_at_boundary_with_assumptions(
+        sql, dialect_name, source_schemas, None,
+        &GenerationBoundary::physical_sources(), row_counts, seed, assumptions,
+    )
+}
+
 /// Analyze SQL and generate matching rows at an explicit protocol graph boundary.
 pub fn generate_from_sql_at_boundary(
     sql: &str,
@@ -561,6 +586,22 @@ pub fn generate_classified_from_sql_at_boundary(
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
+    generate_classified_from_sql_at_boundary_with_assumptions(
+        sql, dialect_name, relation_schemas, selector, boundary, row_counts, seed, &[],
+    )
+}
+
+/// Generate classified rows at a boundary with explicit comparison assumptions.
+pub fn generate_classified_from_sql_at_boundary_with_assumptions(
+    sql: &str,
+    dialect_name: &str,
+    relation_schemas: &[RelationSchema],
+    selector: Option<&OutcomeSelector>,
+    boundary: &GenerationBoundary,
+    row_counts: GenerationRowCounts,
+    seed: u64,
+    assumptions: &[ComparisonAssumption],
+) -> Result<GeneratedData, ProtocolGenerationError> {
     let dialect = dialect_from_name(dialect_name).ok_or_else(|| {
         ProtocolGenerationError::UnsupportedDialect {
             dialect: dialect_name.to_owned(),
@@ -578,13 +619,14 @@ pub fn generate_classified_from_sql_at_boundary(
             message: error.to_string(),
         }
     })?;
-    let bundle =
+    let mut bundle =
         analyze_configured_inputs_with_catalog(&configured, &catalog).map_err(|error| {
             ProtocolGenerationError::Analysis {
                 message: error.to_string(),
             }
         })?;
 
+    bundle.declare_comparison_assumptions(assumptions);
     generate_classified_from_bundle_at_boundary(&bundle, selector, boundary, row_counts, seed)
 }
 
@@ -661,6 +703,7 @@ pub fn generate_classified_from_bundle_at_boundary(
 
     reject_local_relation_sources(bundle, layer.id())?;
     let semantics = resolved_layer_semantics(layer)?;
+    require_exact_conditions(layer.id(), semantics)?;
 
     if let Some(diagnostic) = semantics.diagnostics().first() {
         return Err(ProtocolGenerationError::UnsupportedSemantics {
@@ -680,7 +723,7 @@ pub fn generate_classified_from_bundle_at_boundary(
         BoundaryKind::PhysicalSources => {
             validate_composed_domains(semantics, &schemas)?;
             let relationships =
-                collect_equality_relationships(bundle, layer.id(), semantics, &schemas)?;
+                collect_equality_relationships(layer.id(), semantics, &schemas)?;
 
             if relationships.is_empty() {
                 generate_scalar_data(semantics, &schemas, row_counts, seed)
@@ -699,6 +742,49 @@ pub fn generate_classified_from_bundle_at_boundary(
             generate_intermediate_boundary_data(bundle, layer, &schemas, boundary, row_counts, seed)
         }
     }
+}
+
+fn stable_reason<T: fmt::Debug>(value: T) -> String {
+    let mut result = String::new();
+    for (index, ch) in format!("{value:?}").chars().enumerate() {
+        if index > 0 && ch.is_ascii_uppercase() {
+            result.push('_');
+        }
+        result.push(ch.to_ascii_lowercase());
+    }
+    result
+}
+
+fn require_exact_conditions(
+    layer_id: &str,
+    semantics: &ResolvedComposedSemantics,
+) -> Result<(), ProtocolGenerationError> {
+    let exactness = semantics.condition_exactness();
+    let residuals = exactness.residual_conditions().iter().map(|condition| format!(
+        "reason={} clause={} layer={} scope={} condition={}",
+        stable_reason(condition.reason()), stable_reason(condition.clause()),
+        condition.origin_layer_id().unwrap_or(layer_id),
+        condition.origin_scope().unwrap_or("query"), condition.identity(),
+    )).collect::<Vec<_>>();
+    if !residuals.is_empty() {
+        return Err(ProtocolGenerationError::ResidualConditions {
+            layer_id: layer_id.to_owned(), conditions: residuals,
+        });
+    }
+    let missing = exactness.required_assumptions().iter()
+        .filter(|condition| !exactness.declared_assumptions().contains(&condition.assumption()))
+        .map(|condition| format!(
+            "assumption={} clause={} layer={} scope={} condition={}",
+            condition.assumption().as_str(), stable_reason(condition.clause()),
+            condition.origin_layer_id().unwrap_or(layer_id),
+            condition.origin_scope().unwrap_or("query"), condition.identity(),
+        )).collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(ProtocolGenerationError::MissingComparisonAssumptions {
+            layer_id: layer_id.to_owned(), conditions: missing,
+        });
+    }
+    Ok(())
 }
 
 fn resolved_layer_semantics(
@@ -835,6 +921,7 @@ fn generate_intermediate_boundary_data(
             }
         })?;
         let producer_semantics = resolved_layer_semantics(producer)?;
+        require_exact_conditions(producer.id(), producer_semantics)?;
         if let Some(diagnostic) = producer_semantics.diagnostics().first() {
             return Err(ProtocolGenerationError::UnsupportedSemantics {
                 layer_id: producer.id().to_owned(),
@@ -1725,6 +1812,7 @@ fn prepare_outcome<'a>(
         })?;
     reject_local_relation_sources(bundle, layer.id())?;
     let semantics = resolved_layer_semantics(layer)?;
+    require_exact_conditions(layer.id(), semantics)?;
     if let Some(diagnostic) = semantics.diagnostics().first() {
         return Err(ProtocolGenerationError::UnsupportedSemantics {
             layer_id: layer.id().to_owned(),
@@ -1733,7 +1821,7 @@ fn prepare_outcome<'a>(
         });
     }
     validate_composed_domains(semantics, schemas)?;
-    let relationships = collect_equality_relationships(bundle, layer.id(), semantics, schemas)?;
+    let relationships = collect_equality_relationships(layer.id(), semantics, schemas)?;
     Ok((semantics, relationships))
 }
 
@@ -1957,75 +2045,48 @@ fn source_schema<'a>(
 }
 
 fn collect_equality_relationships(
-    bundle: &AnalysisBundle,
     selected_layer_id: &str,
     semantics: &ResolvedComposedSemantics,
     schemas: &BTreeMap<String, &RelationSchema>,
 ) -> Result<Vec<EqualityRelationship>, ProtocolGenerationError> {
-    let ancestor_ids = ancestor_layer_ids(bundle, selected_layer_id);
     let mut relationships = BTreeSet::new();
-
-    for layer in bundle
-        .layers()
-        .iter()
-        .filter(|layer| ancestor_ids.contains(layer.id()))
-    {
-        let query = query_for_layer(bundle, layer)?;
-        reject_unsupported_relational_predicates(layer.id(), query)?;
-        for join in query.joins() {
-            if join.kind() == JoinKind::Cross && join.condition().is_none() {
-                continue;
-            }
-            if join.kind() != JoinKind::Inner {
+    let mut instances = BTreeMap::<(String, String), BTreeSet<String>>::new();
+    for equality in semantics.join_equalities() {
+        let layer_id = equality.origin_layer_id();
+        if equality.join_kind() != JoinKind::Inner {
+            return Err(ProtocolGenerationError::UnsupportedRelationship {
+                layer_id: layer_id.to_owned(),
+                message: format!("join kind {:?} is not an inner equality", equality.join_kind()),
+            });
+        }
+        for endpoint in [equality.left(), equality.right()] {
+            if !semantics.dependencies().iter().any(|relation| relation == endpoint.relation()) {
                 return Err(ProtocolGenerationError::UnsupportedRelationship {
-                    layer_id: layer.id().to_owned(),
-                    message: format!(
-                        "join kind {:?} does not define the required matching/non-matching witness contract",
-                        join.kind()
-                    ),
+                    layer_id: layer_id.to_owned(),
+                    message: format!("equality endpoint {}.{} is not a physical dependency of {selected_layer_id}",
+                        endpoint.relation(), endpoint.column()),
                 });
             }
-
-            let condition = join.condition().ok_or_else(|| {
-                ProtocolGenerationError::UnsupportedRelationship {
-                    layer_id: layer.id().to_owned(),
-                    message: "inner join has no resolved condition".to_owned(),
-                }
-            })?;
-            let mut equalities = Vec::new();
-            collect_column_equalities(layer.id(), condition, &mut equalities)?;
-
-            for (left_expression, right_expression) in equalities {
-                let left = resolve_relationship_column(bundle, layer, query, &left_expression)?;
-                let right = resolve_relationship_column(bundle, layer, query, &right_expression)?;
-
-                if left == right {
-                    return Err(ProtocolGenerationError::UnsupportedRelationship {
-                        layer_id: layer.id().to_owned(),
-                        message: format!(
-                            "relationship {} = {} resolves to the same physical source column",
-                            left.describe(),
-                            right.describe()
-                        ),
-                    });
-                }
-                if !semantics.dependencies().contains(&left.relation)
-                    || !semantics.dependencies().contains(&right.relation)
-                {
-                    return Err(ProtocolGenerationError::UnsupportedRelationship {
-                        layer_id: layer.id().to_owned(),
-                        message:
-                            "resolved relationship is outside the selected outcome dependencies"
-                                .to_owned(),
-                    });
-                }
-
-                validate_relationship_types(layer.id(), schemas, &left, &right)?;
-                relationships.insert(EqualityRelationship::new(left, right));
+            let seen = instances.entry((layer_id.to_owned(), endpoint.relation().to_owned())).or_default();
+            seen.insert(endpoint.relation_instance().to_owned());
+            if seen.len() > 1 {
+                return Err(ProtocolGenerationError::UnsupportedRelationship {
+                    layer_id: layer_id.to_owned(),
+                    message: format!("repeated instances of relation {} cannot share generated source keys", endpoint.relation()),
+                });
             }
         }
+        let left = RelationshipColumn::new(equality.left().relation(), equality.left().column());
+        let right = RelationshipColumn::new(equality.right().relation(), equality.right().column());
+        if left == right {
+            return Err(ProtocolGenerationError::UnsupportedRelationship {
+                layer_id: layer_id.to_owned(),
+                message: format!("equality {} references one physical source column twice", left.describe()),
+            });
+        }
+        validate_relationship_types(layer_id, schemas, &left, &right)?;
+        relationships.insert(EqualityRelationship::new(left, right));
     }
-
     Ok(relationships.into_iter().collect())
 }
 
@@ -2210,104 +2271,6 @@ fn collect_column_equalities(
             layer_id: layer_id.to_owned(),
             message: "join condition must be one or more column equalities combined with AND"
                 .to_owned(),
-        }),
-    }
-}
-
-fn resolve_relationship_column(
-    bundle: &AnalysisBundle,
-    layer: &TransformationLayer,
-    query: &QueryStatement,
-    column: &ColumnExpression,
-) -> Result<RelationshipColumn, ProtocolGenerationError> {
-    let source_relation = source_relation_for_column(layer.id(), query, column)?;
-    let edge = bundle
-        .graph()
-        .edges()
-        .iter()
-        .find(|edge| edge.consumer_layer_id() == layer.id() && edge.relation() == source_relation)
-        .ok_or_else(|| ProtocolGenerationError::UnsupportedRelationship {
-            layer_id: layer.id().to_owned(),
-            message: format!(
-                "source {}.{} has no protocol dependency edge",
-                source_relation,
-                column.name()
-            ),
-        })?;
-
-    match edge.resolution() {
-        RelationResolution::External => Ok(RelationshipColumn::new(edge.relation(), column.name())),
-        RelationResolution::Resolved => {
-            let [producer_id] = edge.producer_layer_ids() else {
-                return Err(ProtocolGenerationError::UnsupportedRelationship {
-                    layer_id: layer.id().to_owned(),
-                    message: format!(
-                        "source relation {source_relation} does not resolve to exactly one producer"
-                    ),
-                });
-            };
-            let producer = bundle
-                .layers()
-                .iter()
-                .find(|candidate| candidate.id() == producer_id)
-                .ok_or_else(|| ProtocolGenerationError::UnsupportedRelationship {
-                    layer_id: layer.id().to_owned(),
-                    message: format!("producer layer {producer_id} is missing"),
-                })?;
-            let producer_semantics = match producer.composed_semantics() {
-                ComposedSemantics::Resolved(semantics) => semantics,
-                _ => {
-                    return Err(ProtocolGenerationError::UnsupportedRelationship {
-                        layer_id: layer.id().to_owned(),
-                        message: format!(
-                            "producer layer {producer_id} does not have resolved composed semantics"
-                        ),
-                    });
-                }
-            };
-            let matches = producer_semantics
-                .output()
-                .columns()
-                .iter()
-                .filter(|output| output.name() == column.name())
-                .collect::<Vec<_>>();
-            let [output] = matches.as_slice() else {
-                return Err(ProtocolGenerationError::UnsupportedRelationship {
-                    layer_id: layer.id().to_owned(),
-                    message: format!(
-                        "producer relation {source_relation} does not expose exactly one column named {}",
-                        column.name()
-                    ),
-                });
-            };
-            if !matches!(output.expression(), Expression::Column(_)) {
-                return Err(ProtocolGenerationError::UnsupportedRelationship {
-                    layer_id: layer.id().to_owned(),
-                    message: format!(
-                        "join key {source_relation}.{} is produced by a non-identity expression",
-                        column.name()
-                    ),
-                });
-            }
-            let [lineage] = output.lineage() else {
-                return Err(ProtocolGenerationError::UnsupportedRelationship {
-                    layer_id: layer.id().to_owned(),
-                    message: format!(
-                        "join key {source_relation}.{} does not resolve to one physical source column",
-                        column.name()
-                    ),
-                });
-            };
-            Ok(RelationshipColumn::new(
-                lineage.relation(),
-                lineage.column(),
-            ))
-        }
-        resolution => Err(ProtocolGenerationError::UnsupportedRelationship {
-            layer_id: layer.id().to_owned(),
-            message: format!(
-                "source relation {source_relation} has unsupported resolution {resolution:?}"
-            ),
         }),
     }
 }
