@@ -264,8 +264,10 @@ fn missing_schema_columns_and_lossy_literals_are_residual() {
             panic!("{sql}: unexpected {error:?}");
         };
         assert!(
-            conditions.iter().any(|condition| condition.contains(&format!("reason={reason}"))
-                && condition.contains("clause=where")),
+            conditions
+                .iter()
+                .any(|condition| condition.contains(&format!("reason={reason}"))
+                    && condition.contains("clause=where")),
             "{sql}: {conditions:?}"
         );
     }
@@ -285,7 +287,10 @@ fn timezone_dependent_timestamp_filters_require_session_assumption() {
     )
     .expect_err("session timezone must be explicitly declared");
     assert!(
-        matches!(error, ProtocolGenerationError::MissingComparisonAssumptions { .. }),
+        matches!(
+            error,
+            ProtocolGenerationError::MissingComparisonAssumptions { .. }
+        ),
         "{error:?}"
     );
     assert!(error.to_string().contains("session_time_zone"));
