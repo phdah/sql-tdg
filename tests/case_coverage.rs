@@ -86,9 +86,12 @@ fn unreachable_case_branch_is_reported() {
         42,
     )
     .expect("unreachable CASE branch is reported");
-    assert!(generated.case_coverage().iter().any(|finding| {
-        finding.status() == sql_tdg::CaseCoverageStatus::Unreachable
-    }));
+    assert!(
+        generated
+            .case_coverage()
+            .iter()
+            .any(|finding| { finding.status() == sql_tdg::CaseCoverageStatus::Unreachable })
+    );
 }
 
 #[test]
@@ -101,9 +104,12 @@ fn aggregate_case_is_reported_as_not_coverable() {
         42,
     )
     .expect("unknown branch source conditions are reported");
-    assert!(generated.case_coverage().iter().any(|finding| {
-        finding.status() == sql_tdg::CaseCoverageStatus::Unknown
-    }));
+    assert!(
+        generated
+            .case_coverage()
+            .iter()
+            .any(|finding| { finding.status() == sql_tdg::CaseCoverageStatus::Unknown })
+    );
 }
 
 #[test]
@@ -116,8 +122,10 @@ fn insufficient_rows_are_reported_instead_of_claiming_coverage() {
         42,
     )
     .expect("source rows still satisfy the query");
-    assert!(generated.case_coverage().iter().any(|finding| {
-        finding.status() == sql_tdg::CaseCoverageStatus::InsufficientRows
-    }));
+    assert!(
+        generated
+            .case_coverage()
+            .iter()
+            .any(|finding| { finding.status() == sql_tdg::CaseCoverageStatus::InsufficientRows })
+    );
 }
-
