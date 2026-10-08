@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use sql_semantic_protocol::{
-    AnalysisBundle, ConfiguredSqlInput, DatasetRef, DbtArtifactsError, RelationCatalog,
+    AnalysisBundle, ComparisonAssumption, ConfiguredSqlInput, DatasetRef, DbtArtifactsError, RelationCatalog,
     RelationSchema, SchemaColumn, SqlInput, analyze_configured_inputs_with_catalog,
     analyze_dbt_artifacts, dialect_from_name, parse_dbt_catalog, parse_dbt_manifest,
     to_bundle_json,
@@ -44,7 +44,7 @@ GENERATION:
                                      outcome (for example every dbt model).
     --boundary <RELATION>           Materialize an intermediate relation. Repeatable.
                                      Omit to generate physical sources.
-    --seed <N>                      Deterministic seed. Default: 42.
+    --assume-comparison <NAME>      Attest a comparison setting. Repeatable.\n                                     binary_collation, no_char_padding, no_nan,\n                                     signed_zero_equivalent, session_time_zone.\n    --seed <N>                      Deterministic seed. Default: 42.
     --matching <N>                  Matching rows per relation. Default: 100.
     --rejected <N>                  Deliberately rejected rows per relation. Default: 0.
     --format <parquet|csv>          Export format. Default: parquet.
@@ -119,6 +119,7 @@ struct GenerateArgs {
     target_relation: Option<String>,
     target_layer: Option<String>,
     boundaries: Vec<String>,
+    comparison_assumptions: Vec<ComparisonAssumption>,
     seed: u64,
     matching: usize,
     rejected: usize,
@@ -183,6 +184,7 @@ where
         target_relation: None,
         target_layer: None,
         boundaries: Vec::new(),
+        comparison_assumptions: Vec::new(),
         seed: 42,
         matching: 100,
         rejected: 0,
@@ -227,6 +229,13 @@ where
             "--boundary" => args
                 .boundaries
                 .push(next_value(&mut arguments, "--boundary")?),
+            "--assume-comparison" => {
+                let value = next_value(&mut arguments, "--assume-comparison")?;
+                let assumption = ComparisonAssumption::from_name(&value).ok_or_else(|| {
+                    CliError::new(format!("unsupported comparison assumption {value:?}"))
+                })?;
+                args.comparison_assumptions.push(assumption);
+            }
             "--seed" => args.seed = parse_number(next_value(&mut arguments, "--seed")?, "--seed")?,
             "--matching" => {
                 args.matching =
@@ -328,11 +337,13 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
     let row_counts = GenerationRowCounts::new(args.matching, args.rejected)
         .map_err(|error| CliError::new(error.to_string()))?;
 
-    let analysis = if args.raw_inputs.is_empty() {
+    let mut analysis = if args.raw_inputs.is_empty() {
         analyze_dbt(&args)?
     } else {
         analyze_raw(&args)?
     };
+
+    analysis.bundle.declare_comparison_assumptions(&args.comparison_assumptions);
 
     let generated = generate_classified_from_bundle_at_boundary(
         &analysis.bundle,
