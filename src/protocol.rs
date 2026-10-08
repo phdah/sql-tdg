@@ -16,6 +16,7 @@ use sql_semantic_protocol::{
 };
 
 use crate::case_coverage::{CaseCoverageFinding, cover_case_branches};
+use crate::constraint_generation::{self, ColumnDomains};
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
     ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
@@ -136,6 +137,7 @@ pub struct GeneratedData {
     tables: BTreeMap<String, Table>,
     row_counts: GenerationRowCounts,
     case_coverage: Vec<CaseCoverageFinding>,
+    unhonored_constraints: Vec<String>,
 }
 
 impl fmt::Debug for GeneratedData {
@@ -145,6 +147,7 @@ impl fmt::Debug for GeneratedData {
             .field("relations", &self.tables.keys().collect::<Vec<_>>())
             .field("row_counts", &self.row_counts)
             .field("case_coverage", &self.case_coverage)
+            .field("unhonored_constraints", &self.unhonored_constraints)
             .finish()
     }
 }
@@ -168,6 +171,11 @@ impl GeneratedData {
     /// Coverage findings for output CASE expressions, including un-coverable branches.
     pub fn case_coverage(&self) -> &[CaseCoverageFinding] {
         &self.case_coverage
+    }
+
+    /// Relations whose declared constraints were not enforced because they were not generated.
+    pub fn unhonored_constraints(&self) -> &[String] {
+        &self.unhonored_constraints
     }
 }
 
@@ -352,6 +360,13 @@ pub enum ProtocolGenerationError {
         /// Explanation of the unsupported mapping.
         message: String,
     },
+    /// Protocol relation constraints cannot be honored or contain unsupported metadata.
+    RelationConstraint {
+        /// Canonical relation identity, or <bundle> for unattributed metadata.
+        relation: String,
+        /// Constraint diagnostic or unsatisfiable combination.
+        message: String,
+    },
     /// The typed solver rejected a protocol-derived domain.
     Solver {
         /// Source relation.
@@ -530,6 +545,9 @@ impl fmt::Display for ProtocolGenerationError {
             } => write!(
                 formatter,
                 "unsupported protocol domain for {relation}.{column}: {message}"
+            ),
+            Self::RelationConstraint { relation, message } => write!(
+                formatter, "relation constraint on {relation}: {message}"
             ),
             Self::Solver {
                 relation, column, ..
