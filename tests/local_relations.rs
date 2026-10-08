@@ -43,7 +43,6 @@ fn assert_all_rows_match_local_filter(
         values.iter().all(|value| range.contains(value)),
         "{values:?}"
     );
-
 }
 
 #[test]
@@ -202,7 +201,6 @@ fn three_source_cte_chain_coordinates_inner_join_keys_in_duckdb() {
             .iter()
             .all(|amount| (10..20).contains(amount))
     );
-
 }
 
 #[test]
