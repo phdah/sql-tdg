@@ -171,11 +171,8 @@ fn expected_row(values: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
+fn cli_rejects_having_and_executes_exact_intermediate_boundary() {
     let fixture_path = fixture("advanced_pipeline.sql");
-    let fixture_sql =
-        fs::read_to_string(&fixture_path).expect("pipeline fixture should be readable");
-
     let physical_dir = TestDir::new("pipeline-physical");
     let physical = run_cli(
         &fixture_path,
@@ -184,36 +181,9 @@ fn cli_pipeline_executes_from_physical_sources_and_intermediate_boundary() {
         &[],
         physical_dir.path(),
     );
-    let physical_stdout = assert_cli_success(&physical);
-    let physical_db = CliDuckDb::in_memory().expect("DuckDB should open");
-    load_outputs(&physical_db, &physical_stdout);
-    let physical_result = execute_with_final_select(
-        &physical_db,
-        &fixture_sql,
-        "SELECT amount_bucket::VARCHAR, order_count::VARCHAR, max_amount::VARCHAR FROM mart_customer_summary ORDER BY amount_bucket",
-        3,
-    );
-
-    assert_eq!(physical_result, vec![expected_row(&["high", "2", "100"])]);
-
-    let mutation = physical_db
-        .execute_text(
-            "SELECT orders.amount_bucket::VARCHAR, COUNT(*)::VARCHAR AS order_count, \
-                    MAX(orders.amount)::VARCHAR AS max_amount \
-             FROM stage_orders AS orders \
-             CROSS JOIN stage_customers AS customers \
-             WHERE orders.amount = 100 \
-             GROUP BY orders.amount_bucket \
-             HAVING COUNT(*) >= 1 \
-             ORDER BY orders.amount_bucket",
-            3,
-        )
-        .expect("mutated workload should execute");
-    assert_ne!(
-        mutation, physical_result,
-        "removing the relational stage must change the complete result"
-    );
-    assert_eq!(mutation, vec![expected_row(&["high", "4", "100"])]);
+    assert!(!physical.status.success());
+    let stderr = String::from_utf8_lossy(&physical.stderr);
+    assert!(stderr.contains("reason=having"), "stderr: {stderr}");
 
     let boundary_fixture_path = fixture("advanced_boundary.sql");
     let boundary_dir = TestDir::new("pipeline-boundary");
@@ -303,130 +273,55 @@ fn cli_samples_full_matching_and_rejected_integer_ranges() {
 }
 
 #[test]
-fn cli_window_fixture_is_ranked_limited_and_deterministic() {
+fn cli_window_fixture_reports_qualify_and_limit_as_residual() {
     let fixture_path = fixture("window_ranked.sql");
-    let fixture_sql = fs::read_to_string(&fixture_path).expect("window fixture should be readable");
-    let schemas = &["raw_window:category=VARCHAR", "raw_window:score=INTEGER"];
-
-    let first_dir = TestDir::new("window-first");
-    let first = run_cli(
+    let output_dir = TestDir::new("window-residual");
+    let output = run_cli(
         &fixture_path,
         "ranked_result",
-        schemas,
+        &["raw_window:category=VARCHAR", "raw_window:score=INTEGER"],
         &[],
-        first_dir.path(),
+        output_dir.path(),
     );
-    let first_stdout = assert_cli_success(&first);
-    let first_paths = generated_paths(&first_stdout);
-
-    let second_dir = TestDir::new("window-second");
-    let second = run_cli(
-        &fixture_path,
-        "ranked_result",
-        schemas,
-        &[],
-        second_dir.path(),
-    );
-    let second_stdout = assert_cli_success(&second);
-    let second_paths = generated_paths(&second_stdout);
-
-    assert_eq!(
-        first_paths.keys().collect::<Vec<_>>(),
-        second_paths.keys().collect::<Vec<_>>()
-    );
-    for relation in first_paths.keys() {
-        assert_eq!(
-            fs::read(&first_paths[relation]).expect("first Parquet file should be readable"),
-            fs::read(&second_paths[relation]).expect("second Parquet file should be readable"),
-            "fixed seed should reproduce identical Parquet output for {relation}"
-        );
-    }
-
-    let executor = CliDuckDb::in_memory().expect("DuckDB should open");
-    load_outputs(&executor, &first_stdout);
-    let result = execute_with_final_select(
-        &executor,
-        &fixture_sql,
-        "SELECT marker::VARCHAR, rn::VARCHAR FROM ranked_result ORDER BY rn",
-        2,
-    );
-    assert_eq!(result, vec![expected_row(&["1", "1"])]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("reason=qualify"), "stderr: {stderr}");
+    assert!(stderr.contains("reason=limit"), "stderr: {stderr}");
 }
 
 #[test]
-fn cli_set_operation_fixtures_execute_with_full_expected_results() {
+fn cli_set_operations_and_limit_fail_explicitly_while_distinct_is_exact() {
     let fixture_path = fixture("set_operations.sql");
     let schemas = &[
         "raw_a:value=INTEGER",
         "raw_b:value=INTEGER",
         "raw_c:value=INTEGER",
     ];
-    let cases = [
-        (
-            "union_all_result",
-            "CREATE VIEW set_a AS SELECT 1 AS marker FROM raw_a WHERE value = 10; \
-             CREATE VIEW set_b AS SELECT 2 AS marker FROM raw_b WHERE value = 20; \
-             CREATE VIEW union_all_result AS \
-             SELECT marker FROM set_a UNION ALL SELECT marker FROM set_b ORDER BY marker LIMIT 2; \
-             SELECT marker::VARCHAR FROM union_all_result ORDER BY marker;",
-            vec![expected_row(&["1"]), expected_row(&["2"])],
-        ),
-        (
-            "union_result",
-            "CREATE VIEW set_a AS SELECT 1 AS marker FROM raw_a WHERE value = 10; \
-             CREATE VIEW set_c AS SELECT 1 AS marker FROM raw_c WHERE value = 30; \
-             CREATE VIEW union_result AS \
-             SELECT marker FROM set_a UNION SELECT marker FROM set_c ORDER BY marker; \
-             SELECT marker::VARCHAR FROM union_result ORDER BY marker;",
-            vec![expected_row(&["1"])],
-        ),
-        (
-            "intersect_result",
-            "CREATE VIEW set_a AS SELECT 1 AS marker FROM raw_a WHERE value = 10; \
-             CREATE VIEW set_c AS SELECT 1 AS marker FROM raw_c WHERE value = 30; \
-             CREATE VIEW intersect_result AS \
-             SELECT marker FROM set_a INTERSECT SELECT marker FROM set_c ORDER BY marker; \
-             SELECT marker::VARCHAR FROM intersect_result ORDER BY marker;",
-            vec![expected_row(&["1"])],
-        ),
-        (
-            "except_result",
-            "CREATE VIEW set_a AS SELECT 1 AS marker FROM raw_a WHERE value = 10; \
-             CREATE VIEW set_b AS SELECT 2 AS marker FROM raw_b WHERE value = 20; \
-             CREATE VIEW except_result AS \
-             SELECT marker FROM set_a EXCEPT SELECT marker FROM set_b ORDER BY marker; \
-             SELECT marker::VARCHAR FROM except_result ORDER BY marker;",
-            vec![expected_row(&["1"])],
-        ),
-        (
-            "distinct_result",
-            "CREATE VIEW set_a AS SELECT 1 AS marker FROM raw_a WHERE value = 10; \
-             CREATE VIEW distinct_result AS SELECT DISTINCT marker FROM set_a ORDER BY marker; \
-             SELECT marker::VARCHAR FROM distinct_result ORDER BY marker;",
-            vec![expected_row(&["1"])],
-        ),
-        (
-            "limited_result",
-            "CREATE VIEW set_a AS SELECT 1 AS marker FROM raw_a WHERE value = 10; \
-             CREATE VIEW set_b AS SELECT 2 AS marker FROM raw_b WHERE value = 20; \
-             CREATE VIEW limited_result AS \
-             SELECT marker FROM set_a UNION ALL SELECT marker FROM set_b ORDER BY marker LIMIT 1; \
-             SELECT marker::VARCHAR FROM limited_result ORDER BY marker;",
-            vec![expected_row(&["1"])],
-        ),
-    ];
 
-    for (index, (target, workload, expected)) in cases.into_iter().enumerate() {
-        let output_dir = TestDir::new(&format!("set-{index}"));
-        let output = run_cli(&fixture_path, target, schemas, &[], output_dir.path());
-        let stdout = assert_cli_success(&output);
-        let executor = CliDuckDb::in_memory().expect("DuckDB should open");
-        load_outputs(&executor, &stdout);
-        let result = executor
-            .execute_text(workload, 1)
-            .unwrap_or_else(|error| panic!("{target} should execute: {error}"));
-        assert_eq!(result, expected, "target {target}");
+    for target in [
+        "union_all_result",
+        "union_result",
+        "intersect_result",
+        "except_result",
+        "limited_result",
+    ] {
+        let output_dir = TestDir::new(target);
+        let output = run_cli_with_counts(
+            &fixture_path, target, schemas, &[], output_dir.path(), 1, 0,
+        );
+        assert!(!output.status.success(), "{target} must be residual");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("reason=set_operation") || stderr.contains("reason=limit"),
+            "{target}: {stderr}"
+        );
     }
+
+    let output_dir = TestDir::new("distinct");
+    let output = run_cli_with_counts(
+        &fixture_path, "distinct_result", schemas, &[], output_dir.path(), 1, 0,
+    );
+    assert_cli_success(&output);
 }
 
 #[test]
@@ -475,9 +370,7 @@ fn cli_reports_exists_relationship_as_explicitly_unsupported() {
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("CLI stderr should be UTF-8");
     assert!(
-        stderr.contains(
-            "EXISTS/NOT EXISTS relationship semantics are not yet supported by relational witness generation"
-        ),
+        stderr.contains("reason=subquery_predicate"),
         "unexpected stderr: {stderr}"
     );
 }
