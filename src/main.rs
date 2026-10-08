@@ -387,6 +387,9 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
             finding.detail()
         );
     }
+    for relation in generated.unhonored_constraints() {
+        println!("relation_constraints={relation} status=not_honored reason=relation_not_generated");
+    }
     println!("metadata={}", metadata_path.display());
 
     Ok(())
