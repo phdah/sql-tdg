@@ -44,11 +44,18 @@ fn assert_all_rows_pass_query(
         .expect("composed local-relation semantics should be generated");
     let values = generated_ints(&generated, relation, column);
     assert_eq!(values.len(), ROWS);
-    assert!(values.iter().all(|value| range.contains(value)), "{values:?}");
+    assert!(
+        values.iter().all(|value| range.contains(value)),
+        "{values:?}"
+    );
 
     let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
-    executor.materialize(&generated).expect("sources should materialize");
-    let result = executor.execute(sql).expect("local-relation query should execute");
+    executor
+        .materialize(&generated)
+        .expect("sources should materialize");
+    let result = executor
+        .execute(sql)
+        .expect("local-relation query should execute");
     assert_eq!(result.rows().len(), ROWS);
 }
 
@@ -101,9 +108,11 @@ fn cte_filters_propagate_across_upstream_views_and_intermediate_boundaries() {
     ];
     let generated = generate_from_sql(sql, "duckdb", &schemas, ROWS, SEED)
         .expect("physical generation must honor ancestor CTE filters");
-    assert!(generated_ints(&generated, "t", "a")
-        .iter()
-        .all(|value| (1001..2000).contains(value)));
+    assert!(
+        generated_ints(&generated, "t", "a")
+            .iter()
+            .all(|value| (1001..2000).contains(value))
+    );
 
     let boundary =
         GenerationBoundary::intermediate_relations(["stage"]).expect("boundary should build");
@@ -117,9 +126,11 @@ fn cte_filters_propagate_across_upstream_views_and_intermediate_boundaries() {
         SEED,
     )
     .expect("intermediate generation must use exact composed semantics");
-    assert!(generated_ints(&generated, "stage", "a")
-        .iter()
-        .all(|value| (1001..2000).contains(value)));
+    assert!(
+        generated_ints(&generated, "stage", "a")
+            .iter()
+            .all(|value| (1001..2000).contains(value))
+    );
 }
 
 #[test]
@@ -138,9 +149,11 @@ fn whole_project_intersects_local_relation_and_direct_filters() {
         SEED,
     )
     .expect("all terminal outcomes should share their composed domains");
-    assert!(generated_ints(&generated, "t", "a")
-        .iter()
-        .all(|value| (1501..2000).contains(value)));
+    assert!(
+        generated_ints(&generated, "t", "a")
+            .iter()
+            .all(|value| (1501..2000).contains(value))
+    );
 }
 
 #[test]
@@ -168,9 +181,19 @@ fn three_source_cte_chain_coordinates_inner_join_keys_in_duckdb() {
         sql,
         "duckdb",
         &[
-            schema("orders", &[("id", "INTEGER"), ("customer_id", "INTEGER"), ("amount", "INTEGER")]),
+            schema(
+                "orders",
+                &[
+                    ("id", "INTEGER"),
+                    ("customer_id", "INTEGER"),
+                    ("amount", "INTEGER"),
+                ],
+            ),
             schema("customers", &[("id", "INTEGER")]),
-            schema("items", &[("customer_id", "INTEGER"), ("product_id", "INTEGER")]),
+            schema(
+                "items",
+                &[("customer_id", "INTEGER"), ("product_id", "INTEGER")],
+            ),
             schema("products", &[("id", "INTEGER")]),
         ],
         ROWS,
@@ -187,9 +210,11 @@ fn three_source_cte_chain_coordinates_inner_join_keys_in_duckdb() {
     assert_eq!(customer_ids, customer_keys);
     assert_eq!(customer_ids, item_customers);
     assert_eq!(product_ids, product_keys);
-    assert!(generated_ints(&generated, "orders", "amount")
-        .iter()
-        .all(|amount| (10..20).contains(amount)));
+    assert!(
+        generated_ints(&generated, "orders", "amount")
+            .iter()
+            .all(|amount| (10..20).contains(amount))
+    );
 
     let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
     executor.materialize(&generated).expect("sources should materialize");
@@ -263,7 +288,9 @@ fn physical_and_produced_sources_are_unaffected() {
 
     let generated = generate_from_sql(sql, "duckdb", &schemas, ROWS, SEED)
         .expect("physical and produced relations remain supported");
-    assert!(generated_ints(&generated, "t", "a")
-        .iter()
-        .all(|value| (10..=20).contains(value)));
+    assert!(
+        generated_ints(&generated, "t", "a")
+            .iter()
+            .all(|value| (10..=20).contains(value))
+    );
 }
