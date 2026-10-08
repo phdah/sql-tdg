@@ -320,10 +320,10 @@ fn compiled_cli_requires_and_records_comparison_assumptions() {
         "stderr: {}",
         String::from_utf8_lossy(&with.stderr)
     );
-    let metadata = fs::read_to_string(output_dir.join("metadata.sqltdg"))
-        .expect("metadata must be written");
-    let metadata = sql_tdg::TestCaseMetadata::deserialize(&metadata)
-        .expect("metadata must round-trip");
+    let metadata =
+        fs::read_to_string(output_dir.join("metadata.sqltdg")).expect("metadata must be written");
+    let metadata =
+        sql_tdg::TestCaseMetadata::deserialize(&metadata).expect("metadata must round-trip");
     assert!(
         metadata.protocol().document().contains("binary_collation"),
         "protocol snapshot must retain comparison declarations"
