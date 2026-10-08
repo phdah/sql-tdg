@@ -385,6 +385,62 @@ fn dbt_core_duckdb_whole_project_names_residual_model() {
     );
 }
 
+
+#[test]
+#[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
+fn dbt_core_build_passes_source_data_tests_on_generated_relations() {
+    let project = DbtProject::new();
+    let source_tests = r#"version: 2
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: orders
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+          - name: customer_id
+            data_tests:
+              - relationships:
+                  arguments:
+                    to: "source('raw', 'customers')"
+                    field: id
+          - name: status
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: [paid, pending]
+      - name: customers
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: legacy_orders
+      - name: returns
+"#;
+    fs::write(project.path().join("models/sources.yml"), source_tests)
+        .expect("dbt data-test schema should be writable");
+    bootstrap_artifacts(&project);
+
+    let generated_dir = project.path().join("generated/source-tests");
+    let generated = run_tdg(
+        &project,
+        r#""fixture"."raw_analytics"."stg_orders""#,
+        &generated_dir,
+        &[],
+        4,
+        0,
+    );
+    assert_success("sql-tdg constraint-aware source generation", &generated);
+    let paths = generated_paths(&generated.stdout);
+    assert_generated_rows(&paths, &["orders", "customers"], 4);
+    install_source_seeds(&project, &paths);
+
+    assert_success(
+        "dbt build with generated source tests",
+        &run_dbt(&project, &["build", "--full-refresh"]),
+    );
+}
+
 #[test]
 #[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
 fn dbt_core_generates_from_yaml_source_types_without_catalog() {
