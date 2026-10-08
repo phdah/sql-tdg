@@ -1,0 +1,69 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+    "dbt_version": "1.12.3",
+    "adapter_type": "duckdb"
+  },
+  "nodes": {
+    "model.demo.big_items": {
+      "unique_id": "model.demo.big_items",
+      "resource_type": "model",
+      "relation_name": "warehouse.analytics.big_items",
+      "database": "warehouse",
+      "schema": "analytics",
+      "original_file_path": "models/big_items.sql",
+      "language": "sql",
+      "compiled_code": "SELECT item_id, order_id, quantity FROM warehouse.raw.order_items WHERE quantity >= 5",
+      "depends_on": {"nodes": ["source.demo.raw.order_items"]}
+    },
+    "test.demo.source_relationships_raw_order_items_order_id__order_id__source_raw_orders_": {
+      "unique_id": "test.demo.source_relationships_raw_order_items_order_id__order_id__source_raw_orders_",
+      "resource_type": "test",
+      "relation_name": null,
+      "attached_node": null,
+      "column_name": "order_id",
+      "file_key_name": "sources.raw",
+      "test_metadata": {
+        "name": "relationships",
+        "namespace": null,
+        "kwargs": {
+          "column_name": "order_id",
+          "to": "source('raw', 'orders')",
+          "field": "order_id",
+          "model": "{{ get_where_subquery(source('raw', 'order_items')) }}"
+        }
+      },
+      "depends_on": {
+        "nodes": ["source.demo.raw.orders", "source.demo.raw.order_items"]
+      }
+    }
+  },
+  "sources": {
+    "source.demo.raw.orders": {
+      "unique_id": "source.demo.raw.orders",
+      "resource_type": "source",
+      "relation_name": "warehouse.raw.orders",
+      "database": "warehouse",
+      "schema": "raw",
+      "source_name": "raw",
+      "name": "orders",
+      "columns": {
+        "order_id": {"name": "order_id", "data_type": "BIGINT"}
+      }
+    },
+    "source.demo.raw.order_items": {
+      "unique_id": "source.demo.raw.order_items",
+      "resource_type": "source",
+      "relation_name": "warehouse.raw.order_items",
+      "database": "warehouse",
+      "schema": "raw",
+      "source_name": "raw",
+      "name": "order_items",
+      "columns": {
+        "item_id": {"name": "item_id", "data_type": "BIGINT"},
+        "order_id": {"name": "order_id", "data_type": "BIGINT"},
+        "quantity": {"name": "quantity", "data_type": "BIGINT"}
+      }
+    }
+  }
+}

@@ -387,6 +387,55 @@ fn compiled_cli_generates_typed_dbt_sources_without_a_catalog() {
     );
 }
 
+/// dbt writes `attached_node: null` for tests declared on sources; a relationships test between
+/// two sources must not prevent analysis of the project.
+#[test]
+fn compiled_cli_generates_dbt_sources_with_unattached_source_relationships_test() {
+    let workspace = TestDir::new("dbt-source-relationships");
+    let manifest_path = workspace.path().join("manifest.json");
+    fs::write(
+        &manifest_path,
+        include_str!("fixtures/dbt_manifest_source_relationships.json"),
+    )
+    .expect("manifest should be writable");
+
+    let output_dir = workspace.path().join("generated");
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-manifest")
+        .arg(&manifest_path)
+        .args(["--target", "warehouse.analytics.big_items"])
+        .args(["--matching", "4", "--format", "csv", "--output"])
+        .arg(&output_dir)
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let csv = fs::read_to_string(output_dir.join("0001-warehouse.raw.order_items.csv"))
+        .expect("source read by the model should be generated");
+    let mut lines = csv.lines();
+    let header = lines.next().expect("CSV header");
+    let quantity_index = header
+        .split(',')
+        .position(|column| column == "quantity")
+        .expect("quantity column");
+    let rows = lines.collect::<Vec<_>>();
+    assert_eq!(rows.len(), 4);
+    for row in rows {
+        let quantity = row
+            .split(',')
+            .nth(quantity_index)
+            .expect("quantity value")
+            .parse::<i64>()
+            .expect("integer quantity");
+        assert!(quantity >= 5, "unexpected quantity: {quantity}");
+    }
+}
+
 #[test]
 fn compiled_cli_accepts_dbt_project_without_a_catalog() {
     let workspace = TestDir::new("dbt-project-manifest-types");
