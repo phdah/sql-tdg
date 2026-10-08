@@ -107,6 +107,29 @@ impl GenerationRowCounts {
     }
 }
 
+/// Generation parameters for SQL analysis at an explicit boundary.
+#[derive(Debug, Clone, Copy)]
+pub struct SqlGenerationSettings<'a> {
+    row_counts: GenerationRowCounts,
+    seed: u64,
+    assumptions: &'a [ComparisonAssumption],
+}
+
+impl<'a> SqlGenerationSettings<'a> {
+    /// Construct explicit row counts, seed, and caller-attested comparison settings.
+    pub const fn new(
+        row_counts: GenerationRowCounts,
+        seed: u64,
+        assumptions: &'a [ComparisonAssumption],
+    ) -> Self {
+        Self {
+            row_counts,
+            seed,
+            assumptions,
+        }
+    }
+}
+
 /// Arrow-backed generated source tables keyed by canonical relation identity.
 pub struct GeneratedData {
     tables: BTreeMap<String, Table>,
@@ -572,9 +595,7 @@ pub fn generate_classified_from_sql_with_assumptions(
         source_schemas,
         None,
         &GenerationBoundary::physical_sources(),
-        row_counts,
-        seed,
-        assumptions,
+        SqlGenerationSettings::new(row_counts, seed, assumptions),
     )
 }
 
@@ -615,9 +636,7 @@ pub fn generate_classified_from_sql_at_boundary(
         relation_schemas,
         selector,
         boundary,
-        row_counts,
-        seed,
-        &[],
+        SqlGenerationSettings::new(row_counts, seed, &[]),
     )
 }
 
@@ -628,9 +647,7 @@ pub fn generate_classified_from_sql_at_boundary_with_assumptions(
     relation_schemas: &[RelationSchema],
     selector: Option<&OutcomeSelector>,
     boundary: &GenerationBoundary,
-    row_counts: GenerationRowCounts,
-    seed: u64,
-    assumptions: &[ComparisonAssumption],
+    settings: SqlGenerationSettings<'_>,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
     let dialect = dialect_from_name(dialect_name).ok_or_else(|| {
         ProtocolGenerationError::UnsupportedDialect {
@@ -656,8 +673,14 @@ pub fn generate_classified_from_sql_at_boundary_with_assumptions(
             }
         })?;
 
-    bundle.declare_comparison_assumptions(assumptions);
-    generate_classified_from_bundle_at_boundary(&bundle, selector, boundary, row_counts, seed)
+    bundle.declare_comparison_assumptions(settings.assumptions);
+    generate_classified_from_bundle_at_boundary(
+        &bundle,
+        selector,
+        boundary,
+        settings.row_counts,
+        settings.seed,
+    )
 }
 
 /// Generate matching physical source rows from one explicitly resolved terminal outcome.
