@@ -1,6 +1,8 @@
 # sql-tdg
 
-[![Rust checks](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml/badge.svg)](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml)
+[![CI](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml/badge.svg?branch=main)](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml?query=branch%3Amain)
+[![crates.io](https://img.shields.io/crates/v/sql-tdg.svg?cacheSeconds=300)](https://crates.io/crates/sql-tdg)
+[![docs.rs](https://docs.rs/sql-tdg/badge.svg)](https://docs.rs/sql-tdg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Synthetic data for real SQL workloads, not just isolated WHERE clauses.**
@@ -96,15 +98,14 @@ separate levels of parse, generation, and execution verification.
 
 ## Install
 
-Install the CLI from a checkout of this repository:
+Install the published CLI from crates.io:
 
 ```console
-cargo install --path .
+cargo install sql-tdg
 sql-tdg --help
 ```
 
-Once the first stable release is published on crates.io, the published package can be
-installed with `cargo install sql-tdg`.
+To install from a local checkout for development, use `cargo install --path .` instead.
 
 ## Quick start
 
