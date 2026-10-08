@@ -199,7 +199,10 @@ fn unsupported_outcome_is_named_instead_of_dropped() {
         panic!("expected TerminalOutcome, got {error:?}");
     };
     assert_eq!(outcome, "relation:correlated");
-    assert!(error.to_string().contains("reason=subquery_predicate"), "error: {error}");
+    assert!(
+        error.to_string().contains("reason=subquery_predicate"),
+        "error: {error}"
+    );
 }
 
 #[test]
