@@ -184,6 +184,12 @@ fn readme_cte_join_aggregation_and_window_example() {
 fn readme_dbt_workflow_documents_catalog_generation() {
     let readme = include_str!("../README.md");
     let expected = "dbt compile\ndbt docs generate\nsql-tdg generate --dbt-project .";
-    assert!(readme.contains(expected), "dbt catalog generation must be documented");
-    assert!(readme.contains("data_type"), "catalog-less source fallback must be documented");
+    assert!(
+        readme.contains(expected),
+        "dbt catalog generation must be documented"
+    );
+    assert!(
+        readme.contains("data_type"),
+        "catalog-less source fallback must be documented"
+    );
 }
