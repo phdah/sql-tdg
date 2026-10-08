@@ -1175,8 +1175,9 @@ fn range_candidates(
             let upper_value = if upper.inclusive() {
                 upper_value
             } else {
-                step_value(&upper_value, false)
-                    .ok_or_else(|| "exclusive upper bound has no representable predecessor".to_owned())?
+                step_value(&upper_value, false).ok_or_else(|| {
+                    "exclusive upper bound has no representable predecessor".to_owned()
+                })?
             };
             if upper_value != candidate && value_in_range(&upper_value, range, data_type)? {
                 values.push(upper_value);
