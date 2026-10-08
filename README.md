@@ -159,12 +159,26 @@ terminal outcome, such as every model of a dbt project; the metadata then record
 physical source relations. Repeat `--boundary <relation>` to materialize explicitly selected
 intermediate relations instead.
 
-For dbt, first produce normal dbt artifacts, including `catalog.json`, then point sql-tdg at the
-project:
+For dbt, declare every physical source column's `data_type` in your dbt YAML when the
+source table is not yet present in the warehouse:
+
+```yaml
+version: 2
+sources:
+  - name: raw
+    tables:
+      - name: orders
+        columns:
+          - name: id
+            data_type: INTEGER
+          - name: amount
+            data_type: BIGINT
+```
+
+Then compile the project and generate data without first creating the sources:
 
 ```console
 dbt compile
-dbt docs generate
 
 sql-tdg generate \
   --dbt-project . \
@@ -176,23 +190,25 @@ sql-tdg generate \
   --output .sql-tdg/customer-summary
 ```
 
-Omit `--target` to generate every source of the whole project in one run.
-
-`catalog.json` is built from the warehouse, so every source table must exist there when
-`dbt docs generate` runs; otherwise sql-tdg reports the relation with no known column types.
+The CLI reads `target/manifest.json` and uses `target/catalog.json` when it exists. Warehouse
+catalog types take precedence over manifest-declared types. Without a catalog, every physical
+dependency needs complete, typed column declarations in the manifest; missing schema or
+`data_type` metadata fails explicitly. If a compiled model references an undeclared source
+column, generation fails with the protocol's `unknown_schema_column` residual instead of
+silently omitting that column. Use `--dbt-catalog <path>` to require a specific catalog file.
 
 You can also pass artifacts directly:
 
 ```console
 sql-tdg generate \
   --dbt-manifest target/manifest.json \
-  --dbt-catalog target/catalog.json \
   --target warehouse.analytics.customer_summary \
   --output .sql-tdg/customer-summary
 ```
 
-The dbt adapter and dialect come from SQL Semantic Protocol. The CLI does not interpret dbt SQL or
-artifact semantics itself.
+Add `--dbt-catalog target/catalog.json` to the direct-artifact invocation when a
+specific warehouse catalog is required. The dbt adapter and dialect come from SQL Semantic
+Protocol. The CLI does not interpret dbt SQL or artifact semantics itself.
 
 Each successful run writes one deterministic relation file per generated relation plus
 `metadata.sqltdg`. The metadata records the workload identity, selected target and boundary,
