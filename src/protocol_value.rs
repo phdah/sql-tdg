@@ -592,7 +592,9 @@ pub(crate) fn moderate_key_values(data_type: &DataType) -> Result<Vec<ProtocolVa
             DataType::Decimal { scale, .. } => {
                 let factor = pow10_i128(scale.unwrap_or(0))?;
                 ProtocolValue::Decimal128(
-                    number.checked_mul(factor).ok_or("moderate decimal key overflow")?,
+                    number
+                        .checked_mul(factor)
+                        .ok_or("moderate decimal key overflow")?,
                 )
             }
             DataType::FloatingPoint { bits } if bits.unwrap_or(64) <= 32 => {
@@ -601,9 +603,7 @@ pub(crate) fn moderate_key_values(data_type: &DataType) -> Result<Vec<ProtocolVa
             DataType::FloatingPoint { bits } if bits.unwrap_or(64) <= 64 => {
                 ProtocolValue::Float64((number as f64).to_bits())
             }
-            DataType::String { fixed: false, .. } => {
-                ProtocolValue::String(number.to_string())
-            }
+            DataType::String { fixed: false, .. } => ProtocolValue::String(number.to_string()),
             DataType::Date => ProtocolValue::Date32(18_262 + number as i32),
             _ => return Ok(Vec::new()),
         };
