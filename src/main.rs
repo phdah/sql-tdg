@@ -17,7 +17,7 @@ use sql_semantic_protocol::{
 use sql_tdg::{
     GeneratedData, GeneratedRelation, GenerationBoundary, GenerationRowCounts, OutcomeSelector,
     ProtocolSnapshot, TargetKind, TestCaseMetadata, TestTarget, WorkloadIdentity,
-    generate_classified_from_bundle_at_boundary, write_csv, write_parquet,
+    generate_classified_from_bundle_at_boundary, generate_scenarios_from_bundle, write_csv, write_parquet,
 };
 
 const HELP: &str = r#"sql-tdg
@@ -42,6 +42,7 @@ DBT INPUT
 GENERATION OPTIONS
   --target <relation>             Select a named terminal outcome
   --target-layer <layer-id>       Select an anonymous terminal outcome
+  --scenarios                     Partition terminal outcomes into separate datasets
   --boundary <relation>           Materialize an intermediate (repeatable)
   --assume-comparison <name>      Attest comparison semantics (repeatable)
   --matching <n>                  Matching rows per relation (default: 100)
@@ -66,6 +67,8 @@ NOTES
   Choose raw --sql/--file inputs or dbt artifacts, not both.
   Raw SQL requires --schema; dbt uses artifact source schemas and types.
   Without --target or --target-layer, one dataset covers all terminal outcomes.
+  --scenarios writes compatible outcome groups to scenario-0001/ etc.
+  Scenario mode requires --rejected 0 and excludes target/boundary selection.
   Without --boundary, physical source relations are generated.
   --assume-comparison: binary_collation, no_char_padding, no_nan,
                        signed_zero_equivalent, session_time_zone
@@ -194,6 +197,7 @@ struct GenerateArgs {
     dbt_catalog: Option<PathBuf>,
     target_relation: Option<String>,
     target_layer: Option<String>,
+    scenarios: bool,
     boundaries: Vec<String>,
     comparison_assumptions: Vec<ComparisonAssumption>,
     seed: u64,
@@ -259,6 +263,7 @@ where
         dbt_catalog: None,
         target_relation: None,
         target_layer: None,
+        scenarios: false,
         boundaries: Vec::new(),
         comparison_assumptions: Vec::new(),
         seed: 42,
@@ -299,6 +304,7 @@ where
                 args.dbt_catalog = Some(PathBuf::from(next_value(&mut arguments, "--dbt-catalog")?))
             }
             "--target" => args.target_relation = Some(next_value(&mut arguments, "--target")?),
+            "--scenarios" => args.scenarios = true,
             "--target-layer" => {
                 args.target_layer = Some(next_value(&mut arguments, "--target-layer")?)
             }
@@ -377,6 +383,15 @@ fn validate_generate_args(args: &GenerateArgs) -> Result<(), CliError> {
         ));
     }
 
+    if args.scenarios {
+        if args.target_relation.is_some() || args.target_layer.is_some() || !args.boundaries.is_empty() {
+            return Err(CliError::new("--scenarios cannot be combined with --target, --target-layer, or --boundary"));
+        }
+        if args.rejected != 0 {
+            return Err(CliError::new("--scenarios requires --rejected 0; rejected rows cannot be classified across outcomes"));
+        }
+    }
+
     if has_raw {
         if args.schema_specs.is_empty() {
             return Err(CliError::new(
@@ -422,6 +437,43 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
     analysis
         .bundle
         .declare_comparison_assumptions(&args.comparison_assumptions);
+
+    if args.scenarios {
+        let scenarios = generate_scenarios_from_bundle(&analysis.bundle, args.matching, args.seed)
+            .map_err(|error| CliError::new(error.to_string()))?;
+        if args.output_dir.exists() {
+            let mut entries = fs::read_dir(&args.output_dir).map_err(|error| {
+                CliError::new(format!("failed to inspect output directory: {error}"))
+            })?;
+            if entries.next().is_some() {
+                return Err(CliError::new("--scenarios requires a new or empty output directory to prevent stale scenario files"));
+            }
+        }
+        for (index, scenario) in scenarios.iter().enumerate() {
+            let name = format!("scenario-{:04}", index + 1);
+            let directory = args.output_dir.join(&name);
+            let target = TestTarget::scenario_outcomes(scenario.outcomes())
+                .map_err(|error| CliError::new(error.to_string()))?;
+            let metadata = build_metadata(
+                &analysis,
+                target,
+                GenerationBoundary::physical_sources(),
+                args.seed,
+                scenario.data(),
+            )?;
+            let exported = write_generated_outputs(scenario.data(), args.output_format, &directory)?;
+            let metadata_path = directory.join("metadata.sqltdg");
+            fs::write(&metadata_path, metadata.serialize()).map_err(|error| {
+                CliError::new(format!("failed to write metadata {}: {error}", metadata_path.display()))
+            })?;
+            println!("scenario={name} outcomes={}", scenario.outcomes().join(", "));
+            for (relation, path) in exported {
+                println!("scenario={name} relation={relation} path={}", path.display());
+            }
+            println!("scenario={name} metadata={}", metadata_path.display());
+        }
+        return Ok(());
+    }
 
     let generated = generate_classified_from_bundle_at_boundary(
         &analysis.bundle,
@@ -832,6 +884,7 @@ fn describe_target(target: &TestTarget) -> String {
         TargetKind::Relation => format!("relation:{}", target.identifier()),
         TargetKind::AnonymousLayer => format!("anonymous:{}", target.identifier()),
         TargetKind::AllTerminalOutcomes => format!("all:{}", target.identifier()),
+        TargetKind::ScenarioOutcomes => format!("scenario:{}", target.identifier()),
     }
 }
 
