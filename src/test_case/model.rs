@@ -90,6 +90,8 @@ pub enum TargetKind {
     AnonymousLayer,
     /// Every terminal outcome, generated together as one shared source dataset.
     AllTerminalOutcomes,
+    /// A compatible subset of terminal outcomes generated as one independent scenario.
+    ScenarioOutcomes,
 }
 
 impl TargetKind {
@@ -98,6 +100,7 @@ impl TargetKind {
             Self::Relation => "relation",
             Self::AnonymousLayer => "anonymous-layer",
             Self::AllTerminalOutcomes => "all-terminal-outcomes",
+            Self::ScenarioOutcomes => "scenario-outcomes",
         }
     }
 
@@ -106,6 +109,7 @@ impl TargetKind {
             "relation" => Ok(Self::Relation),
             "anonymous-layer" => Ok(Self::AnonymousLayer),
             "all-terminal-outcomes" => Ok(Self::AllTerminalOutcomes),
+            "scenario-outcomes" => Ok(Self::ScenarioOutcomes),
             _ => Err(TestCaseError::InvalidMetadata {
                 message: format!("unknown target kind {value:?}"),
             }),
@@ -136,6 +140,16 @@ impl TestTarget {
         Self::new(TargetKind::AllTerminalOutcomes, outcomes.join(", "))
     }
 
+    /// Selects the exact terminal outcome identities covered by one generated scenario.
+    pub fn scenario_outcomes(outcomes: &[String]) -> Result<Self, TestCaseError> {
+        if outcomes.is_empty() {
+            return Err(TestCaseError::EmptyCollection {
+                field: "scenario outcomes",
+            });
+        }
+        Self::new(TargetKind::ScenarioOutcomes, outcomes.join(", "))
+    }
+
     pub(super) fn new(
         kind: TargetKind,
         identifier: impl Into<String>,
@@ -152,7 +166,7 @@ impl TestTarget {
     }
 
     /// Returns the protocol relation or layer identifier, or the joined outcome descriptions
-    /// for [`TargetKind::AllTerminalOutcomes`].
+    /// for [`TargetKind::AllTerminalOutcomes`] or [`TargetKind::ScenarioOutcomes`].
     pub fn identifier(&self) -> &str {
         &self.identifier
     }

@@ -116,6 +116,32 @@ canonical relation identity, including quotation when present in
 `manifest.json` (for example
 `"fixture"."raw_analytics"."final_orders"` in the committed dbt fixture).
 
+### Independent scenarios
+
+If terminal models have incompatible source conditions, pass `--scenarios`
+instead of weakening the requirements of any model:
+
+```console
+sql-tdg generate --dbt-project . --scenarios --matching 50 --rejected 0 --seed 42 --output sql-tdg-scenarios
+```
+
+Each `scenario-0001/`, `scenario-0002/`, etc. contains its own source files and
+`metadata.sqltdg` with a `scenario-outcomes` target identifying the exact
+canonical terminal outcome members. The CLI also prints each group's membership.
+Scenario outputs are **independent test runs**, not source partitions intended to
+be loaded together. Run downstream dbt models against one scenario's sources at
+a time. Use a new or empty output directory to prevent stale scenarios.
+
+Partitioning is deterministic first-fit by canonical outcome identity. Each
+new outcome joins the first group for which the existing exact shared-outcomes
+generator proves compatibility; it may not find the smallest number of groups.
+An unsupported or individually unsatisfiable outcome still fails the entire
+command. This is opt-in: without `--scenarios`, the existing single-dataset
+behavior and `ConflictingOutcomes` error remain unchanged. Scenario mode
+requires `--rejected 0` and cannot combine with `--target`, `--target-layer`,
+or `--boundary`. The Rust API offers `generate_scenarios_from_bundle` on an
+already analyzed protocol bundle.
+
 Repeat `--boundary` to materialize named intermediate relations instead of
 physical sources for a selected outcome. Only select a boundary if the protocol
 resolves its semantics exactly. Rejected rows and intermediate boundaries
