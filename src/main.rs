@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use sql_semantic_protocol::{
-    AnalysisBundle, ComparisonAssumption, ConfiguredSqlInput, DatasetRef, DbtArtifactsError, RelationCatalog,
-    RelationSchema, SchemaColumn, SqlInput, analyze_configured_inputs_with_catalog,
-    analyze_dbt_artifacts, dialect_from_name, parse_dbt_catalog, parse_dbt_manifest,
-    to_bundle_json,
+    AnalysisBundle, ComparisonAssumption, ConfiguredSqlInput, DatasetRef, DbtArtifactsError,
+    RelationCatalog, RelationSchema, SchemaColumn, SqlInput,
+    analyze_configured_inputs_with_catalog, analyze_dbt_artifacts, dialect_from_name,
+    parse_dbt_catalog, parse_dbt_manifest, to_bundle_json,
 };
 use sql_tdg::{
     GeneratedData, GeneratedRelation, GenerationBoundary, GenerationRowCounts, OutcomeSelector,
@@ -343,7 +343,9 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
         analyze_raw(&args)?
     };
 
-    analysis.bundle.declare_comparison_assumptions(&args.comparison_assumptions);
+    analysis
+        .bundle
+        .declare_comparison_assumptions(&args.comparison_assumptions);
 
     let generated = generate_classified_from_bundle_at_boundary(
         &analysis.bundle,
