@@ -2179,7 +2179,6 @@ fn collect_equality_relationships(
     Ok(relationships.into_iter().collect())
 }
 
-
 fn query_for_layer<'a>(
     bundle: &'a AnalysisBundle,
     layer: &TransformationLayer,
