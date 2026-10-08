@@ -497,7 +497,15 @@ fn compiled_cli_rejects_unattributed_dbt_test_diagnostics() {
     );
     assert_ne!(invalid, original);
     fs::write(&manifest_path, invalid).expect("manifest should be writable");
-    let output = run_manifest_cli(&manifest_path, &workspace.path().join("generated"));
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-manifest")
+        .arg(&manifest_path)
+        .args(["--target", "warehouse.analytics.big_items"])
+        .args(["--matching", "4", "--format", "csv", "--output"])
+        .arg(workspace.path().join("generated"))
+        .output()
+        .expect("compiled sql-tdg binary should execute");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
