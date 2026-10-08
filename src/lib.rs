@@ -15,6 +15,7 @@ pub use export::{ExportError, record_batch, write_csv, write_parquet};
 pub use generator::{Generator, GeneratorError};
 pub use protocol::{
     GeneratedData, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError,
+    SqlGenerationSettings,
     generate_classified_from_bundle, generate_classified_from_bundle_at_boundary,
     generate_classified_from_sql, generate_classified_from_sql_at_boundary,
     generate_classified_from_sql_at_boundary_with_assumptions,
