@@ -436,6 +436,76 @@ fn compiled_cli_generates_dbt_sources_with_unattached_source_relationships_test(
     }
 }
 
+/// Source-level dbt tests constrain the generated parents as well as the selected child.
+#[test]
+fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships() {
+    let workspace = TestDir::new("dbt-source-constraints");
+    let manifest_path = workspace.path().join("manifest.json");
+    fs::write(
+        &manifest_path,
+        include_str!("fixtures/dbt_manifest_constraints.json"),
+    )
+    .expect("manifest should be writable");
+
+    let output_dir = workspace.path().join("generated");
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-manifest")
+        .arg(&manifest_path)
+        .args(["--target", "warehouse.analytics.big_items"])
+        .args(["--matching", "4", "--seed", "43", "--format", "csv", "--output"])
+        .arg(&output_dir)
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let items = fs::read_to_string(output_dir.join("0001-warehouse.raw.order_items.csv"))
+        .expect("generated child source");
+    let orders = fs::read_to_string(output_dir.join("0002-warehouse.raw.orders.csv"))
+        .expect("generated foreign-key parent source");
+    let mut unique_items = std::collections::BTreeSet::new();
+    let mut unique_orders = std::collections::BTreeSet::new();
+    for order in orders.lines().skip(1) {
+        assert!(!order.is_empty());
+        assert!(unique_orders.insert(order.to_owned()));
+    }
+    assert_eq!(unique_orders.len(), 4);
+
+    for line in items.lines().skip(1) {
+        let parts = line.split(',').collect::<Vec<_>>();
+        assert_eq!(parts.len(), 3, "row: {line}");
+        assert!(!parts[0].is_empty());
+        assert!(unique_items.insert(parts[0].to_owned()));
+        assert!(unique_orders.contains(parts[1]), "orphan order_id: {}", parts[1]);
+        assert!(["5", "6", "7"].contains(&parts[2]), "invalid quantity: {}", parts[2]);
+    }
+    assert_eq!(unique_items.len(), 4);
+}
+
+#[test]
+fn compiled_cli_rejects_unattributed_dbt_test_diagnostics() {
+    let workspace = TestDir::new("dbt-unattributed-constraint");
+    let manifest_path = workspace.path().join("manifest.json");
+    let original = include_str!("fixtures/dbt_manifest_source_relationships.json");
+    let invalid = original.replace(
+        r#""model": "{{ get_where_subquery(source('raw', 'order_items')) }}""#,
+        r#""model": "{{ unsupported() }}""#,
+    );
+    assert_ne!(invalid, original);
+    fs::write(&manifest_path, invalid).expect("manifest should be writable");
+    let output = run_manifest_cli(&manifest_path, &workspace.path().join("generated"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unattributed_dbt_test"),
+        "unexpected constraint diagnostic: {stderr}"
+    );
+}
+
 #[test]
 fn compiled_cli_accepts_dbt_project_without_a_catalog() {
     let workspace = TestDir::new("dbt-project-manifest-types");
