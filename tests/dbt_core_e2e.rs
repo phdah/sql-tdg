@@ -121,6 +121,18 @@ fn run_tdg(
         .arg(matching.to_string())
         .arg("--rejected")
         .arg(rejected.to_string())
+        .args([
+            "--assume-comparison",
+            "binary_collation",
+            "--assume-comparison",
+            "no_char_padding",
+            "--assume-comparison",
+            "no_nan",
+            "--assume-comparison",
+            "signed_zero_equivalent",
+            "--assume-comparison",
+            "session_time_zone",
+        ])
         .args(["--seed", "42", "--format", "csv"])
         .arg("--output")
         .arg(output_dir);
@@ -350,7 +362,7 @@ fn dbt_core_duckdb_workflow_generates_sources_and_intermediate_boundaries() {
 
 #[test]
 #[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
-fn dbt_core_duckdb_whole_project_names_unsupported_model() {
+fn dbt_core_duckdb_whole_project_names_residual_model() {
     let project = DbtProject::new();
     bootstrap_artifacts(&project);
 
@@ -366,8 +378,9 @@ fn dbt_core_duckdb_whole_project_names_unsupported_model() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains(r#"terminal outcome relation:"fixture"."raw_analytics"."subquery_orders""#)
-            && stderr.contains("EXISTS"),
+        stderr
+            .contains(r#"terminal outcome relation:"fixture"."raw_analytics"."aggregate_summary""#)
+            && stderr.contains("reason=having"),
         "stderr: {stderr}"
     );
 }

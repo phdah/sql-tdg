@@ -9,7 +9,32 @@ permissions:
   contents: read
 
 jobs:
-  checks:
+  rust-checks:
+    name: Rust / ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - fmt
+          - lint
+          - rust-tests
+          - doc
+    env:
+      DUCKDB_DOWNLOAD_LIB: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+
+      - name: Run ${{ matrix.check }}
+        run: make ${{ matrix.check }}
+
+  dbt-e2e:
+    name: dbt Core E2E
     runs-on: ubuntu-latest
     env:
       DUCKDB_DOWNLOAD_LIB: "1"
@@ -21,8 +46,10 @@ jobs:
       - name: Install Rust components
         run: rustup component add rustfmt clippy
 
-      - name: Run Rust checks
-        run: make rust-checks
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install dbt end-to-end dependencies
         run: python -m pip install --disable-pip-version-check -r tests/requirements-dbt-e2e.txt

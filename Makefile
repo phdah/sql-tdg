@@ -1,4 +1,4 @@
-.PHONY: tests unit-tests rust-tests rust-checks dbt-e2e
+.PHONY: tests unit-tests rust-tests rust-checks fmt lint doc dbt-e2e
 
 tests: rust-tests
 
@@ -7,10 +7,16 @@ unit-tests: tests
 rust-tests:
 	cargo test --all-targets --all-features
 
-rust-checks:
+fmt:
 	cargo fmt --all -- --check
+
+lint:
 	cargo clippy --all-targets --all-features -- -D warnings
-	cargo test --all-targets --all-features
+
+doc:
+	cargo doc --no-deps
+
+rust-checks: fmt lint rust-tests
 
 dbt-e2e:
 	cargo test --test dbt_core_e2e -- --ignored --nocapture

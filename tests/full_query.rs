@@ -1,11 +1,11 @@
 use sql_semantic_protocol::{
-    ConfiguredSqlInput, RelationCatalog, SqlInput, analyze_configured_inputs_with_catalog,
-    dialect_from_name,
+    ComparisonAssumption, ConfiguredSqlInput, RelationCatalog, SqlInput,
+    analyze_configured_inputs_with_catalog, dialect_from_name,
 };
 use sql_tdg::{
     DataType, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError, RelationSchema,
-    SchemaColumn, generate_classified_from_sql, generate_from_bundle, generate_from_sql,
-    to_timestamp,
+    SchemaColumn, generate_classified_from_sql, generate_classified_from_sql_with_assumptions,
+    generate_from_bundle, generate_from_sql, to_timestamp,
 };
 
 const ROWS: usize = 12;
@@ -122,12 +122,13 @@ fn protocol_driven_boolean_generation() {
 #[test]
 fn protocol_driven_timestamp_generation() {
     let literal = "2013-06-17T14:29:00Z";
-    let generated = generate_from_sql(
+    let generated = generate_classified_from_sql_with_assumptions(
         &format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{literal}'"),
         "generic",
         &[schema("t", &[("created_at", "TIMESTAMP")])],
-        ROWS,
+        GenerationRowCounts::matching_only(ROWS),
         SEED,
+        &[ComparisonAssumption::SessionTimeZone],
     )
     .expect("protocol-driven generation should succeed");
 
@@ -250,13 +251,11 @@ fn constrained_column_missing_from_source_schema_is_an_explicit_error() {
     )
     .expect_err("a constrained column cannot be silently omitted from schema");
 
-    assert_eq!(
+    assert!(matches!(
         error,
-        ProtocolGenerationError::MissingSchemaColumn {
-            relation: "t".to_owned(),
-            column: "required_col".to_owned(),
-        }
-    );
+        ProtocolGenerationError::ResidualConditions { .. }
+    ));
+    assert!(error.to_string().contains("reason=unknown_schema_column"));
 }
 
 #[test]
@@ -396,12 +395,13 @@ fn rejected_column_selection_and_values_are_seeded() {
 fn finite_string_and_boolean_domains_have_rejected_witnesses() {
     let counts = GenerationRowCounts::new(3, 5).expect("test row counts should be valid");
 
-    let strings = generate_classified_from_sql(
+    let strings = generate_classified_from_sql_with_assumptions(
         "SELECT status FROM t WHERE status IN ('ready', 'done')",
         "generic",
         &[schema("t", &[("status", "TEXT")])],
         counts,
         SEED,
+        &[ComparisonAssumption::BinaryCollation],
     )
     .expect("finite string domain should be complementable");
     let statuses = strings
@@ -700,8 +700,9 @@ fn non_equality_relationship_is_an_explicit_error() {
 
     assert!(matches!(
         error,
-        ProtocolGenerationError::UnsupportedRelationship { .. }
+        ProtocolGenerationError::ResidualConditions { .. }
     ));
+    assert!(error.to_string().contains("reason=column_comparison"));
 }
 
 #[test]
@@ -729,7 +730,8 @@ fn relational_subquery_predicates_are_explicit_errors() {
 
         assert!(matches!(
             error,
-            ProtocolGenerationError::UnsupportedRelationship { .. }
+            ProtocolGenerationError::ResidualConditions { .. }
         ));
+        assert!(error.to_string().contains("reason=subquery_predicate"));
     }
 }

@@ -76,6 +76,40 @@ equality relationship. Rejected relational rows deterministically break one safe
 relationship while keeping scalar domains and the remaining relationships valid. Relationship
 shapes that cannot guarantee those properties fail explicitly.
 
+## Exactness and comparison assumptions
+
+Generation is allowed only when SQL Semantic Protocol reports an exact row-membership contract.
+Composed domains and inner join equalities must cover every condition across the selected
+transformation layers. Unsupported conditions (for example cross-column OR, LIKE, computed
+predicates, HAVING, QUALIFY, LIMIT, OFFSET, FETCH, TABLESAMPLE, or non-inner joins) fail closed
+with the residual reason, SQL clause, and originating layer. This also applies to every terminal
+outcome in project-wide generation and to intermediate boundaries. Rejected rows are produced
+only when the same exactness guarantee holds.
+
+Some comparisons are exact only when the caller attests the database's comparison semantics.
+For example, string filters can require binary collation, floating-point comparisons can require
+no NaN values and equivalent signed zero, and timestamp filters may require a fixed session
+timezone. Missing assumptions cause explicit errors that name the dependent conditions.
+
+Pass declarations through the repeatable CLI option:
+
+```console
+sql-tdg generate \\
+  --dialect generic \\
+  --sql "SELECT name FROM customers WHERE name = 'Alice'" \\
+  --schema 'customers:name=VARCHAR' \\
+  --assume-comparison binary_collation \\
+  --output .sql-tdg/customers
+```
+
+The accepted names are `binary_collation`, `no_char_padding`, `no_nan`,
+`signed_zero_equivalent`, and `session_time_zone`. Declare only settings actually
+guaranteed by the execution environment. Library callers can supply
+`generate_classified_from_sql_with_assumptions`, the boundary-specific
+`SqlGenerationSettings`, or call `AnalysisBundle::declare_comparison_assumptions`
+before generating from a bundle. The declarations are embedded in the protocol snapshot
+in `metadata.sqltdg`.
+
 Unknown or empty value domains, unresolved composition, missing source schemas, ambiguous terminal
 outcomes, and unsupported generation semantics are explicit errors. sql-tdg never reparses SQL as
 a fallback.
