@@ -1535,6 +1535,15 @@ fn generate_prepared_relational_data(
         }
     }
 
+    distribute_matching_relationship_values(
+        relationship_plan.candidates_by_column,
+        &adjacency,
+        prepared.schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        &mut rng,
+    )?;
+
     if row_counts.rejected() > 0 {
         let witnesses = relationship_witnesses(
             relationship_plan.relationships,
@@ -1974,6 +1983,15 @@ fn generate_relational_data(
         }
     }
 
+    distribute_matching_relationship_values(
+        &candidates_by_column,
+        &adjacency,
+        schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        &mut rng,
+    )?;
+
     if row_counts.rejected() > 0 {
         let witnesses = relationship_witnesses(
             relationships,
@@ -2262,6 +2280,14 @@ fn generate_all_outcomes_data(
                 )?;
             }
         }
+        distribute_matching_relationship_values(
+            &shared_candidates,
+            &adjacency,
+            &schemas,
+            &mut generated_by_relation,
+            row_counts.matching(),
+            &mut rng,
+        )?;
     }
 
     let selected_semantics = outcomes
