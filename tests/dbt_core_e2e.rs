@@ -421,14 +421,7 @@ sources:
     bootstrap_artifacts(&project);
 
     let generated_dir = project.path().join("generated/source-tests");
-    let generated = run_tdg(
-        &project,
-        TARGET_RELATION,
-        &generated_dir,
-        &[],
-        4,
-        0,
-    );
+    let generated = run_tdg(&project, TARGET_RELATION, &generated_dir, &[], 4, 0);
     assert_success("sql-tdg constraint-aware source generation", &generated);
     let paths = generated_paths(&generated.stdout);
     assert_generated_rows(&paths, &["orders", "customers"], 4);
