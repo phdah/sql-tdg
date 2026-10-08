@@ -1,7 +1,7 @@
 ---
 id: TASK-34
 title: Add crates.io version, docs.rs, and main-branch CI badges after first release
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08'
 labels: []
@@ -32,10 +32,16 @@ This task is immediate post-release documentation/CI housekeeping. It is separat
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Confirm TASK-20's v1.0.0 GitHub release and the published `sql-tdg` crate are available; verify a successful docs.rs build and correct API documentation URL before advertising published docs.
-- [ ] #2 Change `.github/workflows/rust-checks.yml` to run on both pull requests targeting `main` and pushes to `main`. Preserve independent fmt, lint, rust-tests, doc and dbt Core E2E job results.
+- [x] #2 Change `.github/workflows/rust-checks.yml` to run on both pull requests targeting `main` and pushes to `main`. Preserve independent fmt, lint, rust-tests, doc and dbt Core E2E job results.
 - [ ] #3 Replace the README's "Rust checks" badge label with "CI" targeting the actual `rust-checks.yml` default-branch GitHub Actions status (explicitly scoped to `main` if appropriate), and verify the badge reflects a completed `main` run rather than Release Please or PR-only runs.
-- [ ] #4 Add the live crates.io version badge (`https://img.shields.io/crates/v/sql-tdg.svg?cacheSeconds=300`, linked to `https://crates.io/crates/sql-tdg`) and docs.rs badge (`https://docs.rs/sql-tdg/badge.svg`, linked to `https://docs.rs/sql-tdg`) next to CI and MIT license.
-- [ ] #5 Update README installation guidance to promote `cargo install sql-tdg` as the normal installation path now that publication has occurred; retain `cargo install --path .` as the checkout/development option.
+- [x] #4 Add the live crates.io version badge (`https://img.shields.io/crates/v/sql-tdg.svg?cacheSeconds=300`, linked to `https://crates.io/crates/sql-tdg`) and docs.rs badge (`https://docs.rs/sql-tdg/badge.svg`, linked to `https://docs.rs/sql-tdg`) next to CI and MIT license.
+- [x] #5 Update README installation guidance to promote `cargo install sql-tdg` as the normal installation path now that publication has occurred; retain `cargo install --path .` as the checkout/development option.
 - [ ] #6 Verify all README badge/link destinations, published version, documentation availability, and the GitHub workflow's actual default-branch run; avoid broken or misleading badges.
 - [ ] #7 Run relevant CI and documentation checks and record their results in this task before marking Done. Submit the work in a GitHub pull request.
 <!-- AC:END -->
+
+## Progress
+
+- GitHub release `v1.0.0` was published on 2026-10-08; the successful [tagged release workflow](https://github.com/phdah/sql-tdg/actions/runs/37835672502) reports crates.io publication. This establishes the release prerequisite, but **docs.rs build success has not yet been independently confirmed**.
+- Added version and docs badges, promoted `cargo install sql-tdg`, and made the five independent CI checks run on pushes to `main` as well as pull requests.
+- **Post-merge verification required:** a `push` run of `rust-checks.yml` on `main` cannot exist for this revised workflow until the PR lands. Confirm that the run succeeds, the CI badge shows default-branch status, and docs.rs serves the published Rust API; only then check criteria #1, #3, #6, and #7 and mark this task Done.
