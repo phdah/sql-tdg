@@ -3,14 +3,16 @@ use std::env;
 use std::error::Error;
 use std::fmt;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use sql_semantic_protocol::{
     AnalysisBundle, ComparisonAssumption, ConfiguredSqlInput, DatasetRef, DbtArtifactsError,
     RelationCatalog, RelationSchema, SchemaColumn, SqlInput,
-    analyze_configured_inputs_with_catalog, analyze_dbt_artifacts, dialect_from_name,
-    parse_dbt_catalog, parse_dbt_manifest, to_bundle_json,
+    analyze_configured_inputs_with_catalog, analyze_dbt_artifacts,
+    analyze_dbt_manifest_with_schemas, dialect_from_name, parse_dbt_catalog, parse_dbt_manifest,
+    to_bundle_json,
 };
 use sql_tdg::{
     GeneratedData, GeneratedRelation, GenerationBoundary, GenerationRowCounts, OutcomeSelector,
@@ -32,9 +34,9 @@ RAW SQL INPUT:
     --dialect <NAME>                SQL dialect for raw SQL. Default: generic.
 
 DBT INPUT:
-    --dbt-project <DIR>             Read DIR/target/manifest.json and catalog.json.
+    --dbt-project <DIR>             Read DIR/target/manifest.json (and catalog.json if present).
     --dbt-manifest <PATH>           Read a dbt manifest artifact.
-    --dbt-catalog <PATH>            Override dbt catalog path.
+    --dbt-catalog <PATH>            Require the specified dbt catalog path.
 
 GENERATION:
     --target <RELATION>             Select a named terminal relation.
@@ -313,7 +315,7 @@ fn validate_generate_args(args: &GenerateArgs) -> Result<(), CliError> {
     } else {
         if !args.schema_specs.is_empty() {
             return Err(CliError::new(
-                "--schema is only valid with raw SQL input; dbt schemas come from catalog.json",
+                "--schema is only valid with raw SQL input; dbt schemas come from catalog.json or manifest column data_type declarations",
             ));
         }
         if args.dialect.is_some() {
@@ -459,17 +461,21 @@ fn analyze_dbt(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
             manifest_path.display()
         ))
     })?;
-    let catalog_json = fs::read_to_string(&catalog_path).map_err(|error| {
-        CliError::new(format!(
-            "failed to read dbt catalog {}: {error}",
-            catalog_path.display()
-        ))
-    })?;
+    let catalog_json = match fs::read_to_string(&catalog_path) {
+        Ok(json) => Some(json),
+        Err(error) if args.dbt_catalog.is_none() && error.kind() == io::ErrorKind::NotFound => {
+            None
+        }
+        Err(error) => {
+            return Err(CliError::new(format!(
+                "failed to read dbt catalog {}: {error}",
+                catalog_path.display()
+            )));
+        }
+    };
 
     let manifest =
         parse_dbt_manifest(&manifest_json).map_err(|error| CliError::new(error.to_string()))?;
-    let catalog =
-        parse_dbt_catalog(&catalog_json).map_err(|error| CliError::new(error.to_string()))?;
     let dialect_name = manifest.adapter_type().to_owned();
     let dialect = dialect_from_name(&dialect_name).ok_or_else(|| {
         CliError::new(format!(
@@ -477,8 +483,15 @@ fn analyze_dbt(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
             manifest.adapter_type()
         ))
     })?;
-    let bundle = analyze_dbt_artifacts(&manifest, &catalog, &dialect_name, dialect.as_ref())
-        .map_err(|error| dbt_analysis_error(&error))?;
+    let bundle = match catalog_json {
+        Some(json) => {
+            let catalog =
+                parse_dbt_catalog(&json).map_err(|error| CliError::new(error.to_string()))?;
+            analyze_dbt_artifacts(&manifest, &catalog, &dialect_name, dialect.as_ref())
+        }
+        None => analyze_dbt_manifest_with_schemas(&manifest, &dialect_name, dialect.as_ref()),
+    }
+    .map_err(|error| dbt_analysis_error(&error))?;
 
     let workload_name = args.workload_name.clone().unwrap_or(default_name);
     let workload =
@@ -495,9 +508,13 @@ fn analyze_dbt(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
 fn dbt_analysis_error(error: &DbtArtifactsError) -> CliError {
     let hint = match error {
         DbtArtifactsError::MissingCatalogSchema { .. } => {
-            "\nhint: catalog.json is built from the warehouse, so every source table must exist \
-             there when `dbt docs generate` runs; create the missing tables (for example with \
-             `dbt seed` or DDL), rerun `dbt docs generate`, and retry"
+            "\nhint: declare source columns with data_type in dbt YAML and rerun `dbt compile`; \
+             alternatively populate the source tables and run `dbt docs generate` to supply \
+             catalog.json"
+        }
+        DbtArtifactsError::MissingDeclaredColumnTypes { .. } => {
+            "\nhint: add data_type to each listed source column in dbt YAML and rerun `dbt compile`, \
+             or provide a catalog.json containing the relation schema"
         }
         _ => "",
     };
