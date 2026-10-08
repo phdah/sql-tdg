@@ -791,3 +791,108 @@ fn compiled_cli_requires_an_explicitly_requested_dbt_catalog() {
         "explicitly requested catalog must not be silently ignored"
     );
 }
+
+
+#[test]
+fn scenario_cli_partitions_compiled_dbt_outcomes_with_separate_metadata() {
+    let workspace = TestDir::new("dbt-scenarios");
+    let manifest = workspace.path().join("manifest.json");
+    fs::write(
+        &manifest,
+        include_str!("fixtures/dbt_manifest_scenarios.json"),
+    )
+    .expect("dbt manifest fixture should be writable");
+
+    let output_dir = workspace.path().join("scenarios");
+    let run = |directory: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+            .args(["generate", "--dbt-manifest"])
+            .arg(&manifest)
+            .args(["--scenarios", "--matching", "8", "--rejected", "0", "--format", "csv", "--seed", "42", "--output"])
+            .arg(directory)
+            .output()
+            .expect("CLI should execute")
+    };
+
+    let output = run(&output_dir);
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("scenario=scenario-0001 outcomes="));
+    assert!(stdout.contains("scenario=scenario-0002 outcomes="));
+    assert!(!output_dir.join("scenario-0003").exists());
+
+    let first = output_dir.join("scenario-0001");
+    let second = output_dir.join("scenario-0002");
+    let first_metadata = sql_tdg::TestCaseMetadata::deserialize(
+        &fs::read_to_string(first.join("metadata.sqltdg")).expect("first metadata"),
+    )
+    .expect("first metadata should round trip");
+    let second_metadata = sql_tdg::TestCaseMetadata::deserialize(
+        &fs::read_to_string(second.join("metadata.sqltdg")).expect("second metadata"),
+    )
+    .expect("second metadata should round trip");
+    assert_eq!(first_metadata.target().kind(), sql_tdg::TargetKind::ScenarioOutcomes);
+    assert_eq!(second_metadata.target().kind(), sql_tdg::TargetKind::ScenarioOutcomes);
+    assert!(first_metadata.target().identifier().contains("active_orders"));
+    assert!(first_metadata.target().identifier().contains("final_orders"));
+    assert!(!first_metadata.target().identifier().contains("rich_orders"));
+    assert!(second_metadata.target().identifier().contains("rich_orders"));
+
+    let source_name = "0001-warehouse.raw.orders.csv";
+    let first_csv = fs::read_to_string(first.join(source_name)).expect("first generated dataset");
+    let second_csv = fs::read_to_string(second.join(source_name)).expect("second generated dataset");
+    assert_eq!(first_csv.lines().count(), 9);
+    assert_eq!(second_csv.lines().count(), 9);
+
+    let repeat_dir = workspace.path().join("repeat");
+    let again = run(&repeat_dir);
+    assert!(again.status.success(), "stderr: {}", String::from_utf8_lossy(&again.stderr));
+    assert_eq!(first_csv, fs::read_to_string(repeat_dir.join("scenario-0001").join(source_name)).expect("same first dataset"));
+    assert_eq!(second_csv, fs::read_to_string(repeat_dir.join("scenario-0002").join(source_name)).expect("same second dataset"));
+
+    // Materialize and execute the compiled dbt SQL independently against each scenario.
+    for (index, target) in [(1, "final_orders"), (2, "rich_orders")] {
+        let csv = output_dir.join(format!("scenario-{index:04}")).join(source_name);
+        let db = duckdb::Connection::open_in_memory().expect("DuckDB connection");
+        db.execute_batch("ATTACH ':memory:' AS warehouse; CREATE SCHEMA warehouse.raw; CREATE SCHEMA warehouse.analytics;")
+            .expect("catalog schemas");
+        let escaped_path = csv.to_string_lossy().replace('\'', "''");
+        db.execute_batch(&format!(
+            "CREATE TABLE warehouse.raw.orders AS SELECT * FROM read_csv_auto('{escaped_path}')"
+        ))
+        .expect("load scenario source");
+        db.execute_batch(
+            "CREATE VIEW warehouse.analytics.stg_orders AS
+             SELECT id, amount FROM warehouse.raw.orders WHERE amount >= 10 AND amount <= 100;"
+        )
+        .expect("execute compiled staging model");
+        let predicate = match target {
+            "final_orders" => "amount <= 50",
+            "rich_orders" => "amount >= 80",
+            _ => unreachable!("only two targets"),
+        };
+        let sql = format!(
+            "SELECT COUNT(*) FROM warehouse.analytics.stg_orders WHERE {predicate}"
+        );
+        let matches: i64 = db.query_row(&sql, [], |row| row.get(0))
+            .expect("execute terminal dbt predicate");
+        assert_eq!(matches, 8, "every scenario source row should satisfy its dbt model");
+    }
+}
+
+#[test]
+fn scenario_cli_requires_explicit_matching_only_and_rejects_selectors() {
+    let workspace = TestDir::new("scenario-validation");
+    for extra in [vec![], vec!["--rejected", "0", "--target", "orders"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+            .args(["generate", "--sql", "SELECT amount FROM orders", "--schema", "orders:amount=INTEGER", "--scenarios"])
+            .args(&extra)
+            .arg("--output")
+            .arg(workspace.path().join("output"))
+            .output()
+            .expect("CLI should execute");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("--scenarios"), "stderr: {stderr}");
+    }
+}
