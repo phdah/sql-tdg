@@ -3,7 +3,7 @@
 [![Rust checks](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml/badge.svg)](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Synthetic test data that satisfies your SQL predicates and join conditions.**
+**Synthetic data for real SQL workloads, not just isolated WHERE clauses.**
 
 Randomly generated data often fails to exercise the query you want to test:
 `WHERE` predicates filter out every row, join keys do not match, or dbt data tests
@@ -26,8 +26,65 @@ misleading synthetic data. No database connection is required.
 - **Real-world workflows:** generate from raw SQL or compiled dbt artifacts, export Parquet or CSV,
   and inspect the accompanying `metadata.sqltdg` snapshot.
 
+## SQL coverage
+
+sql-tdg works across **multi-statement transformation pipelines**, not just simple
+`SELECT` queries. The protocol analyzes SQL structure and resolves physical-source
+conditions across transformation layers; sql-tdg uses the exact part of that
+contract to generate consistent test data.
+
+| Workload feature | What sql-tdg can generate against |
+| --- | --- |
+| Filters and joins | Typed `WHERE` domains, supported inner equality joins, and matching keys across relations |
+| Multi-stage SQL | Multiple SQL statements, `CREATE VIEW` / `CREATE TABLE AS SELECT` layers, `WITH` (CTEs), and derived tables |
+| Analytics | Queries projecting `GROUP BY` aggregates such as `COUNT` / `SUM` and window functions such as `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` |
+| Expressions | Projected `CASE` branches with source-column witnesses when the protocol proves them |
+| dbt projects | Compiled model dependency graphs and supported source data tests, including uniqueness and foreign keys |
+
+For example, the input workload can contain joins, a CTE, aggregation, and a
+window expression together:
+
+```sql
+WITH qualifying_orders AS (
+    SELECT o.customer_id, o.amount, c.segment
+    FROM orders AS o
+    JOIN customers AS c ON o.customer_id = c.id
+    WHERE o.amount >= 100 AND c.active = TRUE
+)
+SELECT segment,
+       COUNT(*) AS order_count,
+       SUM(amount) AS total_amount,
+       ROW_NUMBER() OVER (ORDER BY SUM(amount) DESC) AS revenue_rank
+FROM qualifying_orders
+GROUP BY segment
+```
+
+Here the generator targets the **source rows and join relationships** that
+make the workload valid. The caller's SQL engine computes the resulting
+aggregates and window values. sql-tdg does **not** guarantee a particular
+aggregate total or window rank, and filtering on computed results (for example
+`HAVING COUNT(*) > 2` or `QUALIFY revenue_rank = 1`) currently fails exactness
+validation instead of being silently ignored. Set operations such as `UNION`
+are likewise not yet guaranteed for exact generation.
+
+### SQL dialects
+
+Raw SQL uses `--dialect` (default: `generic`) and the dialect support of
+[SQL Semantic Protocol](https://github.com/phdah/sql-semantic-protocol).
+Available dialects include:
+
+**ANSI, BigQuery, ClickHouse, Databricks, DuckDB, Generic, Hive, Microsoft SQL
+Server (`mssql`), MySQL, PostgreSQL (`postgresql` / `postgres`), Redshift,
+Snowflake, and SQLite.**
+
+dbt input uses its manifest's adapter dialect automatically. Dialect support
+means the SQL can be parsed and analyzed using that dialect; **exact generation
+still depends on the semantics of the particular query**, not just its dialect.
+See [SQL scope and exactness](docs/usage.md#sql-scope-and-dialects).
+
 ## Contents
 
+- [SQL coverage](#sql-coverage)
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Use with dbt](#use-with-dbt)
