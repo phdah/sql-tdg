@@ -385,7 +385,6 @@ fn dbt_core_duckdb_whole_project_names_residual_model() {
     );
 }
 
-
 #[test]
 #[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
 fn dbt_core_build_passes_source_data_tests_on_generated_relations() {
