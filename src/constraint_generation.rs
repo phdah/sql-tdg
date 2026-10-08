@@ -364,7 +364,10 @@ pub(crate) fn enforce(
                         .collect::<Result<Vec<_>, _>>()?;
                     relation_accepted.insert(column.column().to_owned(), values);
                 }
-                RelationConstraint::UniqueKey(key) | RelationConstraint::ForeignKey(key) => {
+                RelationConstraint::UniqueKey(key) => {
+                    relation_keys.extend(key.columns().iter().cloned());
+                }
+                RelationConstraint::ForeignKey(key) => {
                     relation_keys.extend(key.columns().iter().cloned());
                 }
                 _ => {
