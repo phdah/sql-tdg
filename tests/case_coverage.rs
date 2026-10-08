@@ -1,20 +1,20 @@
-use sql_tdg::{
-    ProtocolGenerationError, RelationSchema, SchemaColumn, generate_from_sql,
-};
+use sql_tdg::{ProtocolGenerationError, RelationSchema, SchemaColumn, generate_from_sql};
 
 fn schema() -> RelationSchema {
     RelationSchema::new(
         "t",
-        vec![SchemaColumn::from_sql_type("a", "INTEGER", "generic")
-            .expect("integer fixture type")],
+        vec![SchemaColumn::from_sql_type("a", "INTEGER", "generic").expect("integer fixture type")],
     )
     .expect("fixture relation")
 }
 
-fn values(sql: &str, rows: usize) -> Result<Vec<i64>, ProtocolGenerationError> {
+fn values(sql: &str, rows: usize) -> Result<Vec<i32>, ProtocolGenerationError> {
     let data = generate_from_sql(sql, "generic", &[schema()], rows, 42)?;
-    let values = data.table("t").expect("physical source table")
-        .get_ints("a").expect("integer column")
+    let values = data
+        .table("t")
+        .expect("physical source table")
+        .get_ints("a")
+        .expect("integer column")
         .expect("present integer column");
     Ok(values)
 }
@@ -67,7 +67,10 @@ fn branch_eliminated_by_query_filter_fails_explicitly() {
         10,
     )
     .expect_err("filtered CASE branch cannot be claimed covered");
-    assert!(matches!(error, ProtocolGenerationError::CaseCoverage { .. }));
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::CaseCoverage { .. }
+    ));
     assert!(error.to_string().contains("unreachable under"));
 }
 
@@ -78,7 +81,10 @@ fn unreachable_case_branch_is_not_silently_skipped() {
         10,
     )
     .expect_err("repeated WHEN is unreachable");
-    assert!(matches!(error, ProtocolGenerationError::CaseCoverage { .. }));
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::CaseCoverage { .. }
+    ));
     assert!(error.to_string().contains("unreachable"));
 }
 
@@ -89,7 +95,10 @@ fn aggregate_case_is_reported_as_not_coverable() {
         10,
     )
     .expect_err("aggregate-derived branch domains are unknown");
-    assert!(matches!(error, ProtocolGenerationError::CaseCoverage { .. }));
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::CaseCoverage { .. }
+    ));
     assert!(error.to_string().contains("not coverable"));
 }
 
@@ -100,6 +109,9 @@ fn insufficient_rows_cannot_claim_case_coverage() {
         2,
     )
     .expect_err("three branches need three matching rows");
-    assert!(matches!(error, ProtocolGenerationError::CaseCoverage { .. }));
+    assert!(matches!(
+        error,
+        ProtocolGenerationError::CaseCoverage { .. }
+    ));
     assert!(error.to_string().contains("at least 3 matching rows"));
 }
