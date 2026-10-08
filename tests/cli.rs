@@ -477,6 +477,7 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
         .expect("generated foreign-key parent source");
     let mut unique_items = std::collections::BTreeSet::new();
     let mut unique_orders = std::collections::BTreeSet::new();
+    let mut referenced_orders = std::collections::BTreeSet::new();
     for order in orders.lines().skip(1) {
         assert!(!order.is_empty());
         assert!(unique_orders.insert(order.to_owned()));
@@ -493,6 +494,7 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
             "orphan order_id: {}",
             parts[1]
         );
+        referenced_orders.insert(parts[1].to_owned());
         assert!(
             ["5", "6", "7"].contains(&parts[2]),
             "invalid quantity: {}",
@@ -500,6 +502,16 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
         );
     }
     assert_eq!(unique_items.len(), 4);
+    assert!(
+        referenced_orders.len() >= 3,
+        "child rows must reference multiple parent keys: {referenced_orders:?}"
+    );
+    assert!(
+        unique_orders.iter().all(|key| {
+            key.parse::<i64>().is_ok_and(|value| (1..=1000).contains(&value))
+        }),
+        "parent keys should be moderate: {unique_orders:?}"
+    );
 }
 
 #[test]
