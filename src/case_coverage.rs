@@ -303,14 +303,19 @@ fn branch_witness(
         require_case_assumptions(location, source_column.data_type(), outcomes)?;
         let mut pool = Vec::new();
         for domain in &domains {
-            for candidate in
-                candidates(source_column.data_type(), Some(domain)).map_err(|message| {
-                    ProtocolGenerationError::CaseCoverage {
+            let sampled = match candidates(source_column.data_type(), Some(domain)) {
+                Ok(values) => values,
+                Err(message) if message == "NULL cannot be generated for a non-nullable datatype" => {
+                    return Ok(None);
+                }
+                Err(message) => {
+                    return Err(ProtocolGenerationError::CaseCoverage {
                         location: location.to_owned(),
                         message: format!("cannot sample {relation}.{column}: {message}"),
-                    }
-                })?
-            {
+                    });
+                }
+            };
+            for candidate in sampled {
                 if !pool.contains(&candidate) {
                     pool.push(candidate);
                 }
