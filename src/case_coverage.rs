@@ -305,7 +305,9 @@ fn branch_witness(
         for domain in &domains {
             let sampled = match candidates(source_column.data_type(), Some(domain)) {
                 Ok(values) => values,
-                Err(message) if message == "NULL cannot be generated for a non-nullable datatype" => {
+                Err(message)
+                    if message == "NULL cannot be generated for a non-nullable datatype" =>
+                {
                     return Ok(None);
                 }
                 Err(message) => {
