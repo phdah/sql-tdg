@@ -177,7 +177,10 @@ With no `--target`, it generates **one shared physical-source dataset** satisfyi
 all compatible terminal models. This whole-project mode requires
 `--rejected 0` because deliberately rejected rows require a single selected
 terminal outcome. Conflicting outcomes fail explicitly instead of producing
-falsely labeled data.
+falsely labeled data. Use `--scenarios --rejected 0` to partition incompatible
+terminal models into independent, deterministic source datasets in numbered
+scenario directories, each with metadata identifying its outcome members.
+Each scenario must be loaded and tested separately, not combined with others.
 
 Supported dbt generic data tests and constraints (unique, not_null, accepted_values,
 and relationships) are enforced **on generated relations** through the protocol.
