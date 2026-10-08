@@ -61,57 +61,63 @@ fn cte_output_case_is_covered() {
 }
 
 #[test]
-fn branch_eliminated_by_query_filter_fails_explicitly() {
-    let error = values(
+fn branch_eliminated_by_filter_is_reported_unreachable() {
+    let generated = generate_from_sql(
         "SELECT CASE WHEN a < 3 THEN 1 ELSE 2 END AS bucket FROM t WHERE a > 5",
+        "generic",
+        &[schema()],
         10,
+        42,
     )
-    .expect_err("filtered CASE branch cannot be claimed covered");
-    assert!(matches!(
-        error,
-        ProtocolGenerationError::CaseCoverage { .. }
-    ));
-    assert!(error.to_string().contains("unreachable under"));
+    .expect("unreachable CASE branch does not invalidate row membership");
+    assert!(generated.case_coverage().iter().any(|finding| {
+        finding.status() == sql_tdg::CaseCoverageStatus::Unreachable
+            && finding.detail().contains("composed query domains")
+    }));
 }
 
 #[test]
-fn unreachable_case_branch_is_not_silently_skipped() {
-    let error = values(
+fn unreachable_case_branch_is_reported() {
+    let generated = generate_from_sql(
         "SELECT CASE WHEN a = 1 THEN 1 WHEN a = 1 THEN 2 ELSE 3 END AS bucket FROM t",
+        "generic",
+        &[schema()],
         10,
+        42,
     )
-    .expect_err("repeated WHEN is unreachable");
-    assert!(matches!(
-        error,
-        ProtocolGenerationError::CaseCoverage { .. }
-    ));
-    assert!(error.to_string().contains("unreachable"));
+    .expect("unreachable CASE branch is reported");
+    assert!(generated.case_coverage().iter().any(|finding| {
+        finding.status() == sql_tdg::CaseCoverageStatus::Unreachable
+    }));
 }
 
 #[test]
 fn aggregate_case_is_reported_as_not_coverable() {
-    let error = values(
+    let generated = generate_from_sql(
         "SELECT CASE WHEN SUM(a) > 10 THEN 1 ELSE 2 END AS bucket FROM t",
+        "generic",
+        &[schema()],
         10,
+        42,
     )
-    .expect_err("aggregate-derived branch domains are unknown");
-    assert!(matches!(
-        error,
-        ProtocolGenerationError::CaseCoverage { .. }
-    ));
-    assert!(error.to_string().contains("not coverable"));
+    .expect("unknown branch source conditions are reported");
+    assert!(generated.case_coverage().iter().any(|finding| {
+        finding.status() == sql_tdg::CaseCoverageStatus::Unknown
+    }));
 }
 
 #[test]
-fn insufficient_rows_cannot_claim_case_coverage() {
-    let error = values(
+fn insufficient_rows_are_reported_instead_of_claiming_coverage() {
+    let generated = generate_from_sql(
         "SELECT CASE WHEN a = 1 THEN 1 WHEN a = 2 THEN 2 ELSE 3 END AS bucket FROM t",
+        "generic",
+        &[schema()],
         2,
+        42,
     )
-    .expect_err("three branches need three matching rows");
-    assert!(matches!(
-        error,
-        ProtocolGenerationError::CaseCoverage { .. }
-    ));
-    assert!(error.to_string().contains("at least 3 matching rows"));
+    .expect("source rows still satisfy the query");
+    assert!(generated.case_coverage().iter().any(|finding| {
+        finding.status() == sql_tdg::CaseCoverageStatus::InsufficientRows
+    }));
 }
+
