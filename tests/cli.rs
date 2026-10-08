@@ -252,8 +252,8 @@ fn compiled_cli_explains_dbt_sources_missing_from_catalog() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("orders"), "stderr: {stderr}");
     assert!(
-        stderr.contains("every source table must exist")
-            && stderr.contains("rerun `dbt docs generate`"),
+        stderr.contains("declare source columns with data_type")
+            && stderr.contains("dbt docs generate"),
         "stderr: {stderr}"
     );
 }
@@ -327,5 +327,151 @@ fn compiled_cli_requires_and_records_comparison_assumptions() {
     assert!(
         metadata.protocol().document().contains("binary_collation"),
         "protocol snapshot must retain comparison declarations"
+    );
+}
+
+const DBT_DECLARED_MANIFEST: &str = include_str!("fixtures/dbt_manifest_declared.json");
+
+fn run_manifest_cli(manifest_path: &Path, output_dir: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-manifest")
+        .arg(manifest_path)
+        .args(["--target", "warehouse.analytics.final_orders"])
+        .args(["--matching", "8", "--format", "csv", "--output"])
+        .arg(output_dir)
+        .output()
+        .expect("compiled sql-tdg binary should execute")
+}
+
+#[test]
+fn compiled_cli_generates_typed_dbt_sources_without_a_catalog() {
+    let workspace = TestDir::new("dbt-manifest-types");
+    let manifest_path = workspace.path().join("manifest.json");
+    fs::write(&manifest_path, DBT_DECLARED_MANIFEST).expect("manifest should be writable");
+
+    let output_dir = workspace.path().join("generated");
+    let output = run_manifest_cli(&manifest_path, &output_dir);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let csv = fs::read_to_string(output_dir.join("0001-orders.csv"))
+        .expect("physical source with declared schema should be generated");
+    let mut lines = csv.lines();
+    assert_eq!(lines.next(), Some("id,amount"));
+    let rows = lines.collect::<Vec<_>>();
+    assert_eq!(rows.len(), 8);
+    for row in rows {
+        let amount = row
+            .split(',')
+            .nth(1)
+            .expect("amount column")
+            .parse::<i64>()
+            .expect("integer amount");
+        assert!((10..=50).contains(&amount), "unexpected amount: {amount}");
+    }
+
+    let metadata = fs::read_to_string(output_dir.join("metadata.sqltdg"))
+        .expect("metadata should be exported");
+    let metadata =
+        sql_tdg::TestCaseMetadata::deserialize(&metadata).expect("metadata should round-trip");
+    assert!(
+        metadata.protocol().document().contains(r#""source_kind":"dbt_manifest""#),
+        "protocol snapshot must identify manifest schema evidence"
+    );
+}
+
+#[test]
+fn compiled_cli_accepts_dbt_project_without_a_catalog() {
+    let workspace = TestDir::new("dbt-project-manifest-types");
+    let target_dir = workspace.path().join("target");
+    fs::create_dir_all(&target_dir).expect("target directory should be creatable");
+    fs::write(target_dir.join("manifest.json"), DBT_DECLARED_MANIFEST)
+        .expect("manifest should be writable");
+
+    let output_dir = workspace.path().join("generated");
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-project")
+        .arg(workspace.path())
+        .args(["--target", "warehouse.analytics.final_orders"])
+        .args(["--matching", "2", "--format", "csv", "--output"])
+        .arg(&output_dir)
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output_dir.join("0001-orders.csv").is_file());
+}
+
+#[test]
+fn compiled_cli_rejects_missing_declared_dbt_column_type() {
+    let workspace = TestDir::new("dbt-missing-declared-type");
+    let manifest_path = workspace.path().join("manifest.json");
+    let without_type = DBT_DECLARED_MANIFEST.replace(
+        r#""name": "amount", "data_type": "BIGINT""#,
+        r#""name": "amount""#,
+    );
+    assert_ne!(without_type, DBT_DECLARED_MANIFEST);
+    fs::write(&manifest_path, without_type).expect("manifest should be writable");
+
+    let output = run_manifest_cli(&manifest_path, &workspace.path().join("generated"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(
+        stderr.contains("warehouse.raw.orders")
+            && stderr.contains("amount")
+            && stderr.contains("missing declared data_type")
+            && stderr.contains("add data_type"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn compiled_cli_rejects_undeclared_dbt_source_column() {
+    let workspace = TestDir::new("dbt-undeclared-column");
+    let manifest_path = workspace.path().join("manifest.json");
+    let unknown_column = DBT_DECLARED_MANIFEST.replace("amount >= 10", "ghost >= 10");
+    assert_ne!(unknown_column, DBT_DECLARED_MANIFEST);
+    fs::write(&manifest_path, unknown_column).expect("manifest should be writable");
+
+    let output = run_manifest_cli(&manifest_path, &workspace.path().join("generated"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(
+        stderr.contains("unknown_schema_column") && stderr.contains("ghost"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn compiled_cli_requires_an_explicitly_requested_dbt_catalog() {
+    let workspace = TestDir::new("dbt-explicit-missing-catalog");
+    let manifest_path = workspace.path().join("manifest.json");
+    fs::write(&manifest_path, DBT_DECLARED_MANIFEST).expect("manifest should be writable");
+    let catalog_path = workspace.path().join("not-there.json");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-manifest")
+        .arg(&manifest_path)
+        .arg("--dbt-catalog")
+        .arg(&catalog_path)
+        .arg("--output")
+        .arg(workspace.path().join("generated"))
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not-there.json"),
+        "explicitly requested catalog must not be silently ignored"
     );
 }
