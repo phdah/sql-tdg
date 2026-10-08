@@ -568,6 +568,10 @@ fn relational_generation_coordinates_inner_join_keys_and_breaks_one_relationship
     );
     for index in counts.matching()..counts.total() {
         assert_ne!(order_customer_ids[index], customer_ids[index]);
+        assert!(
+            !customer_ids.contains(&order_customer_ids[index]),
+            "rejected key must not match any generated parent row"
+        );
     }
     assert!(amounts.iter().all(|amount| (10..=20).contains(amount)));
     assert!(active.iter().all(|value| *value));
@@ -642,6 +646,10 @@ fn relational_generation_resolves_intermediate_join_keys_to_physical_sources() {
     );
     for index in counts.matching()..counts.total() {
         assert_ne!(order_customer_ids[index], customer_ids[index]);
+        assert!(
+            !customer_ids.contains(&order_customer_ids[index]),
+            "rejected key must not match any generated parent row"
+        );
     }
     assert!(amounts.iter().all(|amount| *amount >= 10));
     assert!(active.iter().all(|value| *value));
@@ -692,6 +700,7 @@ fn cte_join_keys_are_distributed_and_seeded() {
     }
     for row in counts.matching()..counts.total() {
         assert_ne!(child_keys[row], parent_keys[row]);
+        assert!(!parent_keys.contains(&child_keys[row]));
     }
     let distinct = child_keys[..counts.matching()]
         .iter()
