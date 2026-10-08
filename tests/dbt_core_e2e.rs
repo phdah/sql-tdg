@@ -423,7 +423,7 @@ sources:
     let generated_dir = project.path().join("generated/source-tests");
     let generated = run_tdg(
         &project,
-        r#""fixture"."raw_analytics"."stg_orders""#,
+        TARGET_RELATION,
         &generated_dir,
         &[],
         4,
