@@ -43,7 +43,7 @@ DBT INPUT
 GENERATION OPTIONS
   --target <relation>             Select a named terminal outcome
   --target-layer <layer-id>       Select an anonymous terminal outcome
-  --scenarios                     Partition terminal outcomes into separate datasets
+  --scenarios                     Generate independent compatible outcome groups
   --boundary <relation>           Materialize an intermediate (repeatable)
   --assume-comparison <name>      Attest comparison semantics (repeatable)
   --matching <n>                  Matching rows per relation (default: 100)
