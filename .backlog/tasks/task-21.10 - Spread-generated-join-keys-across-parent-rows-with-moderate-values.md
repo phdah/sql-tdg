@@ -1,8 +1,10 @@
 ---
 id: TASK-21.10
 title: Spread generated join keys across parent rows with moderate values
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@opencode'
+updated_date: '2026-10-08 19:35'
 created_date: '2026-10-08 17:22'
 labels: []
 milestone: m-2
@@ -39,3 +41,9 @@ Outcome: matching rows of related relations spread across several distinct key v
 - [ ] #5 Tests assert key distribution and moderate values for a top-level join, a join inside a CTE, and a dbt source relationships constraint
 - [ ] #6 On the maintainer's paper_trail fixture, generated sources still pass all 13 dbt source tests and daily_revenue contains more than one row
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: PR #33 adds typed moderate key candidates, deterministic distribution across joined source rows, and cycling foreign keys across valid parent tuples. Direct SQL, CTE, and dbt source constraint regressions assert key spread and preserved referential validity. CI pending. AC #6 needs validation against the maintainer-only paper_trail fixture, which is not committed in this repository. Do not claim it has passed until that check runs.
+<!-- SECTION:NOTES:END -->
