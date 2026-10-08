@@ -155,17 +155,6 @@ fn load_outputs(executor: &CliDuckDb, stdout: &str) {
     }
 }
 
-fn execute_with_final_select(
-    executor: &CliDuckDb,
-    fixture_sql: &str,
-    final_select: &str,
-    column_count: usize,
-) -> Vec<Vec<String>> {
-    executor
-        .execute_text(&format!("{fixture_sql}\n{final_select}"), column_count)
-        .expect("fixture workload should execute")
-}
-
 fn expected_row(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
