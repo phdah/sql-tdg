@@ -1,7 +1,7 @@
 ---
 id: TASK-32
 title: Generate reproducible scenarios for conflicting terminal outcomes
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08'
 labels: []
