@@ -651,7 +651,10 @@ fn relational_generation_resolves_intermediate_join_keys_to_physical_sources() {
 fn cte_join_keys_are_distributed_and_seeded() {
     let counts = GenerationRowCounts::new(8, 4).expect("valid row counts");
     let schemas = [
-        schema("orders", &[("customer_id", "INTEGER"), ("amount", "INTEGER")]),
+        schema(
+            "orders",
+            &[("customer_id", "INTEGER"), ("amount", "INTEGER")],
+        ),
         schema("customers", &[("id", "INTEGER"), ("active", "BOOLEAN")]),
     ];
     let sql = "
@@ -672,10 +675,17 @@ fn cte_join_keys_are_distributed_and_seeded() {
     let second = generate();
     let orders = first.table("orders").expect("orders");
     let customers = first.table("customers").expect("customers");
-    let child_keys = orders.get_ints("customer_id").expect("keys").expect("built");
+    let child_keys = orders
+        .get_ints("customer_id")
+        .expect("keys")
+        .expect("built");
     let parent_keys = customers.get_ints("id").expect("keys").expect("built");
-    let replay = second.table("orders").expect("replayed orders")
-        .get_ints("customer_id").expect("keys").expect("built");
+    let replay = second
+        .table("orders")
+        .expect("replayed orders")
+        .get_ints("customer_id")
+        .expect("keys")
+        .expect("built");
     assert_eq!(child_keys, replay, "the seed must reproduce identical keys");
     for row in 0..counts.matching() {
         assert_eq!(child_keys[row], parent_keys[row]);
@@ -683,7 +693,9 @@ fn cte_join_keys_are_distributed_and_seeded() {
     for row in counts.matching()..counts.total() {
         assert_ne!(child_keys[row], parent_keys[row]);
     }
-    let distinct = child_keys[..counts.matching()].iter().copied()
+    let distinct = child_keys[..counts.matching()]
+        .iter()
+        .copied()
         .collect::<std::collections::BTreeSet<_>>();
     assert!(distinct.len() >= 3);
     assert!(distinct.iter().all(|key| (1..=1000).contains(key)));
