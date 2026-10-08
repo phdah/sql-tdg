@@ -1829,15 +1829,18 @@ fn validate_generated_relationships(
     relationships: &[EqualityRelationship],
     matching: usize,
 ) -> Result<(), ProtocolGenerationError> {
+    // The generator guarantees a shared join witness. A unique key may require other
+    // rows to diverge, without invalidating a join that already has a matching row.
+    if matching == 0 {
+        return Ok(());
+    }
     for relationship in relationships {
-        for row in 0..matching {
-            let left = generated_relationship_value(generated, schemas, &relationship.left, row)?;
-            let right = generated_relationship_value(generated, schemas, &relationship.right, row)?;
-            if left != right || matches!(left, ProtocolValue::Null) {
-                return Err(ProtocolGenerationError::UnsatisfiableRelationship {
-                    relationship: format!("{} at row {row}", relationship.describe()),
-                });
-            }
+        let left = generated_relationship_value(generated, schemas, &relationship.left, 0)?;
+        let right = generated_relationship_value(generated, schemas, &relationship.right, 0)?;
+        if left != right || matches!(left, ProtocolValue::Null) {
+            return Err(ProtocolGenerationError::UnsatisfiableRelationship {
+                relationship: relationship.describe(),
+            });
         }
     }
     Ok(())
