@@ -276,7 +276,7 @@ fn missing_schema_columns_and_lossy_literals_are_residual() {
 #[test]
 fn timezone_dependent_timestamp_filters_require_session_assumption() {
     let schemas = [schema("t", &[("tz", "TIMESTAMP WITH TIME ZONE")], "duckdb")];
-    let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00+00'";
+    let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00'";
     let error = generate_classified_from_sql_with_assumptions(
         sql,
         "duckdb",
