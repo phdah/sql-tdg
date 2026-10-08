@@ -15,6 +15,7 @@ use sql_semantic_protocol::{
     dialect_from_name,
 };
 
+use crate::case_coverage::{CaseCoverageFinding, cover_case_branches};
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
     ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
@@ -134,6 +135,7 @@ impl<'a> SqlGenerationSettings<'a> {
 pub struct GeneratedData {
     tables: BTreeMap<String, Table>,
     row_counts: GenerationRowCounts,
+    case_coverage: Vec<CaseCoverageFinding>,
 }
 
 impl fmt::Debug for GeneratedData {
@@ -142,6 +144,7 @@ impl fmt::Debug for GeneratedData {
             .debug_struct("GeneratedData")
             .field("relations", &self.tables.keys().collect::<Vec<_>>())
             .field("row_counts", &self.row_counts)
+            .field("case_coverage", &self.case_coverage)
             .finish()
     }
 }
@@ -160,6 +163,11 @@ impl GeneratedData {
     /// Return the matching and deliberately rejected row counts for each generated relation.
     pub const fn row_counts(&self) -> GenerationRowCounts {
         self.row_counts
+    }
+
+    /// Coverage findings for output CASE expressions, including un-coverable branches.
+    pub fn case_coverage(&self) -> &[CaseCoverageFinding] {
+        &self.case_coverage
     }
 }
 
@@ -237,6 +245,13 @@ pub enum ProtocolGenerationError {
     MissingComparisonAssumptions {
         layer_id: String,
         conditions: Vec<String>,
+    },
+    /// A CASE branch could not be covered with exact protocol-derived witness values.
+    CaseCoverage {
+        /// Layer, output column, and branch selecting the witness.
+        location: String,
+        /// Explanation, including unknown or unreachable branch semantics.
+        message: String,
     },
     /// A physical source relation does not have declared schema metadata.
     MissingSourceSchema {
@@ -429,6 +444,12 @@ impl fmt::Display for ProtocolGenerationError {
                 "layer {layer_id} requires declared comparison assumptions: {}",
                 conditions.join("; ")
             ),
+            Self::CaseCoverage { location, message } => {
+                write!(
+                    formatter,
+                    "CASE branch {location} cannot be covered: {message}"
+                )
+            }
             Self::MissingSourceSchema { relation } => {
                 write!(
                     formatter,
@@ -777,9 +798,10 @@ pub fn generate_classified_from_bundle_at_boundary(
             let relationships = collect_equality_relationships(layer.id(), semantics, &schemas)?;
 
             if relationships.is_empty() {
-                generate_scalar_data(semantics, &schemas, row_counts, seed)
+                generate_scalar_data(bundle, layer.id(), semantics, &schemas, row_counts, seed)
             } else {
                 generate_relational_data(
+                    bundle,
                     layer.id(),
                     semantics,
                     &schemas,
@@ -1375,7 +1397,11 @@ fn generate_prepared_scalar_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage: Vec::new(),
+    })
 }
 
 struct PreparedRelationships<'a> {
@@ -1476,7 +1502,11 @@ fn generate_prepared_relational_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage: Vec::new(),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1571,12 +1601,14 @@ fn validate_composed_domains(
 }
 
 fn generate_scalar_data(
+    bundle: &AnalysisBundle,
+    layer_id: &str,
     semantics: &ResolvedComposedSemantics,
     schemas: &BTreeMap<String, &RelationSchema>,
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
-    let mut tables = BTreeMap::new();
+    let mut generated_by_relation = BTreeMap::new();
 
     for relation in semantics.dependencies() {
         let schema = source_schema(schemas, relation)?;
@@ -1600,14 +1632,40 @@ fn generate_scalar_data(
                 source,
             })?;
 
-        let table = build_protocol_table(relation, schema, row_counts.total(), generated)?;
-        tables.insert(relation.clone(), table);
+        generated_by_relation.insert(relation.clone(), generated);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    let case_coverage = cover_case_branches(
+        bundle,
+        &[layer_id.to_owned()],
+        &[semantics],
+        schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        &BTreeSet::new(),
+    )?;
+    let mut tables = BTreeMap::new();
+    for relation in semantics.dependencies() {
+        let schema = source_schema(schemas, relation)?;
+        let generated = generated_by_relation.remove(relation).ok_or_else(|| {
+            ProtocolGenerationError::MissingSourceSchema {
+                relation: relation.clone(),
+            }
+        })?;
+        tables.insert(
+            relation.clone(),
+            build_protocol_table(relation, schema, row_counts.total(), generated)?,
+        );
+    }
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage,
+    })
 }
 
 fn generate_relational_data(
+    bundle: &AnalysisBundle,
     layer_id: &str,
     semantics: &ResolvedComposedSemantics,
     schemas: &BTreeMap<String, &RelationSchema>,
@@ -1678,6 +1736,20 @@ fn generate_relational_data(
         }
     }
 
+    let keys = relationships
+        .iter()
+        .flat_map(|join| [&join.left, &join.right])
+        .map(|column| (column.relation.clone(), column.column.clone()))
+        .collect::<BTreeSet<_>>();
+    let case_coverage = cover_case_branches(
+        bundle,
+        &[layer_id.to_owned()],
+        &[semantics],
+        schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        &keys,
+    )?;
     let mut tables = BTreeMap::new();
     for relation in semantics.dependencies() {
         let schema = source_schema(schemas, relation)?;
@@ -1690,11 +1762,16 @@ fn generate_relational_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage,
+    })
 }
 
 /// One terminal outcome participating in shared all-outcomes generation.
 struct OutcomeSemantics<'a> {
+    layer_id: String,
     description: String,
     semantics: &'a ResolvedComposedSemantics,
 }
@@ -1744,6 +1821,7 @@ fn generate_all_outcomes_data(
             relationships.insert(relationship);
         }
         outcomes.push(OutcomeSemantics {
+            layer_id,
             description,
             semantics,
         });
@@ -1853,6 +1931,27 @@ fn generate_all_outcomes_data(
         }
     }
 
+    let roots = outcomes
+        .iter()
+        .map(|outcome| outcome.layer_id.clone())
+        .collect::<Vec<_>>();
+    let selected = outcomes
+        .iter()
+        .map(|outcome| outcome.semantics)
+        .collect::<Vec<_>>();
+    let keys = relationship_columns
+        .iter()
+        .map(|column| (column.relation.clone(), column.column.clone()))
+        .collect::<BTreeSet<_>>();
+    let case_coverage = cover_case_branches(
+        bundle,
+        &roots,
+        &selected,
+        &schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        &keys,
+    )?;
     let mut tables = BTreeMap::new();
     for relation in &relations {
         let schema = source_schema(&schemas, relation)?;
@@ -1865,7 +1964,11 @@ fn generate_all_outcomes_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData {
+        tables,
+        row_counts,
+        case_coverage,
+    })
 }
 
 /// Validate one terminal outcome for shared generation and collect its relationships.

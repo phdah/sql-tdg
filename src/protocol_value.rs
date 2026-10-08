@@ -1169,7 +1169,20 @@ fn range_candidates(
         if !value_in_range(&candidate, range, data_type)? {
             return Err("protocol range contains no representable value for datatype".to_owned());
         }
-        values.push(candidate);
+        values.push(candidate.clone());
+        if let Some(upper) = range.upper() {
+            let upper_value = value_from_literal(data_type, upper.value())?;
+            let upper_value = if upper.inclusive() {
+                upper_value
+            } else {
+                step_value(&upper_value, false).ok_or_else(|| {
+                    "exclusive upper bound has no representable predecessor".to_owned()
+                })?
+            };
+            if upper_value != candidate && value_in_range(&upper_value, range, data_type)? {
+                values.push(upper_value);
+            }
+        }
     }
     Ok(values)
 }

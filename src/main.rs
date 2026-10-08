@@ -379,6 +379,14 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
     for (relation, path) in exported {
         println!("relation={relation} path={}", path.display());
     }
+    for finding in generated.case_coverage() {
+        println!(
+            "case_branch={} status={} detail={}",
+            finding.location(),
+            finding.status().as_str(),
+            finding.detail()
+        );
+    }
     println!("metadata={}", metadata_path.display());
 
     Ok(())

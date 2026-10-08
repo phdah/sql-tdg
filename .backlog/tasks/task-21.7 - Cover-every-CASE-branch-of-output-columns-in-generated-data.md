@@ -1,10 +1,10 @@
 ---
 id: TASK-21.7
 title: Cover every CASE branch of output columns in generated data
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-06 12:39'
-updated_date: '2026-10-08 11:36'
+updated_date: '2026-10-08'
 labels: []
 milestone: m-2
 dependencies:
@@ -31,12 +31,31 @@ Protocol status (verified at protocol commit 3a4d3c6, release 2.0.0):
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 sql-tdg depends on the protocol 2.x release that emits per-branch source-column domains for CASE output expressions
-- [ ] #2 Generated matching rows reach every reachable CASE branch including ELSE
-- [ ] #3 Branches whose domains cannot be derived or are unreachable produce an explicit error or report, never a silent omission
-- [ ] #4 All rows still satisfy the query's conditions
-- [ ] #5 Tests cover searched CASE, simple CASE, ELSE, and unreachable branches
-- [ ] #6 Branch domains are intersected with the query's composed column domains, and branches made empty by query filters are reported as unreachable under the query
-- [ ] #7 Branch coverage follows the same exactness and comparison-assumption rules as TASK-21.8
-- [ ] #8 CASE expressions inside CTEs and upstream layers are covered, and a CASE over an aggregate (as in daily_revenue) is reported as not coverable
+- [x] #1 sql-tdg depends on the protocol 2.x release that emits per-branch source-column domains for CASE output expressions
+- [x] #2 Generated matching rows reach every reachable CASE branch including ELSE
+- [x] #3 Branches whose domains cannot be derived or are unreachable produce an explicit error or report, never a silent omission
+- [x] #4 All rows still satisfy the query's conditions
+- [x] #5 Tests cover searched CASE, simple CASE, ELSE, and unreachable branches
+- [x] #6 Branch domains are intersected with the query's composed column domains, and branches made empty by query filters are reported as unreachable under the query
+- [x] #7 Branch coverage follows the same exactness and comparison-assumption rules as TASK-21.8
+- [x] #8 CASE expressions inside CTEs and upstream layers are covered, and a CASE over an aggregate (as in daily_revenue) is reported as not coverable
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: Implemented protocol-driven CASE source witnesses for searched/simple CASE,
+ELSE, and composed upstream CTE outputs. Branch alternatives are intersected with all
+selected terminal-outcome domains before any matching source row is modified.
+Join equality values are preserved. Finite range candidates include both representable
+endpoints to support intersections at either edge.
+
+`GeneratedData::case_coverage()` and CLI `case_branch=... status=... detail=...`
+report every discovered CASE arm as `covered`, `unreachable`, `unknown`, or
+`insufficient_rows`. Insufficient matching row budgets or incompatible already coordinated
+join keys are reported without claiming coverage; callers can request additional rows.
+Aggregated/computed CASE source domains reported Unknown by SQL Semantic Protocol are not
+silently inferred. Relevant string, float, and timestamp comparisons require declared
+session assumptions before claiming witnesses. Regression tests include positive/negative
+branches, composed CTEs, assumptions, and dbt end-to-end results.
+<!-- SECTION:NOTES:END -->
