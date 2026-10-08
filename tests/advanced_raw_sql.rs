@@ -198,10 +198,7 @@ fn cli_rejects_having_and_executes_exact_intermediate_boundary() {
 
     assert_eq!(
         boundary_result,
-        vec![
-            expected_row(&["high", "100"]),
-            expected_row(&["high", "100"]),
-        ]
+        vec![expected_row(&["high", "100"])]
     );
 }
 
