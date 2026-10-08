@@ -121,6 +121,18 @@ fn run_tdg(
         .arg(matching.to_string())
         .arg("--rejected")
         .arg(rejected.to_string())
+        .args([
+            "--assume-comparison",
+            "binary_collation",
+            "--assume-comparison",
+            "no_char_padding",
+            "--assume-comparison",
+            "no_nan",
+            "--assume-comparison",
+            "signed_zero_equivalent",
+            "--assume-comparison",
+            "session_time_zone",
+        ])
         .args(["--seed", "42", "--format", "csv"])
         .arg("--output")
         .arg(output_dir);
