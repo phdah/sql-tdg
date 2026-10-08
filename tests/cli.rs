@@ -453,7 +453,15 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
         .arg("--dbt-manifest")
         .arg(&manifest_path)
         .args(["--target", "warehouse.analytics.big_items"])
-        .args(["--matching", "4", "--seed", "43", "--format", "csv", "--output"])
+        .args([
+            "--matching",
+            "4",
+            "--seed",
+            "43",
+            "--format",
+            "csv",
+            "--output",
+        ])
         .arg(&output_dir)
         .output()
         .expect("compiled sql-tdg binary should execute");
@@ -480,8 +488,16 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
         assert_eq!(parts.len(), 3, "row: {line}");
         assert!(!parts[0].is_empty());
         assert!(unique_items.insert(parts[0].to_owned()));
-        assert!(unique_orders.contains(parts[1]), "orphan order_id: {}", parts[1]);
-        assert!(["5", "6", "7"].contains(&parts[2]), "invalid quantity: {}", parts[2]);
+        assert!(
+            unique_orders.contains(parts[1]),
+            "orphan order_id: {}",
+            parts[1]
+        );
+        assert!(
+            ["5", "6", "7"].contains(&parts[2]),
+            "invalid quantity: {}",
+            parts[2]
+        );
     }
     assert_eq!(unique_items.len(), 4);
 }
