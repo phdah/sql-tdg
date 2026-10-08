@@ -15,7 +15,7 @@ use sql_semantic_protocol::{
     dialect_from_name,
 };
 
-use crate::case_coverage::cover_case_branches;
+use crate::case_coverage::{CaseCoverageFinding, cover_case_branches};
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
     ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
@@ -135,6 +135,7 @@ impl<'a> SqlGenerationSettings<'a> {
 pub struct GeneratedData {
     tables: BTreeMap<String, Table>,
     row_counts: GenerationRowCounts,
+    case_coverage: Vec<CaseCoverageFinding>,
 }
 
 impl fmt::Debug for GeneratedData {
@@ -143,6 +144,7 @@ impl fmt::Debug for GeneratedData {
             .debug_struct("GeneratedData")
             .field("relations", &self.tables.keys().collect::<Vec<_>>())
             .field("row_counts", &self.row_counts)
+            .field("case_coverage", &self.case_coverage)
             .finish()
     }
 }
@@ -161,6 +163,11 @@ impl GeneratedData {
     /// Return the matching and deliberately rejected row counts for each generated relation.
     pub const fn row_counts(&self) -> GenerationRowCounts {
         self.row_counts
+    }
+
+    /// Coverage findings for output CASE expressions, including un-coverable branches.
+    pub fn case_coverage(&self) -> &[CaseCoverageFinding] {
+        &self.case_coverage
     }
 }
 
@@ -1390,7 +1397,7 @@ fn generate_prepared_scalar_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData { tables, row_counts, case_coverage: Vec::new() })
 }
 
 struct PreparedRelationships<'a> {
@@ -1491,7 +1498,7 @@ fn generate_prepared_relational_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData { tables, row_counts, case_coverage: Vec::new() })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1620,7 +1627,7 @@ fn generate_scalar_data(
         generated_by_relation.insert(relation.clone(), generated);
     }
 
-    cover_case_branches(
+    let case_coverage = cover_case_branches(
         bundle,
         &[layer_id.to_owned()],
         &[semantics],
@@ -1642,7 +1649,7 @@ fn generate_scalar_data(
             build_protocol_table(relation, schema, row_counts.total(), generated)?,
         );
     }
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData { tables, row_counts, case_coverage })
 }
 
 fn generate_relational_data(
@@ -1722,7 +1729,7 @@ fn generate_relational_data(
         .flat_map(|join| [&join.left, &join.right])
         .map(|column| (column.relation.clone(), column.column.clone()))
         .collect::<BTreeSet<_>>();
-    cover_case_branches(
+    let case_coverage = cover_case_branches(
         bundle,
         &[layer_id.to_owned()],
         &[semantics],
@@ -1743,7 +1750,7 @@ fn generate_relational_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData { tables, row_counts, case_coverage })
 }
 
 /// One terminal outcome participating in shared all-outcomes generation.
@@ -1920,7 +1927,7 @@ fn generate_all_outcomes_data(
         .iter()
         .map(|column| (column.relation.clone(), column.column.clone()))
         .collect::<BTreeSet<_>>();
-    cover_case_branches(
+    let case_coverage = cover_case_branches(
         bundle,
         &roots,
         &selected,
@@ -1941,7 +1948,7 @@ fn generate_all_outcomes_data(
         tables.insert(relation.clone(), table);
     }
 
-    Ok(GeneratedData { tables, row_counts })
+    Ok(GeneratedData { tables, row_counts, case_coverage })
 }
 
 /// Validate one terminal outcome for shared generation and collect its relationships.
