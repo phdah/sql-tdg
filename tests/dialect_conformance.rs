@@ -1,4 +1,7 @@
-use sql_tdg::{GenerationRowCounts, RelationSchema, SchemaColumn, generate_classified_from_sql, generate_from_sql};
+use sql_tdg::{
+    GenerationRowCounts, RelationSchema, SchemaColumn, generate_classified_from_sql,
+    generate_from_sql,
+};
 
 // These are protocol dialect families, not execution-engine certifications.
 // Keep this list aligned with docs/dialect-conformance.md and the protocol's
@@ -23,10 +26,8 @@ fn schema(dialect: &str, relation: &str) -> RelationSchema {
     RelationSchema::new(
         relation,
         vec![
-            SchemaColumn::from_sql_type("id", "INTEGER", dialect)
-                .expect("fixture identifier type"),
-            SchemaColumn::from_sql_type("value", "INTEGER", dialect)
-                .expect("fixture value type"),
+            SchemaColumn::from_sql_type("id", "INTEGER", dialect).expect("fixture identifier type"),
+            SchemaColumn::from_sql_type("value", "INTEGER", dialect).expect("fixture value type"),
         ],
     )
     .expect("fixture relation")
@@ -49,7 +50,10 @@ fn supported_dialects_generate_exact_scalar_filter_witnesses() {
             .expect("typed column")
             .expect("integer values");
         assert_eq!(values.len(), 8, "{dialect}");
-        assert!(values.iter().all(|value| (10..20).contains(value)), "{dialect}");
+        assert!(
+            values.iter().all(|value| (10..20).contains(value)),
+            "{dialect}"
+        );
         assert_eq!(
             values,
             second
@@ -108,7 +112,10 @@ fn supported_dialects_preserve_filter_domains_through_ctes() {
             .expect("CTE column")
             .expect("CTE values");
         assert_eq!(values.len(), 8, "{dialect}");
-        assert!(values.iter().all(|value| (10..20).contains(value)), "{dialect}");
+        assert!(
+            values.iter().all(|value| (10..20).contains(value)),
+            "{dialect}"
+        );
     }
 }
 
@@ -156,10 +163,16 @@ fn dialect_specific_identifier_forms_use_the_protocol_parser() {
         ("bigquery", "SELECT `value` FROM `t` WHERE `value` >= 10"),
         ("mysql", "SELECT `value` FROM `t` WHERE `value` >= 10"),
         ("mssql", "SELECT [value] FROM [t] WHERE [value] >= 10"),
-        ("postgresql", "SELECT \"value\" FROM \"t\" WHERE \"value\" >= 10"),
+        (
+            "postgresql",
+            "SELECT \"value\" FROM \"t\" WHERE \"value\" >= 10",
+        ),
     ] {
         let generated = generate_from_sql(sql, dialect, &[schema(dialect, "t")], 8, 42)
             .unwrap_or_else(|error| panic!("{dialect}: {error}"));
-        assert!(generated.table("t").is_some(), "{dialect}: expected physical source");
+        assert!(
+            generated.table("t").is_some(),
+            "{dialect}: expected physical source"
+        );
     }
 }
