@@ -1,7 +1,7 @@
 ---
 id: TASK-23
 title: Rework README and public documentation before the 1.0.0 release
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 13:22'
 updated_date: '2026-10-08 20:19'
@@ -43,15 +43,21 @@ Context:
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 README.md and AGENTS.md were read in full, and the reworked README follows the practices collected in matiassingers/awesome-readme (for example a clear one-line description, badges, motivation, quick start, installation, usage examples for library, raw SQL CLI, and dbt, supported and unsupported semantics, contributing, and license)
-- [ ] #2 Every command and code example in the README runs as written against the release candidate, and documented behavior matches the shipped CLI and library
+- [x] #2 Every command and code example in the README runs as written against the release candidate, and documented behavior matches the shipped CLI and library
 - [x] #3 Internal, historical, or release-bootstrap material (for example the release-as override note and the Python proof of concept) is removed from the README or moved to an appropriate document, with no duplicated content between README, AGENTS.md, and docs/
 - [x] #4 Other documentation under docs/ is reviewed and either updated, linked from the README, or removed if obsolete; CHANGELOG.md is left to Release Please
-- [ ] #5 make rust-checks passes and cargo doc --no-deps succeeds
+- [x] #5 make rust-checks passes and cargo doc --no-deps succeeds
 - [x] #6 The work is submitted as a GitHub pull request on phdah/sql-tdg and its URL is reported back to the maintainer
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-08: PR #34 reorganizes README.md with verified CLI and library examples, adds docs/usage.md for advanced behavior, removes obsolete Rust migration notes, and adds integration tests covering the README raw SQL and Rust library examples plus the documented binary-collation command. Release Please owns CHANGELOG.md, which remains unchanged. TASK-21 maintainer sign-off is still outstanding; this documentation PR does not satisfy that separate release gate. CI verification remains pending.
+2026-10-08: PR #34 reorganizes README.md with verified CLI and library examples, adds docs/usage.md for advanced behavior, removes obsolete Rust migration notes, and adds integration tests covering the README raw SQL and Rust library examples plus the documented binary-collation command. Release Please owns CHANGELOG.md, which remains unchanged. TASK-21 maintainer sign-off is still outstanding; this documentation PR does not satisfy that separate release gate. The README/library smoke tests, Rust formatting, lint, Rust tests, and documentation build are green on commit 16a650c. The dbt Core E2E workflow also passed on the earlier candidate 2e3172d, which differs in Rust test formatting and task tracking only.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Reworked README for an open-source audience following awesome-readme examples: concise purpose, status/license badges, quick install and raw-SQL/dbt/Rust entry points, realistic limitations, contributors, and license. Moved detailed runtime semantics, assumptions, dbt constraints, and metadata behavior into docs/usage.md. Removed docs/rust-rewrite.md and docs/rust-dependencies.md because they describe superseded architecture and dependencies. Smoke tests verify the documented raw-SQL CLI command, Rust API sample, and binary-collation example. CHANGELOG.md remains Release Please-owned. PR #34 contains the implementation. The separate maintainer sign-off for TASK-21 remains required before release.
+<!-- SECTION:FINAL_SUMMARY:END -->
