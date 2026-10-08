@@ -94,6 +94,7 @@ separate levels of parse, generation, and execution verification.
 - [Use with dbt](#use-with-dbt)
 - [Use as a Rust library](#use-as-a-rust-library)
 - [Guarantees and limitations](#guarantees-and-limitations)
+- [Inspiration](#inspiration)
 - [Documentation and contributing](#documentation-and-contributing)
 
 ## Install
@@ -239,6 +240,21 @@ execution in this repository exists only in the DuckDB end-to-end test harness.
 
 For a detailed description of exactness, comparison assumptions, data types,
 output metadata, and rejected-row restrictions, see [Usage and semantics](docs/usage.md).
+
+## Inspiration
+
+The idea for sql-tdg was sparked by Eric Wastl's
+[*Advent of Code: Behind the Scenes* talk (22:15)](https://www.youtube.com/watch?v=gibVyxpi-qA&t=1335s).
+He describes generating candidate puzzle inputs, testing them with solvers
+against the requirements that make a puzzle meaningful, and rejecting those
+that do not qualify.
+
+That suggested a parallel for data engineering: **SQL already expresses
+constraints on input data and the results it produces.** Instead of creating
+arbitrary random rows and hoping they exercise a query, why not extract those
+requirements and generate synthetic data that satisfies them? sql-tdg builds
+on that idea, using SQL Semantic Protocol to turn supported SQL semantics into
+constraints for deterministic, randomized source-data generation.
 
 ## Documentation and contributing
 
