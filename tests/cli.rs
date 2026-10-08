@@ -361,13 +361,13 @@ fn compiled_cli_generates_typed_dbt_sources_without_a_catalog() {
     let csv = fs::read_to_string(output_dir.join("0001-warehouse.raw.orders.csv"))
         .expect("physical source with declared schema should be generated");
     let mut lines = csv.lines();
-    assert_eq!(lines.next(), Some("id,amount"));
+    assert_eq!(lines.next(), Some("amount,id"));
     let rows = lines.collect::<Vec<_>>();
     assert_eq!(rows.len(), 8);
     for row in rows {
         let amount = row
             .split(',')
-            .nth(1)
+            .next()
             .expect("amount column")
             .parse::<i64>()
             .expect("integer amount");
