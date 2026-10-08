@@ -221,7 +221,9 @@ fn three_source_cte_chain_coordinates_inner_join_keys_in_duckdb() {
     );
 
     let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
-    executor.materialize(&generated).expect("sources should materialize");
+    executor
+        .materialize(&generated)
+        .expect("sources should materialize");
     assert!(
         !executor
             .execute(sql)
