@@ -52,15 +52,25 @@ pub struct CaseCoverageFinding {
 
 impl CaseCoverageFinding {
     fn new(location: &str, status: CaseCoverageStatus, detail: impl Into<String>) -> Self {
-        Self { location: location.to_owned(), status, detail: detail.into() }
+        Self {
+            location: location.to_owned(),
+            status,
+            detail: detail.into(),
+        }
     }
 
     /// Layer, output column, and CASE arm.
-    pub fn location(&self) -> &str { &self.location }
+    pub fn location(&self) -> &str {
+        &self.location
+    }
     /// Whether the branch was witnessed, excluded, or could not be exercised.
-    pub fn status(&self) -> CaseCoverageStatus { self.status }
+    pub fn status(&self) -> CaseCoverageStatus {
+        self.status
+    }
     /// Reason or matching-row position of the coverage result.
-    pub fn detail(&self) -> &str { &self.detail }
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
 }
 
 /// Exercise CASE branch witnesses where feasible without weakening source membership.
@@ -84,7 +94,10 @@ pub(crate) fn cover_case_branches(
         if !visited.insert(id.clone()) {
             continue;
         }
-        let layer = bundle.layers().iter().find(|layer| layer.id() == id)
+        let layer = bundle
+            .layers()
+            .iter()
+            .find(|layer| layer.id() == id)
             .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
                 location: id.clone(),
                 message: "referenced transformation layer is missing".to_owned(),
@@ -100,7 +113,12 @@ pub(crate) fn cover_case_branches(
                 );
             }
         }
-        for edge in bundle.graph().edges().iter().filter(|edge| edge.consumer_layer_id() == id) {
+        for edge in bundle
+            .graph()
+            .edges()
+            .iter()
+            .filter(|edge| edge.consumer_layer_id() == id)
+        {
             pending.extend(edge.producer_layer_ids().iter().cloned());
         }
     }
@@ -113,14 +131,17 @@ pub(crate) fn cover_case_branches(
             CaseSourceDomains::Reachable { alternatives } => alternatives,
             CaseSourceDomains::Unreachable => {
                 findings.push(CaseCoverageFinding::new(
-                    &target.location, CaseCoverageStatus::Unreachable,
+                    &target.location,
+                    CaseCoverageStatus::Unreachable,
                     "excluded by earlier CASE branches",
                 ));
                 continue;
             }
             CaseSourceDomains::Unknown(reason) => {
                 findings.push(CaseCoverageFinding::new(
-                    &target.location, CaseCoverageStatus::Unknown, reason.reason(),
+                    &target.location,
+                    CaseCoverageStatus::Unknown,
+                    reason.reason(),
                 ));
                 continue;
             }
@@ -135,19 +156,32 @@ pub(crate) fn cover_case_branches(
         let mut covered_row = None;
         for alternative in alternatives {
             let Some(witness) = branch_witness(
-                alternative.column_domains(), &target.location, outcomes, schemas,
-            )? else {
+                alternative.column_domains(),
+                &target.location,
+                outcomes,
+                schemas,
+            )?
+            else {
                 continue;
             };
             feasible = true;
             for (row, row_assignments) in assigned.iter_mut().enumerate() {
                 let compatible = witness.iter().all(|(key, value)| {
-                    row_assignments.get(key).is_none_or(|existing| existing == value)
+                    row_assignments
+                        .get(key)
+                        .is_none_or(|existing| existing == value)
                         && (!relationship_keys.contains(key)
-                            || generated.get(&key.0)
-                                .and_then(|columns| schemas.get(&key.0).and_then(|schema|
-                                    schema.columns().iter().position(|column| column.name() == key.1)
-                                        .and_then(|index| columns.get(index))))
+                            || generated
+                                .get(&key.0)
+                                .and_then(|columns| {
+                                    schemas.get(&key.0).and_then(|schema| {
+                                        schema
+                                            .columns()
+                                            .iter()
+                                            .position(|column| column.name() == key.1)
+                                            .and_then(|index| columns.get(index))
+                                    })
+                                })
                                 .and_then(|values| values.get(row))
                                 .is_some_and(|existing| existing == value))
                 });
@@ -155,16 +189,22 @@ pub(crate) fn cover_case_branches(
                     continue;
                 }
                 for (key, value) in &witness {
-                    let schema = schemas.get(&key.0).ok_or_else(|| ProtocolGenerationError::CaseCoverage {
-                        location: target.location.clone(),
-                        message: format!("missing source schema for {}", key.0),
+                    let schema = schemas.get(&key.0).ok_or_else(|| {
+                        ProtocolGenerationError::CaseCoverage {
+                            location: target.location.clone(),
+                            message: format!("missing source schema for {}", key.0),
+                        }
                     })?;
-                    let index = schema.columns().iter().position(|column| column.name() == key.1)
+                    let index = schema
+                        .columns()
+                        .iter()
+                        .position(|column| column.name() == key.1)
                         .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
                             location: target.location.clone(),
                             message: format!("missing source column {}.{}", key.0, key.1),
                         })?;
-                    let slot = generated.get_mut(&key.0)
+                    let slot = generated
+                        .get_mut(&key.0)
                         .and_then(|columns| columns.get_mut(index))
                         .and_then(|values| values.get_mut(row))
                         .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
@@ -182,13 +222,23 @@ pub(crate) fn cover_case_branches(
             }
         }
         let finding = if let Some(row) = covered_row {
-            CaseCoverageFinding::new(&target.location, CaseCoverageStatus::Covered, format!("row {row}"))
+            CaseCoverageFinding::new(
+                &target.location,
+                CaseCoverageStatus::Covered,
+                format!("row {row}"),
+            )
         } else if feasible {
-            CaseCoverageFinding::new(&target.location, CaseCoverageStatus::InsufficientRows,
-                format!("no compatible witness among {matching_rows} matching rows"))
+            CaseCoverageFinding::new(
+                &target.location,
+                CaseCoverageStatus::InsufficientRows,
+                format!("no compatible witness among {matching_rows} matching rows"),
+            )
         } else {
-            CaseCoverageFinding::new(&target.location, CaseCoverageStatus::Unreachable,
-                "no CASE alternative intersects the composed query domains")
+            CaseCoverageFinding::new(
+                &target.location,
+                CaseCoverageStatus::Unreachable,
+                "no CASE alternative intersects the composed query domains",
+            )
         };
         findings.push(finding);
     }
@@ -206,37 +256,59 @@ fn branch_witness(
         let Some(relation) = column_domain.column().relation() else {
             return Err(ProtocolGenerationError::CaseCoverage {
                 location: location.to_owned(),
-                message: format!("CASE column {} is not a physical source", column_domain.column().name()),
+                message: format!(
+                    "CASE column {} is not a physical source",
+                    column_domain.column().name()
+                ),
             });
         };
-        by_column.entry((relation.to_owned(), column_domain.column().name().to_owned()))
-            .or_default().push(column_domain.domain());
+        by_column
+            .entry((
+                relation.to_owned(),
+                column_domain.column().name().to_owned(),
+            ))
+            .or_default()
+            .push(column_domain.domain());
     }
     let mut chosen = BTreeMap::new();
     for (key, mut domains) in by_column {
         let (relation, column) = (&key.0, &key.1);
-        let schema = schemas.get(relation).ok_or_else(|| ProtocolGenerationError::CaseCoverage {
-            location: location.to_owned(),
-            message: format!("CASE source relation {relation} has no schema"),
-        })?;
-        let source_column = schema.columns().iter().find(|item| item.name() == column)
+        let schema =
+            schemas
+                .get(relation)
+                .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
+                    location: location.to_owned(),
+                    message: format!("CASE source relation {relation} has no schema"),
+                })?;
+        let source_column = schema
+            .columns()
+            .iter()
+            .find(|item| item.name() == column)
             .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
                 location: location.to_owned(),
                 message: format!("CASE source column {relation}.{column} has no schema"),
             })?;
         for outcome in outcomes {
-            domains.extend(outcome.column_domains().iter()
-                .filter(|domain| domain.column().relation() == Some(relation.as_str())
-                    && domain.column().name() == column)
-                .map(|domain| domain.domain()));
+            domains.extend(
+                outcome
+                    .column_domains()
+                    .iter()
+                    .filter(|domain| {
+                        domain.column().relation() == Some(relation.as_str())
+                            && domain.column().name() == column
+                    })
+                    .map(|domain| domain.domain()),
+            );
         }
         require_case_assumptions(location, source_column.data_type(), outcomes)?;
         let mut pool = Vec::new();
         for domain in &domains {
-            for candidate in candidates(source_column.data_type(), Some(domain))
-                .map_err(|message| ProtocolGenerationError::CaseCoverage {
-                    location: location.to_owned(),
-                    message: format!("cannot sample {relation}.{column}: {message}"),
+            for candidate in
+                candidates(source_column.data_type(), Some(domain)).map_err(|message| {
+                    ProtocolGenerationError::CaseCoverage {
+                        location: location.to_owned(),
+                        message: format!("cannot sample {relation}.{column}: {message}"),
+                    }
                 })?
             {
                 if !pool.contains(&candidate) {
@@ -248,12 +320,12 @@ fn branch_witness(
         for candidate in pool {
             let mut satisfies = true;
             for domain in &domains {
-                if !value_satisfies_domain(source_column.data_type(), &candidate, domain)
-                    .map_err(|message| ProtocolGenerationError::CaseCoverage {
+                if !value_satisfies_domain(source_column.data_type(), &candidate, domain).map_err(
+                    |message| ProtocolGenerationError::CaseCoverage {
                         location: location.to_owned(),
                         message: format!("cannot check {relation}.{column}: {message}"),
-                    })?
-                {
+                    },
+                )? {
                     satisfies = false;
                     break;
                 }
@@ -263,7 +335,9 @@ fn branch_witness(
                 break;
             }
         }
-        let Some(value) = valid else { return Ok(None); };
+        let Some(value) = valid else {
+            return Ok(None);
+        };
         chosen.insert(key, value);
     }
     Ok(Some(chosen))
