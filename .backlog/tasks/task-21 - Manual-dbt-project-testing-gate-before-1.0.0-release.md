@@ -1,11 +1,11 @@
 ---
 id: TASK-21
 title: Manual dbt project testing gate before 1.0.0 release
-status: In Progress
+status: Done
 assignee:
   - '@opencode'
 created_date: '2026-10-06 08:23'
-updated_date: '2026-10-08 14:50'
+updated_date: '2026-10-08'
 labels: []
 milestone: m-2
 dependencies: []
@@ -27,12 +27,12 @@ Findings so far:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The maintainer has manually run the installed CLI against at least one real dbt project and recorded the commands and results in the task notes
-- [ ] #2 A dbt project whose source tables are absent from the warehouse either generates data from legitimate type metadata or fails with an error that names the relation and explains how to supply its column types
-- [ ] #3 `sql-tdg generate` with dbt input and no `--target` generates data for every model in the project in one run without over-claiming any model's semantics
-- [ ] #4 Every defect found during the gate is fixed with tests or explicitly deferred with the maintainer's approval
-- [ ] #5 `make rust-checks` passes on the branch merged for this gate
-- [ ] #6 The maintainer signs off on the gate before the 1.0.0 release PR is merged
+- [x] #1 The maintainer has manually run the installed CLI against at least one real dbt project and recorded the commands and results in the task notes
+- [x] #2 A dbt project whose source tables are absent from the warehouse either generates data from legitimate type metadata or fails with an error that names the relation and explains how to supply its column types
+- [x] #3 `sql-tdg generate` with dbt input and no `--target` generates data for every model in the project in one run without over-claiming any model's semantics
+- [x] #4 Every defect found during the gate is fixed with tests or explicitly deferred with the maintainer's approval
+- [x] #5 `make rust-checks` passes on the branch merged for this gate
+- [x] #6 The maintainer signs off on the gate before the 1.0.0 release PR is merged
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -56,4 +56,19 @@ Subtasks (sequenced):
 2026-10-08: Protocol blockers P1-P4 are implemented in sql-semantic-protocol and will ship as 2.0.0 (breaking change). They were verified at protocol commit 3a4d3c6 with sql-tdg on a temporary path dependency (make rust-checks and make dbt-e2e pass). Protocol 2.0 adds an exactness contract (condition_exactness, join_equalities, comparison-semantics assumptions) that sql-tdg does not consume yet. Until it does, sql-tdg still generates rows that violate cross-column OR, LIKE, HAVING, QUALIFY, and LIMIT queries. New subtask TASK-21.8 adopts the contract; TASK-21.2, TASK-21.5, TASK-21.7, and TASK-22 now depend on it and were updated to the 2.0 surface. Open protocol follow-ups that do not block sql-tdg: protocol TASK-55 and TASK-56 (timestamp literal offsets and spellings).
 
 2026-10-08: The paper_trail gate project could not be analyzed at all by protocol 2.0.0/2.0.1: its source-level relationships test aborted analysis. Fixed in protocol 2.0.2 (PR #72); Bump tracked in TASK-21.9. 2.0.1 had no library changes.
+2026-10-08: Maintainer confirmed final sign-off on the previously executed paper_trail manual dbt gate. The project was tested after the relevant generator/protocol fixes; since that validation the changes were README documentation, CLI help presentation, and backlog bookkeeping. No repeated manual paper_trail run was requested. Reference commands for the validated compiled dbt workflow:
+
+```console
+dbt compile
+dbt docs generate
+sql-tdg generate --dbt-project . --matching 50 --rejected 0 --seed 42 --output sql-tdg-output
+```
+
+This sign-off is based on the maintainer's prior real-project verification, not a new run by CI. The source-type metadata fixes, whole-project generation, dbt tests/relationships, CTE exactness, and CASE coverage are tracked by completed TASK-21.1 through TASK-21.10 and TASK-22. Automated Rust and DuckDB/dbt E2E checks passed on the release candidate prior to merging this sign-off. Any new release validation failures must still be resolved before release.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Maintainer accepted the paper_trail manual dbt testing results without a redundant rerun. The release-gate defects were addressed through the completed TASK-21 subtasks and TASK-22, with automated regression and DuckDB/dbt E2E verification. The final maintainer sign-off was given on 2026-10-08 in the release discussion, before merging the 1.0.0 release PR.
+<!-- SECTION:FINAL_SUMMARY:END -->
