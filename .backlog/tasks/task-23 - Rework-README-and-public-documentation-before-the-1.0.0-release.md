@@ -4,6 +4,7 @@ title: Rework README and public documentation before the 1.0.0 release
 status: To Do
 assignee: []
 created_date: '2026-10-08 13:22'
+updated_date: '2026-10-08 14:51'
 labels: []
 milestone: m-2
 dependencies:
@@ -12,6 +13,7 @@ dependencies:
   - TASK-21.5
   - TASK-21.7
   - TASK-21.8
+  - TASK-21.9
   - TASK-22
 references:
   - 'https://github.com/matiassingers/awesome-readme'

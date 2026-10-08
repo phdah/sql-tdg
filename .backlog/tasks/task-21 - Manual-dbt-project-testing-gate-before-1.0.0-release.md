@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@opencode'
 created_date: '2026-10-06 08:23'
-updated_date: '2026-10-08 11:36'
+updated_date: '2026-10-08 14:50'
 labels: []
 milestone: m-2
 dependencies: []
@@ -54,4 +54,6 @@ Subtasks (sequenced):
 2026-10-06 later: TASK-21.4 (CTE/derived-table guard) and TASK-21.6 (moderate unconstrained values) done. Blocked on sql-semantic-protocol features: (P1) carry joins, predicates, column domains, and lineage through CTEs and derived tables, and resolve `select *` from catalog schemas, instead of reporting resolved semantics with these dropped -> unblocks TASK-21.5; (P2) per-branch source-column domains for CASE output expressions -> unblocks TASK-21.7; (P3) canonical not_null and accepted_values constraints from dbt tests, in addition to protocol TASK-29/30 keys and relationships -> unblocks TASK-22; (P4) manifest-declared column data_type fallback -> unblocks TASK-21.2.
 
 2026-10-08: Protocol blockers P1-P4 are implemented in sql-semantic-protocol and will ship as 2.0.0 (breaking change). They were verified at protocol commit 3a4d3c6 with sql-tdg on a temporary path dependency (make rust-checks and make dbt-e2e pass). Protocol 2.0 adds an exactness contract (condition_exactness, join_equalities, comparison-semantics assumptions) that sql-tdg does not consume yet. Until it does, sql-tdg still generates rows that violate cross-column OR, LIKE, HAVING, QUALIFY, and LIMIT queries. New subtask TASK-21.8 adopts the contract; TASK-21.2, TASK-21.5, TASK-21.7, and TASK-22 now depend on it and were updated to the 2.0 surface. Open protocol follow-ups that do not block sql-tdg: protocol TASK-55 and TASK-56 (timestamp literal offsets and spellings).
+
+2026-10-08: The paper_trail gate project could not be analyzed at all by protocol 2.0.0/2.0.1: its source-level relationships test aborted analysis. Fixed in protocol 2.0.2 (PR #72); Bump tracked in TASK-21.9. 2.0.1 had no library changes.
 <!-- SECTION:NOTES:END -->

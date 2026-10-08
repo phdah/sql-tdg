@@ -4,10 +4,11 @@ title: Honor dbt data tests in generated data
 status: To Do
 assignee: []
 created_date: '2026-10-06 12:39'
-updated_date: '2026-10-08 11:36'
+updated_date: '2026-10-08 14:51'
 labels: []
 dependencies:
   - TASK-21.8
+  - TASK-21.9
 references:
   - sql-semantic-protocol TASK-30
   - sql-semantic-protocol TASK-33
@@ -49,4 +50,12 @@ Protocol status (verified at protocol commit 3a4d3c6, release 2.0.0):
 - [ ] #9 Composite keys and self-referencing foreign keys are generated correctly or fail explicitly
 - [ ] #10 Constraints on relations that are neither generated sources nor selected boundaries are reported as not honored rather than silently ignored
 - [ ] #11 Unknown future RelationConstraint or ConstraintValue variants fail with an explicit unsupported error
+- [ ] #12 The `unattributed_dbt_test` diagnostic from protocol 2.0.2 fails generation like every other constraint diagnostic, and a test asserts this
+- [ ] #13 The maintainer's paper_trail fixture generates sources that pass every dbt source test it declares (unique, not_null, accepted_values, and the order_items to orders relationship)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: Protocol 2.0.2 (PR #72) adds the constraint diagnostic code `unattributed_dbt_test` (bundle-level `constraint_diagnostics`) for built-in dbt tests whose tested resource cannot be identified. Source-level tests, where dbt writes attached_node: null, are now attributed from the test's `kwargs.model` argument, including relationships between sources and self-referencing ones. Verified on the maintainer's paper_trail fixture: all 19 generic tests attach to the right relation; the two singular tests are reported as `unsupported_dbt_singular_test` on daily_revenue. Constraints on daily_revenue (a model, not a generated source) must be reported as not honored under AC #10.
+<!-- SECTION:NOTES:END -->
