@@ -438,7 +438,10 @@ impl fmt::Display for ProtocolGenerationError {
                 conditions.join("; ")
             ),
             Self::CaseCoverage { location, message } => {
-                write!(formatter, "CASE branch {location} cannot be covered: {message}")
+                write!(
+                    formatter,
+                    "CASE branch {location} cannot be covered: {message}"
+                )
             }
             Self::MissingSourceSchema { relation } => {
                 write!(
@@ -1630,9 +1633,14 @@ fn generate_scalar_data(
     for relation in semantics.dependencies() {
         let schema = source_schema(schemas, relation)?;
         let generated = generated_by_relation.remove(relation).ok_or_else(|| {
-            ProtocolGenerationError::MissingSourceSchema { relation: relation.clone() }
+            ProtocolGenerationError::MissingSourceSchema {
+                relation: relation.clone(),
+            }
         })?;
-        tables.insert(relation.clone(), build_protocol_table(relation, schema, row_counts.total(), generated)?);
+        tables.insert(
+            relation.clone(),
+            build_protocol_table(relation, schema, row_counts.total(), generated)?,
+        );
     }
     Ok(GeneratedData { tables, row_counts })
 }
@@ -1709,7 +1717,9 @@ fn generate_relational_data(
         }
     }
 
-    let keys = relationships.iter().flat_map(|join| [&join.left, &join.right])
+    let keys = relationships
+        .iter()
+        .flat_map(|join| [&join.left, &join.right])
         .map(|column| (column.relation.clone(), column.column.clone()))
         .collect::<BTreeSet<_>>();
     cover_case_branches(
@@ -1898,9 +1908,16 @@ fn generate_all_outcomes_data(
         }
     }
 
-    let roots = outcomes.iter().map(|outcome| outcome.layer_id.clone()).collect::<Vec<_>>();
-    let selected = outcomes.iter().map(|outcome| outcome.semantics).collect::<Vec<_>>();
-    let keys = relationship_columns.iter()
+    let roots = outcomes
+        .iter()
+        .map(|outcome| outcome.layer_id.clone())
+        .collect::<Vec<_>>();
+    let selected = outcomes
+        .iter()
+        .map(|outcome| outcome.semantics)
+        .collect::<Vec<_>>();
+    let keys = relationship_columns
+        .iter()
         .map(|column| (column.relation.clone(), column.column.clone()))
         .collect::<BTreeSet<_>>();
     cover_case_branches(
