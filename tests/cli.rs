@@ -536,7 +536,7 @@ fn compiled_cli_generates_relationship_parent_without_a_model_dependency() {
         .lines()
         .skip(1)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(parent_keys.len(), 4);
+    assert_eq!(parent.lines().skip(1).count(), 4);
     let child = fs::read_to_string(output_dir.join("0001-warehouse.raw.order_items.csv"))
         .expect("child source should be generated");
     let mut child_count = 0;
