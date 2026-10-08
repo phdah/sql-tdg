@@ -358,7 +358,7 @@ fn compiled_cli_generates_typed_dbt_sources_without_a_catalog() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let csv = fs::read_to_string(output_dir.join("0001-orders.csv"))
+    let csv = fs::read_to_string(output_dir.join("0001-warehouse.raw.orders.csv"))
         .expect("physical source with declared schema should be generated");
     let mut lines = csv.lines();
     assert_eq!(lines.next(), Some("id,amount"));
@@ -411,7 +411,7 @@ fn compiled_cli_accepts_dbt_project_without_a_catalog() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output_dir.join("0001-orders.csv").is_file());
+    assert!(output_dir.join("0001-warehouse.raw.orders.csv").is_file());
 }
 
 #[test]
