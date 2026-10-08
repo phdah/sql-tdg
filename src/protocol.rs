@@ -754,7 +754,6 @@ pub fn generate_classified_from_bundle_at_boundary(
             outcome: outcome_description,
         })?;
 
-    reject_local_relation_sources(bundle, layer.id())?;
     let semantics = resolved_layer_semantics(layer)?;
     require_exact_conditions(layer.id(), semantics)?;
 
@@ -1883,7 +1882,6 @@ fn prepare_outcome<'a>(
         .ok_or_else(|| ProtocolGenerationError::MissingOutcomeLayer {
             outcome: description.to_owned(),
         })?;
-    reject_local_relation_sources(bundle, layer.id())?;
     let semantics = resolved_layer_semantics(layer)?;
     require_exact_conditions(layer.id(), semantics)?;
     if let Some(diagnostic) = semantics.diagnostics().first() {
@@ -2179,85 +2177,6 @@ fn collect_equality_relationships(
         relationships.insert(EqualityRelationship::new(left, right));
     }
     Ok(relationships.into_iter().collect())
-}
-
-fn ancestor_layer_ids(bundle: &AnalysisBundle, selected_layer_id: &str) -> BTreeSet<String> {
-    let mut ancestors = BTreeSet::new();
-    let mut pending = vec![selected_layer_id.to_owned()];
-
-    while let Some(layer_id) = pending.pop() {
-        if !ancestors.insert(layer_id.clone()) {
-            continue;
-        }
-
-        let mut producers = bundle
-            .graph()
-            .edges()
-            .iter()
-            .filter(|edge| {
-                edge.consumer_layer_id() == layer_id
-                    && edge.resolution() == RelationResolution::Resolved
-            })
-            .flat_map(|edge| edge.producer_layer_ids().iter().cloned())
-            .collect::<Vec<_>>();
-        producers.sort();
-        producers.reverse();
-        pending.extend(producers);
-    }
-
-    ancestors
-}
-
-/// Refuse layers that read CTEs or derived tables.
-///
-/// SQL Semantic Protocol reports only the physical dependencies of local relations; their joins,
-/// predicates, and lineage are absent from the bundle. Generating through them would silently
-/// drop conditions, so every layer contributing to the selected layer must read only physical
-/// dependencies or relations produced by other layers.
-fn reject_local_relation_sources(
-    bundle: &AnalysisBundle,
-    selected_layer_id: &str,
-) -> Result<(), ProtocolGenerationError> {
-    let ancestor_ids = ancestor_layer_ids(bundle, selected_layer_id);
-
-    for layer in bundle
-        .layers()
-        .iter()
-        .filter(|layer| ancestor_ids.contains(layer.id()))
-    {
-        let Some(ProtocolStatement::Query(query)) = bundle
-            .inputs()
-            .iter()
-            .find(|input| input.id() == layer.input_id())
-            .and_then(|input| input.statements().get(layer.statement_index()))
-        else {
-            continue;
-        };
-
-        for source in query.sources() {
-            let name = source.name();
-            let is_dependency = query
-                .dependencies()
-                .iter()
-                .any(|dependency| dependency == name);
-            let is_edge = bundle
-                .graph()
-                .edges()
-                .iter()
-                .any(|edge| edge.consumer_layer_id() == layer.id() && edge.relation() == name);
-            if !is_dependency && !is_edge {
-                return Err(ProtocolGenerationError::UnsupportedSemantics {
-                    layer_id: layer.id().to_owned(),
-                    code: "local_relation_semantics".to_owned(),
-                    message: format!(
-                        "source {name:?} is a CTE or derived table; SQL Semantic Protocol does not carry its joins, predicates, or lineage"
-                    ),
-                });
-            }
-        }
-    }
-
-    Ok(())
 }
 
 fn query_for_layer<'a>(

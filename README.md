@@ -84,7 +84,10 @@ transformation layers. Unsupported conditions (for example cross-column OR, LIKE
 predicates, HAVING, QUALIFY, LIMIT, OFFSET, FETCH, TABLESAMPLE, or non-inner joins) fail closed
 with the residual reason, SQL clause, and originating layer. This also applies to every terminal
 outcome in project-wide generation and to intermediate boundaries. Rejected rows are produced
-only when the same exactness guarantee holds.
+only when the same exactness guarantee holds. Exact predicates and inner equality joins inside
+CTEs and derived tables are supported through the protocol's composed physical-column semantics;
+filters on computed, aggregate, window, or CASE-derived local columns and computed join keys
+remain unsupported unless the protocol can resolve them exactly.
 
 Some comparisons are exact only when the caller attests the database's comparison semantics.
 For example, string filters can require binary collation, floating-point comparisons can require

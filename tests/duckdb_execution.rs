@@ -382,3 +382,92 @@ fn read_only_database_does_not_allow_fixture_mutation() {
     }
     std::fs::remove_file(path).expect("test database should be removable");
 }
+
+#[test]
+fn ctes_and_derived_tables_execute_with_all_matching_rows() {
+    let schemas = [RelationSchema::new(
+        "t",
+        vec![column("a", DataType::SignedInteger { bits: Some(32) })],
+    )
+    .expect("source schema should be valid")];
+
+    for sql in [
+        "WITH big AS (SELECT a FROM t WHERE a > 1000)
+         SELECT a FROM big",
+        "SELECT a FROM (SELECT a FROM t WHERE a > 1000 AND a < 2000) AS big",
+        "WITH first AS (SELECT a FROM t WHERE a > 1000),
+              second AS (SELECT a FROM first WHERE a < 2000)
+         SELECT a FROM second",
+    ] {
+        let generated = generate_from_sql(sql, "duckdb", &schemas, 8, 42)
+            .expect("local-relation filters should compose exactly");
+        let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
+        executor
+            .materialize(&generated)
+            .expect("generated sources should materialize");
+        let result = executor.execute(sql).expect("local SQL should execute");
+        assert_eq!(
+            result.rows().len(),
+            8,
+            "all generated rows should reach this query: {sql}"
+        );
+    }
+}
+
+#[test]
+fn composed_three_source_cte_join_executes_with_matched_rows() {
+    let sql = "
+        WITH eligible AS (
+            SELECT id, amount FROM orders WHERE amount >= 10 AND amount < 20
+        ),
+        joined AS (
+            SELECT eligible.id, eligible.amount, line_items.product_id
+            FROM eligible
+            JOIN line_items ON eligible.id = line_items.order_id
+            JOIN products ON line_items.product_id = products.id
+        )
+        SELECT id, SUM(amount) AS revenue FROM joined GROUP BY id
+    ";
+    let generated = generate_from_sql(
+        sql,
+        "duckdb",
+        &[
+            RelationSchema::new(
+                "orders",
+                vec![
+                    column("id", DataType::SignedInteger { bits: Some(32) }),
+                    column("amount", DataType::SignedInteger { bits: Some(32) }),
+                ],
+            )
+            .expect("orders schema should be valid"),
+            RelationSchema::new(
+                "line_items",
+                vec![
+                    column("order_id", DataType::SignedInteger { bits: Some(32) }),
+                    column("product_id", DataType::SignedInteger { bits: Some(32) }),
+                ],
+            )
+            .expect("line_items schema should be valid"),
+            RelationSchema::new(
+                "products",
+                vec![column("id", DataType::SignedInteger { bits: Some(32) })],
+            )
+            .expect("products schema should be valid"),
+        ],
+        8,
+        42,
+    )
+    .expect("three-source local joins should have exact composed physical relationships");
+
+    let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
+    executor
+        .materialize(&generated)
+        .expect("generated sources should materialize");
+    let result = executor
+        .execute(sql)
+        .expect("aggregate over joined CTE sources should execute");
+    assert!(
+        !result.rows().is_empty(),
+        "at least one aggregate group must be produced by coordinated join keys"
+    );
+}
