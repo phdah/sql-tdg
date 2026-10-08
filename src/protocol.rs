@@ -19,8 +19,8 @@ use crate::case_coverage::{CaseCoverageFinding, cover_case_branches};
 use crate::constraint_generation::{self, ColumnDomains};
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
-    ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
-    value_satisfies_domain,
+    ProtocolValue, build_array, candidates, is_supported, moderate_key_values,
+    rejected_candidates, value_satisfies_domain,
 };
 use crate::solver::SolverError;
 use crate::table::{Table, TableError};
@@ -2162,10 +2162,37 @@ fn generate_all_outcomes_data(
             }
             let (plan, values) = shared_column_plan(relation, schema_column, &constraints)?;
             if relationship_columns.contains(&column) {
-                let values = values
-                    .into_iter()
-                    .filter(|value| !matches!(value, ProtocolValue::Null))
-                    .collect::<Vec<_>>();
+                let mut preferred = Vec::new();
+                for candidate in moderate_key_values(schema_column.data_type()).map_err(
+                    |message| ProtocolGenerationError::UnsupportedDomain {
+                        relation: relation.clone(),
+                        column: schema_column.name().to_owned(),
+                        message,
+                    },
+                )? {
+                    let mut valid = true;
+                    for (_, domain) in &constraints {
+                        if !value_satisfies_domain(schema_column.data_type(), &candidate, domain)
+                            .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
+                                relation: relation.clone(),
+                                column: schema_column.name().to_owned(),
+                                message,
+                            })?
+                        {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if valid {
+                        preferred.push(candidate);
+                    }
+                }
+                for value in values {
+                    if !matches!(value, ProtocolValue::Null) && !preferred.contains(&value) {
+                        preferred.push(value);
+                    }
+                }
+                let values = preferred;
                 if values.is_empty() {
                     return Err(ProtocolGenerationError::UnsatisfiableRelationship {
                         relationship: column.describe(),
@@ -2830,15 +2857,27 @@ fn relationship_candidates(
         let data_type = relationship_data_type(schemas, &column)?;
         let domain =
             find_column_domain(semantics.column_domains(), &column.relation, &column.column)?;
-        let values = candidates(data_type, domain)
-            .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
-                relation: column.relation.clone(),
-                column: column.column.clone(),
-                message,
-            })?
-            .into_iter()
-            .filter(|value| !matches!(value, ProtocolValue::Null))
-            .collect::<Vec<_>>();
+        let unsupported = |message: String| ProtocolGenerationError::UnsupportedDomain {
+            relation: column.relation.clone(),
+            column: column.column.clone(),
+            message,
+        };
+        let mut values = Vec::new();
+        for value in moderate_key_values(data_type).map_err(&unsupported)? {
+            let allowed = if let Some(restriction) = domain {
+                value_satisfies_domain(data_type, &value, restriction).map_err(&unsupported)?
+            } else {
+                true
+            };
+            if allowed {
+                values.push(value);
+            }
+        }
+        for value in candidates(data_type, domain).map_err(unsupported)? {
+            if !matches!(value, ProtocolValue::Null) && !values.contains(&value) {
+                values.push(value);
+            }
+        }
         if values.is_empty() {
             return Err(ProtocolGenerationError::UnsatisfiableRelationship {
                 relationship: column.describe(),
