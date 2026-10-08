@@ -16,6 +16,7 @@ use sql_semantic_protocol::{
 };
 
 use crate::case_coverage::{CaseCoverageFinding, cover_case_branches};
+use crate::constraint_generation::{self, ColumnDomains};
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
     ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
@@ -136,6 +137,7 @@ pub struct GeneratedData {
     tables: BTreeMap<String, Table>,
     row_counts: GenerationRowCounts,
     case_coverage: Vec<CaseCoverageFinding>,
+    unhonored_constraints: Vec<String>,
 }
 
 impl fmt::Debug for GeneratedData {
@@ -145,6 +147,7 @@ impl fmt::Debug for GeneratedData {
             .field("relations", &self.tables.keys().collect::<Vec<_>>())
             .field("row_counts", &self.row_counts)
             .field("case_coverage", &self.case_coverage)
+            .field("unhonored_constraints", &self.unhonored_constraints)
             .finish()
     }
 }
@@ -168,6 +171,11 @@ impl GeneratedData {
     /// Coverage findings for output CASE expressions, including un-coverable branches.
     pub fn case_coverage(&self) -> &[CaseCoverageFinding] {
         &self.case_coverage
+    }
+
+    /// Relations whose declared constraints were not enforced because they were not generated.
+    pub fn unhonored_constraints(&self) -> &[String] {
+        &self.unhonored_constraints
     }
 }
 
@@ -352,6 +360,13 @@ pub enum ProtocolGenerationError {
         /// Explanation of the unsupported mapping.
         message: String,
     },
+    /// Protocol relation constraints cannot be honored or contain unsupported metadata.
+    RelationConstraint {
+        /// Canonical relation identity, or <bundle> for unattributed metadata.
+        relation: String,
+        /// Constraint diagnostic or unsatisfiable combination.
+        message: String,
+    },
     /// The typed solver rejected a protocol-derived domain.
     Solver {
         /// Source relation.
@@ -531,6 +546,9 @@ impl fmt::Display for ProtocolGenerationError {
                 formatter,
                 "unsupported protocol domain for {relation}.{column}: {message}"
             ),
+            Self::RelationConstraint { relation, message } => {
+                write!(formatter, "relation constraint on {relation}: {message}")
+            }
             Self::Solver {
                 relation, column, ..
             } => write!(
@@ -759,6 +777,12 @@ pub fn generate_classified_from_bundle_at_boundary(
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
+    if let Some(diagnostic) = bundle.constraint_diagnostics().first() {
+        return Err(ProtocolGenerationError::RelationConstraint {
+            relation: "<bundle>".to_owned(),
+            message: format!("{}: {}", diagnostic.code(), diagnostic.message()),
+        });
+    }
     if selector.is_none() && boundary.kind() == BoundaryKind::PhysicalSources {
         let finals = terminal_outcomes(bundle);
         if finals.len() > 1 {
@@ -1001,6 +1025,7 @@ fn generate_intermediate_boundary_data(
     let include_rejected_domains = relationships.is_empty() && row_counts.rejected() > 0;
     let mut plans_by_relation = BTreeMap::new();
     let mut candidates_by_column = BTreeMap::new();
+    let mut boundary_domains = ColumnDomains::new();
 
     for relation in boundary.relations() {
         let schema = schemas.get(relation).copied().ok_or_else(|| {
@@ -1025,6 +1050,28 @@ fn generate_intermediate_boundary_data(
         }
 
         validate_intermediate_schema(target_layer.id(), relation, schema, producer_semantics)?;
+        for column in schema.columns() {
+            let key = (relation.clone(), column.name().to_owned());
+            if let Some(produced) = producer_semantics
+                .output()
+                .columns()
+                .iter()
+                .find(|candidate| candidate.name() == column.name())
+            {
+                boundary_domains
+                    .entry(key.clone())
+                    .or_default()
+                    .push(produced.domain().clone());
+            }
+            if let Some(domain) =
+                find_column_domain(target_query.column_domains(), relation, column.name())?
+            {
+                boundary_domains
+                    .entry(key)
+                    .or_default()
+                    .push(domain.clone());
+            }
+        }
         let plans = prepare_intermediate_relation_plans(
             relation,
             schema,
@@ -1038,9 +1085,11 @@ fn generate_intermediate_boundary_data(
 
     if relationships.is_empty() {
         generate_prepared_scalar_data(
+            bundle,
             boundary.relations(),
             schemas,
             &plans_by_relation,
+            &boundary_domains,
             row_counts,
             seed,
         )
@@ -1050,10 +1099,14 @@ fn generate_intermediate_boundary_data(
             relationships: &relationships,
         };
         generate_prepared_relational_data(
+            bundle,
             target_layer.id(),
             boundary.relations(),
-            schemas,
-            &plans_by_relation,
+            &PreparedBoundary {
+                schemas,
+                plans_by_relation: &plans_by_relation,
+                domains: &boundary_domains,
+            },
             &relationship_plan,
             row_counts,
             seed,
@@ -1356,16 +1409,18 @@ fn collect_boundary_relationships(
 }
 
 fn generate_prepared_scalar_data(
+    bundle: &AnalysisBundle,
     relations: &[String],
     schemas: &BTreeMap<String, &RelationSchema>,
     plans_by_relation: &BTreeMap<String, Vec<ColumnPlan>>,
+    domains: &ColumnDomains,
     row_counts: GenerationRowCounts,
     seed: u64,
 ) -> Result<GeneratedData, ProtocolGenerationError> {
-    let mut tables = BTreeMap::new();
+    let mut generated_by_relation = BTreeMap::new();
 
     for relation in relations {
-        let schema = source_schema(schemas, relation).map_err(|_| {
+        source_schema(schemas, relation).map_err(|_| {
             ProtocolGenerationError::MissingBoundarySchema {
                 relation: relation.clone(),
             }
@@ -1393,14 +1448,35 @@ fn generate_prepared_scalar_data(
                 relation: relation.clone(),
                 source,
             })?;
-        let table = build_protocol_table(relation, schema, row_counts.total(), generated)?;
-        tables.insert(relation.clone(), table);
+        generated_by_relation.insert(relation.clone(), generated);
     }
 
+    let unhonored_constraints = constraint_generation::enforce(
+        bundle,
+        schemas,
+        &mut generated_by_relation,
+        domains,
+        row_counts.matching(),
+        seed,
+    )?;
+    let mut tables = BTreeMap::new();
+    for relation in relations {
+        let schema = source_schema(schemas, relation)?;
+        let generated = generated_by_relation.remove(relation).ok_or_else(|| {
+            ProtocolGenerationError::MissingBoundarySchema {
+                relation: relation.clone(),
+            }
+        })?;
+        tables.insert(
+            relation.clone(),
+            build_protocol_table(relation, schema, row_counts.total(), generated)?,
+        );
+    }
     Ok(GeneratedData {
         tables,
         row_counts,
         case_coverage: Vec::new(),
+        unhonored_constraints,
     })
 }
 
@@ -1409,11 +1485,17 @@ struct PreparedRelationships<'a> {
     relationships: &'a [EqualityRelationship],
 }
 
+struct PreparedBoundary<'a> {
+    schemas: &'a BTreeMap<String, &'a RelationSchema>,
+    plans_by_relation: &'a BTreeMap<String, Vec<ColumnPlan>>,
+    domains: &'a ColumnDomains,
+}
+
 fn generate_prepared_relational_data(
+    bundle: &AnalysisBundle,
     layer_id: &str,
     relations: &[String],
-    schemas: &BTreeMap<String, &RelationSchema>,
-    plans_by_relation: &BTreeMap<String, Vec<ColumnPlan>>,
+    prepared: &PreparedBoundary<'_>,
     relationship_plan: &PreparedRelationships<'_>,
     row_counts: GenerationRowCounts,
     seed: u64,
@@ -1421,7 +1503,7 @@ fn generate_prepared_relational_data(
     let mut generated_by_relation = BTreeMap::new();
 
     for relation in relations {
-        let plans = plans_by_relation.get(relation).ok_or_else(|| {
+        let plans = prepared.plans_by_relation.get(relation).ok_or_else(|| {
             ProtocolGenerationError::InvalidGenerationBoundary {
                 layer_id: layer_id.to_owned(),
                 message: format!("prepared plan for relation {relation:?} is missing"),
@@ -1445,7 +1527,7 @@ fn generate_prepared_relational_data(
         for row in 0..row_counts.total() {
             set_generated_value(
                 &mut generated_by_relation,
-                schemas,
+                prepared.schemas,
                 column,
                 row,
                 value.clone(),
@@ -1477,7 +1559,7 @@ fn generate_prepared_relational_data(
             })?;
             set_generated_value(
                 &mut generated_by_relation,
-                schemas,
+                prepared.schemas,
                 &witness.column,
                 row_counts.matching() + offset,
                 witness.value.clone(),
@@ -1485,9 +1567,23 @@ fn generate_prepared_relational_data(
         }
     }
 
+    let unhonored_constraints = constraint_generation::enforce(
+        bundle,
+        prepared.schemas,
+        &mut generated_by_relation,
+        prepared.domains,
+        row_counts.matching(),
+        seed,
+    )?;
+    validate_generated_relationships(
+        &generated_by_relation,
+        prepared.schemas,
+        relationship_plan.relationships,
+        row_counts.matching(),
+    )?;
     let mut tables = BTreeMap::new();
     for relation in relations {
-        let schema = schemas.get(relation).copied().ok_or_else(|| {
+        let schema = prepared.schemas.get(relation).copied().ok_or_else(|| {
             ProtocolGenerationError::MissingBoundarySchema {
                 relation: relation.clone(),
             }
@@ -1506,6 +1602,7 @@ fn generate_prepared_relational_data(
         tables,
         row_counts,
         case_coverage: Vec::new(),
+        unhonored_constraints,
     })
 }
 
@@ -1600,6 +1697,155 @@ fn validate_composed_domains(
     Ok(())
 }
 
+/// Foreign-key parents must be generated even when a selected query only reads the child.
+/// This closure uses canonical protocol metadata and typed source schemas, never dbt SQL.
+fn include_constraint_parents(
+    bundle: &AnalysisBundle,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    generated: &mut BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    rows: usize,
+    seed: u64,
+) -> Result<(), ProtocolGenerationError> {
+    loop {
+        let mut missing = BTreeSet::new();
+        for set in bundle.relation_constraints() {
+            if !generated.contains_key(set.relation()) {
+                continue;
+            }
+            for constraint in set.constraints() {
+                if let sql_semantic_protocol::RelationConstraint::ForeignKey(key) = constraint
+                    && !generated.contains_key(key.referenced_relation())
+                {
+                    missing.insert(key.referenced_relation().to_owned());
+                }
+            }
+        }
+        if missing.is_empty() {
+            break;
+        }
+        for relation in missing {
+            let schema = source_schema(schemas, &relation)?;
+            let plans = schema
+                .columns()
+                .iter()
+                .map(|column| {
+                    ColumnPlan::new(
+                        column.name(),
+                        GenerationDomain::Unconstrained {
+                            data_type: column.data_type().clone(),
+                        },
+                        None,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let values = Generator::new()
+                .generate_classified_protocol_values(rows, 0, seed, &plans)
+                .map_err(|source| ProtocolGenerationError::Generator {
+                    relation: relation.clone(),
+                    source,
+                })?;
+            generated.insert(relation, values);
+        }
+    }
+    Ok(())
+}
+
+fn constraint_domains(
+    schemas: &BTreeMap<String, &RelationSchema>,
+    generated: &BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    semantics: &[&ResolvedComposedSemantics],
+) -> Result<ColumnDomains, ProtocolGenerationError> {
+    let mut domains = ColumnDomains::new();
+    for relation in generated.keys() {
+        let schema = source_schema(schemas, relation)?;
+        for column in schema.columns() {
+            let key = (relation.to_owned(), column.name().to_owned());
+            for outcome in semantics {
+                if let Some(domain) =
+                    find_column_domain(outcome.column_domains(), relation, column.name())?
+                {
+                    domains.entry(key.clone()).or_default().push(domain.clone());
+                }
+            }
+        }
+    }
+    Ok(domains)
+}
+
+fn enforce_generated_constraints(
+    bundle: &AnalysisBundle,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    generated: &mut BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    semantics: &[&ResolvedComposedSemantics],
+    matching: usize,
+    seed: u64,
+) -> Result<Vec<String>, ProtocolGenerationError> {
+    let domains = constraint_domains(schemas, generated, semantics)?;
+    constraint_generation::enforce(bundle, schemas, generated, &domains, matching, seed)
+}
+
+fn validate_generated_constraints(
+    bundle: &AnalysisBundle,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    generated: &BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    semantics: &[&ResolvedComposedSemantics],
+    matching: usize,
+) -> Result<(), ProtocolGenerationError> {
+    let domains = constraint_domains(schemas, generated, semantics)?;
+    constraint_generation::validate(bundle, schemas, generated, &domains, matching)
+}
+
+fn generated_relationship_value<'a>(
+    generated: &'a BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    column: &RelationshipColumn,
+    row: usize,
+) -> Result<&'a ProtocolValue, ProtocolGenerationError> {
+    let schema = source_schema(schemas, &column.relation)?;
+    let index = schema
+        .columns()
+        .iter()
+        .position(|field| field.name() == column.column)
+        .ok_or_else(|| ProtocolGenerationError::MissingSchemaColumn {
+            relation: column.relation.clone(),
+            column: column.column.clone(),
+        })?;
+    generated
+        .get(&column.relation)
+        .and_then(|columns| columns.get(index))
+        .and_then(|values| values.get(row))
+        .ok_or_else(|| ProtocolGenerationError::RelationConstraint {
+            relation: column.relation.clone(),
+            message: format!(
+                "missing relationship value at row {row} for {}",
+                column.column
+            ),
+        })
+}
+
+fn validate_generated_relationships(
+    generated: &BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    relationships: &[EqualityRelationship],
+    matching: usize,
+) -> Result<(), ProtocolGenerationError> {
+    // The generator guarantees a shared join witness. A unique key may require other
+    // rows to diverge, without invalidating a join that already has a matching row.
+    if matching == 0 {
+        return Ok(());
+    }
+    for relationship in relationships {
+        let left = generated_relationship_value(generated, schemas, &relationship.left, 0)?;
+        let right = generated_relationship_value(generated, schemas, &relationship.right, 0)?;
+        if left != right || matches!(left, ProtocolValue::Null) {
+            return Err(ProtocolGenerationError::UnsatisfiableRelationship {
+                relationship: relationship.describe(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn generate_scalar_data(
     bundle: &AnalysisBundle,
     layer_id: &str,
@@ -1635,6 +1881,21 @@ fn generate_scalar_data(
         generated_by_relation.insert(relation.clone(), generated);
     }
 
+    include_constraint_parents(
+        bundle,
+        schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        seed,
+    )?;
+    let unhonored_constraints = enforce_generated_constraints(
+        bundle,
+        schemas,
+        &mut generated_by_relation,
+        &[semantics],
+        row_counts.matching(),
+        seed,
+    )?;
     let case_coverage = cover_case_branches(
         bundle,
         &[layer_id.to_owned()],
@@ -1644,8 +1905,16 @@ fn generate_scalar_data(
         row_counts.matching(),
         &BTreeSet::new(),
     )?;
+    validate_generated_constraints(
+        bundle,
+        schemas,
+        &generated_by_relation,
+        &[semantics],
+        row_counts.matching(),
+    )?;
+    let generated_relations = generated_by_relation.keys().cloned().collect::<Vec<_>>();
     let mut tables = BTreeMap::new();
-    for relation in semantics.dependencies() {
+    for relation in &generated_relations {
         let schema = source_schema(schemas, relation)?;
         let generated = generated_by_relation.remove(relation).ok_or_else(|| {
             ProtocolGenerationError::MissingSourceSchema {
@@ -1661,6 +1930,7 @@ fn generate_scalar_data(
         tables,
         row_counts,
         case_coverage,
+        unhonored_constraints,
     })
 }
 
@@ -1736,6 +2006,27 @@ fn generate_relational_data(
         }
     }
 
+    include_constraint_parents(
+        bundle,
+        schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        seed,
+    )?;
+    let unhonored_constraints = enforce_generated_constraints(
+        bundle,
+        schemas,
+        &mut generated_by_relation,
+        &[semantics],
+        row_counts.matching(),
+        seed,
+    )?;
+    validate_generated_relationships(
+        &generated_by_relation,
+        schemas,
+        relationships,
+        row_counts.matching(),
+    )?;
     let keys = relationships
         .iter()
         .flat_map(|join| [&join.left, &join.right])
@@ -1750,8 +2041,22 @@ fn generate_relational_data(
         row_counts.matching(),
         &keys,
     )?;
+    validate_generated_constraints(
+        bundle,
+        schemas,
+        &generated_by_relation,
+        &[semantics],
+        row_counts.matching(),
+    )?;
+    validate_generated_relationships(
+        &generated_by_relation,
+        schemas,
+        relationships,
+        row_counts.matching(),
+    )?;
+    let generated_relations = generated_by_relation.keys().cloned().collect::<Vec<_>>();
     let mut tables = BTreeMap::new();
-    for relation in semantics.dependencies() {
+    for relation in &generated_relations {
         let schema = source_schema(schemas, relation)?;
         let generated = generated_by_relation.remove(relation).ok_or_else(|| {
             ProtocolGenerationError::MissingSourceSchema {
@@ -1766,6 +2071,7 @@ fn generate_relational_data(
         tables,
         row_counts,
         case_coverage,
+        unhonored_constraints,
     })
 }
 
@@ -1931,6 +2237,31 @@ fn generate_all_outcomes_data(
         }
     }
 
+    let selected_semantics = outcomes
+        .iter()
+        .map(|outcome| outcome.semantics)
+        .collect::<Vec<_>>();
+    include_constraint_parents(
+        bundle,
+        &schemas,
+        &mut generated_by_relation,
+        row_counts.matching(),
+        seed,
+    )?;
+    let unhonored_constraints = enforce_generated_constraints(
+        bundle,
+        &schemas,
+        &mut generated_by_relation,
+        &selected_semantics,
+        row_counts.matching(),
+        seed,
+    )?;
+    validate_generated_relationships(
+        &generated_by_relation,
+        &schemas,
+        &relationships,
+        row_counts.matching(),
+    )?;
     let roots = outcomes
         .iter()
         .map(|outcome| outcome.layer_id.clone())
@@ -1952,8 +2283,22 @@ fn generate_all_outcomes_data(
         row_counts.matching(),
         &keys,
     )?;
+    validate_generated_constraints(
+        bundle,
+        &schemas,
+        &generated_by_relation,
+        &selected_semantics,
+        row_counts.matching(),
+    )?;
+    validate_generated_relationships(
+        &generated_by_relation,
+        &schemas,
+        &relationships,
+        row_counts.matching(),
+    )?;
+    let generated_relations = generated_by_relation.keys().cloned().collect::<Vec<_>>();
     let mut tables = BTreeMap::new();
-    for relation in &relations {
+    for relation in &generated_relations {
         let schema = source_schema(&schemas, relation)?;
         let generated = generated_by_relation.remove(relation).ok_or_else(|| {
             ProtocolGenerationError::MissingSourceSchema {
@@ -1968,6 +2313,7 @@ fn generate_all_outcomes_data(
         tables,
         row_counts,
         case_coverage,
+        unhonored_constraints,
     })
 }
 

@@ -14,7 +14,11 @@
       "original_file_path": "models/big_items.sql",
       "language": "sql",
       "compiled_code": "SELECT item_id, order_id, quantity FROM warehouse.raw.order_items WHERE quantity >= 5",
-      "depends_on": {"nodes": ["source.demo.raw.order_items"]}
+      "depends_on": {
+        "nodes": [
+          "source.demo.raw.order_items"
+        ]
+      }
     },
     "test.demo.source_relationships_raw_order_items_order_id__order_id__source_raw_orders_": {
       "unique_id": "test.demo.source_relationships_raw_order_items_order_id__order_id__source_raw_orders_",
@@ -34,7 +38,10 @@
         }
       },
       "depends_on": {
-        "nodes": ["source.demo.raw.orders", "source.demo.raw.order_items"]
+        "nodes": [
+          "source.demo.raw.orders",
+          "source.demo.raw.order_items"
+        ]
       }
     }
   },
@@ -48,7 +55,10 @@
       "source_name": "raw",
       "name": "orders",
       "columns": {
-        "order_id": {"name": "order_id", "data_type": "BIGINT"}
+        "order_id": {
+          "name": "order_id",
+          "data_type": "BIGINT"
+        }
       }
     },
     "source.demo.raw.order_items": {
@@ -60,9 +70,18 @@
       "source_name": "raw",
       "name": "order_items",
       "columns": {
-        "item_id": {"name": "item_id", "data_type": "BIGINT"},
-        "order_id": {"name": "order_id", "data_type": "BIGINT"},
-        "quantity": {"name": "quantity", "data_type": "BIGINT"}
+        "item_id": {
+          "name": "item_id",
+          "data_type": "BIGINT"
+        },
+        "order_id": {
+          "name": "order_id",
+          "data_type": "BIGINT"
+        },
+        "quantity": {
+          "name": "quantity",
+          "data_type": "BIGINT"
+        }
       }
     }
   }

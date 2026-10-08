@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod case_coverage;
+mod constraint_generation;
 pub use case_coverage::{CaseCoverageFinding, CaseCoverageStatus};
 pub mod export;
 pub mod generator;

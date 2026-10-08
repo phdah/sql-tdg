@@ -387,6 +387,54 @@ fn dbt_core_duckdb_whole_project_names_residual_model() {
 
 #[test]
 #[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
+fn dbt_core_build_passes_source_data_tests_on_generated_relations() {
+    let project = DbtProject::new();
+    let source_tests = r#"version: 2
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: orders
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+          - name: customer_id
+            data_tests:
+              - relationships:
+                  arguments:
+                    to: "source('raw', 'customers')"
+                    field: id
+          - name: status
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: [paid, pending]
+      - name: customers
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: legacy_orders
+      - name: returns
+"#;
+    fs::write(project.path().join("models/sources.yml"), source_tests)
+        .expect("dbt data-test schema should be writable");
+    bootstrap_artifacts(&project);
+
+    let generated_dir = project.path().join("generated/source-tests");
+    let generated = run_tdg(&project, TARGET_RELATION, &generated_dir, &[], 4, 0);
+    assert_success("sql-tdg constraint-aware source generation", &generated);
+    let paths = generated_paths(&generated.stdout);
+    assert_generated_rows(&paths, &["orders", "customers"], 4);
+    install_source_seeds(&project, &paths);
+
+    assert_success(
+        "dbt build with generated source tests",
+        &run_dbt(&project, &["build", "--full-refresh"]),
+    );
+}
+
+#[test]
+#[ignore = "requires dbt Core and dbt-duckdb; run make dbt-e2e"]
 fn dbt_core_generates_from_yaml_source_types_without_catalog() {
     let project = DbtProject::new();
     let sources = r#"version: 2
@@ -402,6 +450,16 @@ sources:
           - {name: status, data_type: VARCHAR}
           - {name: created_at, data_type: TIMESTAMP}
           - {name: region, data_type: VARCHAR}
+          - name: parent_id
+            data_type: INTEGER
+            data_tests:
+              - relationships:
+                  arguments:
+                    to: "source('raw', 'parent_lookup')"
+                    field: id
+      - name: parent_lookup
+        columns:
+          - {name: id, data_type: INTEGER}
       - name: customers
         columns:
           - {name: id, data_type: INTEGER}
@@ -435,5 +493,5 @@ sources:
     let output = run_tdg(&project, TARGET_RELATION, &output_dir, &[], 3, 0);
     assert_success("catalog-less dbt source generation", &output);
     let paths = generated_paths(&output.stdout);
-    assert_generated_rows(&paths, &["customers", "orders"], 3);
+    assert_generated_rows(&paths, &["customers", "orders", "parent_lookup"], 3);
 }
