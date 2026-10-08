@@ -577,6 +577,140 @@ fn relational_generation_coordinates_inner_join_keys_and_breaks_one_relationship
     assert!(active.iter().all(|value| *value));
 }
 
+fn int_column(generated: &sql_tdg::GeneratedData, relation: &str, column: &str) -> Vec<i32> {
+    generated
+        .table(relation)
+        .expect("relation should be generated")
+        .get_ints(column)
+        .expect("column should be readable")
+        .expect("column should be built")
+        .to_vec()
+}
+
+/// A rejected row of any relation must never contribute to the query result: every joined
+/// combination that satisfies the query must consist of matching rows only.
+#[test]
+fn rejected_rows_of_every_joined_relation_produce_no_query_output() {
+    let counts = GenerationRowCounts::new(30, 10).expect("test row counts should be valid");
+    let schemas = [
+        schema("orders", &[("id", "INTEGER"), ("region", "INTEGER")]),
+        schema("items", &[("order_id", "INTEGER"), ("qty", "INTEGER")]),
+    ];
+    let generated = generate_classified_from_sql(
+        "SELECT o.id, i.qty
+         FROM orders AS o
+         JOIN items AS i ON o.id = i.order_id
+         WHERE i.qty BETWEEN 1 AND 3 AND o.region IN (1, 2)",
+        "generic",
+        &schemas,
+        counts,
+        7,
+    )
+    .expect("relational generation should succeed");
+
+    let order_ids = int_column(&generated, "orders", "id");
+    let regions = int_column(&generated, "orders", "region");
+    let item_order_ids = int_column(&generated, "items", "order_id");
+    let quantities = int_column(&generated, "items", "qty");
+    let mut matching_output = 0;
+    for (order, order_id) in order_ids.iter().enumerate() {
+        for (item, item_order_id) in item_order_ids.iter().enumerate() {
+            let qualifies = order_id == item_order_id
+                && (1..=3).contains(&quantities[item])
+                && [1, 2].contains(&regions[order]);
+            if qualifies {
+                assert!(
+                    order < counts.matching() && item < counts.matching(),
+                    "rejected row produced query output: orders[{order}] joins items[{item}] on {order_id}"
+                );
+                matching_output += 1;
+            }
+        }
+    }
+    assert!(matching_output >= counts.matching());
+}
+
+#[test]
+fn rejected_rows_of_a_join_chain_produce_no_query_output() {
+    let counts = GenerationRowCounts::new(12, 9).expect("test row counts should be valid");
+    let schemas = [
+        schema("orders", &[("customer_id", "INTEGER")]),
+        schema("customers", &[("id", "INTEGER"), ("region_id", "INTEGER")]),
+        schema("regions", &[("id", "INTEGER"), ("active", "BOOLEAN")]),
+    ];
+    // Rejected rows of different indices must not combine through the chain either, so the
+    // property is checked across many seeds and their witness selections.
+    for seed in 0..32 {
+        let generated = generate_classified_from_sql(
+            "SELECT o.customer_id
+             FROM orders AS o
+             JOIN customers AS c ON o.customer_id = c.id
+             JOIN regions AS r ON c.region_id = r.id
+             WHERE r.active = true",
+            "generic",
+            &schemas,
+            counts,
+            seed,
+        )
+        .expect("relational chain generation should succeed");
+
+        let order_customers = int_column(&generated, "orders", "customer_id");
+        let customer_ids = int_column(&generated, "customers", "id");
+        let customer_regions = int_column(&generated, "customers", "region_id");
+        let region_ids = int_column(&generated, "regions", "id");
+        let mut matching_output = 0;
+        for (order, order_customer) in order_customers.iter().enumerate() {
+            for (customer, customer_id) in customer_ids.iter().enumerate() {
+                if order_customer != customer_id {
+                    continue;
+                }
+                for (region, region_id) in region_ids.iter().enumerate() {
+                    if customer_regions[customer] != *region_id {
+                        continue;
+                    }
+                    assert!(
+                        order < counts.matching()
+                            && customer < counts.matching()
+                            && region < counts.matching(),
+                        "seed {seed}: rejected row produced query output: orders[{order}], customers[{customer}], regions[{region}]"
+                    );
+                    matching_output += 1;
+                }
+            }
+        }
+        assert!(matching_output >= counts.matching());
+    }
+}
+
+#[test]
+fn join_chain_without_spare_keys_for_rejected_rows_is_an_explicit_error() {
+    let counts = GenerationRowCounts::new(2, 3).expect("test row counts should be valid");
+    let schemas = [
+        schema("orders", &[("customer_id", "INTEGER")]),
+        schema("customers", &[("id", "INTEGER"), ("region_id", "INTEGER")]),
+        schema("regions", &[("id", "INTEGER")]),
+    ];
+    let error = generate_classified_from_sql(
+        "SELECT o.customer_id
+         FROM orders AS o
+         JOIN customers AS c ON o.customer_id = c.id
+         JOIN regions AS r ON c.region_id = r.id
+         WHERE r.id IN (1, 2)",
+        "generic",
+        &schemas,
+        counts,
+        SEED,
+    )
+    .expect_err("three rejected rows cannot get distinct keys outside the two matching keys");
+    assert!(
+        matches!(
+            error,
+            ProtocolGenerationError::NoBreakableRelationship { .. }
+        ),
+        "unexpected error: {error}"
+    );
+}
+
 #[test]
 fn relational_generation_resolves_intermediate_join_keys_to_physical_sources() {
     let counts = GenerationRowCounts::new(4, 6).expect("test row counts should be valid");

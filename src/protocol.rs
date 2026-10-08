@@ -1580,12 +1580,17 @@ fn generate_prepared_relational_data(
         }
     }
 
-    distribute_matching_relationship_values(
+    assign_relationship_values(
         relationship_plan.candidates_by_column,
         &adjacency,
         prepared.schemas,
         &mut generated_by_relation,
-        row_counts.matching(),
+        RelationshipRows {
+            layer_id,
+            matching: row_counts.matching(),
+            rejected: row_counts.rejected(),
+            relationship_count: relationship_plan.relationships.len(),
+        },
         &mut rng,
     )?;
 
@@ -2030,12 +2035,17 @@ fn generate_relational_data(
         }
     }
 
-    distribute_matching_relationship_values(
+    assign_relationship_values(
         &candidates_by_column,
         &adjacency,
         schemas,
         &mut generated_by_relation,
-        row_counts.matching(),
+        RelationshipRows {
+            layer_id,
+            matching: row_counts.matching(),
+            rejected: row_counts.rejected(),
+            relationship_count: relationships.len(),
+        },
         &mut rng,
     )?;
 
@@ -2331,12 +2341,17 @@ fn generate_all_outcomes_data(
                 )?;
             }
         }
-        distribute_matching_relationship_values(
+        assign_relationship_values(
             &shared_candidates,
             &adjacency,
             &schemas,
             &mut generated_by_relation,
-            row_counts.matching(),
+            RelationshipRows {
+                layer_id: "all-terminal-outcomes",
+                matching: row_counts.matching(),
+                rejected: 0,
+                relationship_count: relationships.len(),
+            },
             &mut rng,
         )?;
     }
@@ -3048,20 +3063,53 @@ fn choose_component_values<R: Rng + ?Sized>(
     Ok(selected)
 }
 
-/// Assign distinct shared keys to matching rows when their protocol domains allow it.
-/// Rejected rows retain a common baseline, so their selected equality break remains isolated.
-fn distribute_matching_relationship_values<R: Rng + ?Sized>(
+/// Row layout of one relationship-generation run.
+#[derive(Debug, Clone, Copy)]
+struct RelationshipRows<'a> {
+    layer_id: &'a str,
+    matching: usize,
+    rejected: usize,
+    /// Number of equality relationships; key reuse among rejected rows is safe only for one.
+    relationship_count: usize,
+}
+
+/// Assign join keys to every row of each relationship component.
+///
+/// Matching rows receive distinct shared keys when the protocol domains allow it. Rejected rows
+/// receive keys reserved exclusively for them, one per rejected row, so no rejected row of any
+/// relation can join a matching row; the relationship witness applied afterwards then keeps
+/// rejected rows from joining each other. Reuse of a reserved key across rejected rows would let
+/// rows of different rejected indices combine through a chain of relationships, so it is allowed
+/// only when the bundle has a single relationship.
+fn assign_relationship_values<R: Rng + ?Sized>(
     candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
     adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
     schemas: &BTreeMap<String, &RelationSchema>,
     generated: &mut BTreeMap<String, Vec<Vec<ProtocolValue>>>,
-    matching_rows: usize,
+    rows: RelationshipRows<'_>,
     rng: &mut R,
 ) -> Result<(), ProtocolGenerationError> {
     for component in relationship_components(candidates_by_column, adjacency) {
-        let choices = preferred_component_values(candidates_by_column, &component, schemas)?;
+        // Boundary candidates also cover non-key columns; only equality-relationship
+        // components take part in rejected-row key isolation.
+        let is_relationship = component
+            .iter()
+            .any(|column| adjacency.contains_key(column));
+        let rejected = if is_relationship { rows.rejected } else { 0 };
+        let rows = RelationshipRows { rejected, ..rows };
+        let preferred = preferred_component_values(candidates_by_column, &component, schemas)?;
+        let (choices, reserved) = if rows.rejected == 0 {
+            (preferred, Vec::new())
+        } else {
+            split_reserved_relationship_values(
+                &preferred,
+                &component_common_values(candidates_by_column, &component),
+                rows,
+            )?
+        };
+
         let start = sample_relationship_index(rng, choices.len(), "relationship distribution")?;
-        for row in 0..matching_rows {
+        for row in 0..rows.matching {
             let index = (start + row % choices.len()) % choices.len();
             let value = choices.get(index).ok_or_else(|| {
                 ProtocolGenerationError::InvalidRowConfiguration {
@@ -3072,8 +3120,70 @@ fn distribute_matching_relationship_values<R: Rng + ?Sized>(
                 set_generated_value(generated, schemas, column, row, value.clone())?;
             }
         }
+        for offset in 0..rows.rejected {
+            let value = reserved
+                .get(offset % reserved.len().max(1))
+                .ok_or_else(|| ProtocolGenerationError::InvalidRowConfiguration {
+                    message: "reserved rejected relationship value is missing".to_owned(),
+                })?;
+            for column in &component {
+                set_generated_value(
+                    generated,
+                    schemas,
+                    column,
+                    rows.matching + offset,
+                    value.clone(),
+                )?;
+            }
+        }
     }
     Ok(())
+}
+
+/// Split a component's candidate keys into keys for matching rows and keys reserved for
+/// rejected rows. Reserved keys come from the end of the moderate-first candidate order, so
+/// matching rows keep the most moderate keys.
+fn split_reserved_relationship_values(
+    preferred: &[ProtocolValue],
+    common: &[ProtocolValue],
+    rows: RelationshipRows<'_>,
+) -> Result<(Vec<ProtocolValue>, Vec<ProtocolValue>), ProtocolGenerationError> {
+    let mut ordered = preferred.to_vec();
+    for value in common {
+        if !ordered.contains(value) {
+            ordered.push(value.clone());
+        }
+    }
+    let reserve = rows.rejected.min(ordered.len().saturating_sub(1));
+    let unbreakable = || ProtocolGenerationError::NoBreakableRelationship {
+        layer_id: rows.layer_id.to_owned(),
+    };
+    if reserve == 0 || (reserve < rows.rejected && rows.relationship_count > 1) {
+        return Err(unbreakable());
+    }
+
+    let reserved = if preferred.len() > reserve {
+        preferred[preferred.len() - reserve..].to_vec()
+    } else {
+        ordered[ordered.len() - reserve..].to_vec()
+    };
+    let remaining_preferred = preferred
+        .iter()
+        .filter(|value| !reserved.contains(value))
+        .cloned()
+        .collect::<Vec<_>>();
+    let choices = if remaining_preferred.is_empty() {
+        ordered
+            .into_iter()
+            .filter(|value| !reserved.contains(value))
+            .collect()
+    } else {
+        remaining_preferred
+    };
+    if choices.is_empty() {
+        return Err(unbreakable());
+    }
+    Ok((choices, reserved))
 }
 
 /// Group relationship columns into sorted connected components in deterministic order.
