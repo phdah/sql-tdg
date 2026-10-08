@@ -110,15 +110,12 @@ Repository verification is owned by the Makefile. Run:
 make rust-checks
 ```
 
-That command must remain the single source of truth for pull-request CI and runs:
+The Makefile is the single source of truth for verification commands. `make rust-checks`
+aggregates `make fmt`, `make lint`, and `make rust-tests`. Pull-request CI runs
+those targets independently, plus `make doc` and `make dbt-e2e`, so failures in one
+check do not suppress the results of other checks.
 
-```console
-cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets --all-features
-```
-
-Run `cargo doc --no-deps` when public documentation changes.
+Run `make doc` when public documentation changes.
 
 ## Test conventions
 
