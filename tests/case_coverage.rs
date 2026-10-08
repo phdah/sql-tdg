@@ -147,7 +147,7 @@ fn string_case_branches_require_attested_comparison_semantics() {
     let err = generate_classified_from_sql_with_assumptions(
         sql,
         "generic",
-        &[schema.clone()],
+        std::slice::from_ref(&schema),
         rows,
         42,
         &[],
