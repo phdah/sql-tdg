@@ -127,3 +127,55 @@ fn usage_binary_collation_cli_example() {
     assert!(output_dir.join("0001-customers.parquet").is_file());
     assert!(output_dir.join("metadata.sqltdg").is_file());
 }
+
+#[test]
+fn readme_cte_join_aggregation_and_window_example() {
+    let readme = include_str!("../README.md");
+    let sql = readme
+        .split_once("```sql\n")
+        .and_then(|(_, sample)| sample.split_once("\n```"))
+        .map(|(sample, _)| sample)
+        .expect("README must include the documented analytic SQL example");
+
+    let workspace = ExampleDir::new();
+    let output_dir = workspace.0.join("sql-tdg-output");
+    let result = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .args([
+            "generate",
+            "--dialect",
+            "generic",
+            "--sql",
+            sql,
+            "--schema",
+            "orders:customer_id=INTEGER",
+            "--schema",
+            "orders:amount=INTEGER",
+            "--schema",
+            "customers:id=INTEGER",
+            "--schema",
+            "customers:segment=VARCHAR",
+            "--schema",
+            "customers:active=BOOLEAN",
+            "--matching",
+            "12",
+            "--rejected",
+            "0",
+            "--seed",
+            "42",
+            "--output",
+        ])
+        .arg(&output_dir)
+        .output()
+        .expect("compiled CLI must start");
+
+    assert!(
+        result.status.success(),
+        "README analytic SQL example failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8(result.stdout).expect("CLI output must be UTF-8");
+    assert!(stdout.contains("relation=orders "), "{stdout}");
+    assert!(stdout.contains("relation=customers "), "{stdout}");
+    assert!(output_dir.join("metadata.sqltdg").is_file());
+}
