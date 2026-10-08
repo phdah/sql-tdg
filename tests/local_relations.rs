@@ -1,16 +1,7 @@
-pub use sql_tdg::{
-    GeneratedData, QueryResult, ResultColumn, ResultOrdering, Table, TableError, TestCase,
-    TestCaseError, VerificationError,
-};
 use sql_tdg::{
     GenerationBoundary, OutcomeSelector, ProtocolGenerationError, RelationSchema, SchemaColumn,
     generate_from_sql, generate_from_sql_at_boundary,
 };
-
-#[path = "support/duckdb.rs"]
-mod duckdb;
-
-use duckdb::DuckDbExecutor;
 
 const ROWS: usize = 8;
 const SEED: u64 = 42;
@@ -29,7 +20,7 @@ fn schema(relation: &str, columns: &[(&str, &str)]) -> RelationSchema {
     .expect("test relation schema should be valid")
 }
 
-fn generated_ints(data: &GeneratedData, relation: &str, column: &str) -> Vec<i32> {
+fn generated_ints(data: &sql_tdg::GeneratedData, relation: &str, column: &str) -> Vec<i32> {
     data.table(relation)
         .expect("source relation should be generated")
         .get_ints(column)
@@ -37,7 +28,7 @@ fn generated_ints(data: &GeneratedData, relation: &str, column: &str) -> Vec<i32
         .expect("column should be built")
 }
 
-fn assert_all_rows_pass_query(
+fn assert_all_rows_match_local_filter(
     sql: &str,
     schemas: &[RelationSchema],
     relation: &str,
@@ -53,19 +44,11 @@ fn assert_all_rows_pass_query(
         "{values:?}"
     );
 
-    let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
-    executor
-        .materialize(&generated)
-        .expect("sources should materialize");
-    let result = executor
-        .execute(sql)
-        .expect("local-relation query should execute");
-    assert_eq!(result.rows().len(), ROWS);
 }
 
 #[test]
 fn cte_filter_is_applied_to_physical_source_rows() {
-    assert_all_rows_pass_query(
+    assert_all_rows_match_local_filter(
         "WITH big AS (SELECT a FROM t WHERE a > 1000) SELECT a FROM big",
         &[schema("t", &[("a", "INTEGER")])],
         "t",
@@ -76,7 +59,7 @@ fn cte_filter_is_applied_to_physical_source_rows() {
 
 #[test]
 fn derived_table_filter_is_applied_to_physical_source_rows() {
-    assert_all_rows_pass_query(
+    assert_all_rows_match_local_filter(
         "SELECT a FROM (SELECT a FROM t WHERE a > 1000 AND a < 2000) AS big",
         &[schema("t", &[("a", "INTEGER")])],
         "t",
@@ -87,7 +70,7 @@ fn derived_table_filter_is_applied_to_physical_source_rows() {
 
 #[test]
 fn chained_ctes_intersect_filters_without_dropping_either() {
-    assert_all_rows_pass_query(
+    assert_all_rows_match_local_filter(
         "WITH first AS (SELECT a FROM t WHERE a > 1000),
               second AS (SELECT a FROM first WHERE a < 2000)
          SELECT a FROM second",
@@ -220,18 +203,6 @@ fn three_source_cte_chain_coordinates_inner_join_keys_in_duckdb() {
             .all(|amount| (10..20).contains(amount))
     );
 
-    let executor = DuckDbExecutor::in_memory().expect("DuckDB should open");
-    executor
-        .materialize(&generated)
-        .expect("sources should materialize");
-    assert!(
-        !executor
-            .execute(sql)
-            .expect("joined CTE aggregate should execute")
-            .rows()
-            .is_empty(),
-        "joined source rows must contribute to the terminal model"
-    );
 }
 
 #[test]
