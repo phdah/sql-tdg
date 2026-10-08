@@ -1083,6 +1083,47 @@ fn generate_intermediate_boundary_data(
         plans_by_relation.insert(relation.clone(), plans);
     }
 
+    // Intermediate boundaries have independent producer and consumer domains.
+    // Enrich their join-key candidates without inventing constraints outside the protocol.
+    for key in relationships
+        .iter()
+        .flat_map(|relationship| [&relationship.left, &relationship.right])
+        .collect::<BTreeSet<_>>()
+    {
+        let data_type = relationship_data_type(schemas, key)?;
+        let restrictions = boundary_domains.get(&(key.relation.clone(), key.column.clone()));
+        let values = candidates_by_column.get_mut(key).ok_or_else(|| {
+            ProtocolGenerationError::MissingSchemaColumn {
+                relation: key.relation.clone(),
+                column: key.column.clone(),
+            }
+        })?;
+        for candidate in moderate_key_values(data_type).map_err(|message| {
+            ProtocolGenerationError::UnsupportedDomain {
+                relation: key.relation.clone(),
+                column: key.column.clone(),
+                message,
+            }
+        })? {
+            let mut valid = true;
+            for domain in restrictions.into_iter().flatten() {
+                if !value_satisfies_domain(data_type, &candidate, domain).map_err(|message| {
+                    ProtocolGenerationError::UnsupportedDomain {
+                        relation: key.relation.clone(),
+                        column: key.column.clone(),
+                        message,
+                    }
+                })? {
+                    valid = false;
+                    break;
+                }
+            }
+            if valid && !values.contains(&candidate) {
+                values.push(candidate);
+            }
+        }
+    }
+
     if relationships.is_empty() {
         generate_prepared_scalar_data(
             bundle,
