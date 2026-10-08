@@ -1,3 +1,7 @@
+pub use sql_tdg::{
+    GeneratedData, QueryResult, ResultColumn, ResultOrdering, Table, TableError, TestCase,
+    TestCaseError, VerificationError,
+};
 use sql_tdg::{
     GenerationBoundary, OutcomeSelector, ProtocolGenerationError, RelationSchema, SchemaColumn,
     generate_from_sql, generate_from_sql_at_boundary,
@@ -25,7 +29,7 @@ fn schema(relation: &str, columns: &[(&str, &str)]) -> RelationSchema {
     .expect("test relation schema should be valid")
 }
 
-fn generated_ints(data: &sql_tdg::GeneratedData, relation: &str, column: &str) -> Vec<i64> {
+fn generated_ints(data: &GeneratedData, relation: &str, column: &str) -> Vec<i32> {
     data.table(relation)
         .expect("source relation should be generated")
         .get_ints(column)
@@ -38,7 +42,7 @@ fn assert_all_rows_pass_query(
     schemas: &[RelationSchema],
     relation: &str,
     column: &str,
-    range: std::ops::Range<i64>,
+    range: std::ops::Range<i32>,
 ) {
     let generated = generate_from_sql(sql, "duckdb", schemas, ROWS, SEED)
         .expect("composed local-relation semantics should be generated");
@@ -66,7 +70,7 @@ fn cte_filter_is_applied_to_physical_source_rows() {
         &[schema("t", &[("a", "INTEGER")])],
         "t",
         "a",
-        1001..i32::MAX as i64,
+        1001..i32::MAX,
     );
 }
 
