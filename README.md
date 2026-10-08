@@ -1,190 +1,140 @@
 # sql-tdg
 
-> SQL Test Data Generator
+[![Rust checks](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml/badge.svg)](https://github.com/phdah/sql-tdg/actions/workflows/rust-checks.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-sql-tdg is a Rust library that generates Arrow-backed source data satisfying semantics resolved by
+**Synthetic data for real SQL workloads, not just isolated WHERE clauses.**
+
+Randomly generated data often fails to exercise the query you want to test:
+`WHERE` predicates filter out every row, join keys do not match, or dbt data tests
+reject the inputs. **sql-tdg generates coherent source tables whose rows satisfy
+the supported filters and inner equality joins of your SQL workload.** It also
+honors supported keys, foreign-key relationships, and dbt data-test constraints
+on generated relations.
+
+Give it SQL or a compiled dbt project. Using
+[SQL Semantic Protocol](https://github.com/phdah/sql-semantic-protocol)
+as its semantic boundary, sql-tdg chooses valid values and matching join keys,
+then exports deterministic Arrow-backed data as Parquet or CSV. When it cannot
+guarantee an exact match, it returns an explicit error instead of producing
+misleading synthetic data. No database connection is required.
+
+- **Semantic guarantees:** fail explicitly when query conditions cannot be represented exactly.
+- **Reproducible data:** the same input, row counts, and seed yield the same generated rows.
+- **Positive and negative cases:** request matching rows and, for supported selected outcomes,
+  deliberately rejected rows.
+- **Real-world workflows:** generate from raw SQL or compiled dbt artifacts, export Parquet or CSV,
+  and inspect the accompanying `metadata.sqltdg` snapshot.
+
+## SQL coverage
+
+sql-tdg works across **multi-statement transformation pipelines**, not just simple
+`SELECT` queries. The protocol analyzes SQL structure and resolves physical-source
+conditions across transformation layers; sql-tdg uses the exact part of that
+contract to generate consistent test data.
+
+| Workload feature | What sql-tdg can generate against |
+| --- | --- |
+| Filters and joins | Typed `WHERE` domains, supported inner equality joins, and matching keys across relations |
+| Multi-stage SQL | Multiple SQL statements, `CREATE VIEW` / `CREATE TABLE AS SELECT` layers, `WITH` (CTEs), and derived tables |
+| Analytics | Queries projecting `GROUP BY` aggregates such as `COUNT` / `SUM` and window functions such as `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` |
+| Expressions | Projected `CASE` branches with source-column witnesses when the protocol proves them |
+| dbt projects | Compiled model dependency graphs and supported source data tests, including uniqueness and foreign keys |
+
+For example, the input workload can contain joins, a CTE, aggregation, and a
+window expression together:
+
+```sql
+WITH qualifying_orders AS (
+    SELECT o.customer_id, o.amount, c.segment
+    FROM orders AS o
+    JOIN customers AS c ON o.customer_id = c.id
+    WHERE o.amount >= 100 AND c.active = TRUE
+)
+SELECT segment,
+       COUNT(*) AS order_count,
+       SUM(amount) AS total_amount,
+       ROW_NUMBER() OVER (ORDER BY SUM(amount) DESC) AS revenue_rank
+FROM qualifying_orders
+GROUP BY segment
+```
+
+Here the generator targets the **source rows and join relationships** that
+make the workload valid. The caller's SQL engine computes the resulting
+aggregates and window values. sql-tdg does **not** guarantee a particular
+aggregate total or window rank, and filtering on computed results (for example
+`HAVING COUNT(*) > 2` or `QUALIFY revenue_rank = 1`) currently fails exactness
+validation instead of being silently ignored. Set operations such as `UNION`
+are likewise not yet guaranteed for exact generation.
+
+### SQL dialects
+
+Raw SQL uses `--dialect` (default: `generic`) and the dialect support of
 [SQL Semantic Protocol](https://github.com/phdah/sql-semantic-protocol).
+Available dialects include:
 
-SQL Semantic Protocol is the sole SQL semantic boundary. sql-tdg does not parse SQL, derive
-predicate intervals, resolve dialects, or compose lineage itself. It consumes protocol
-`column_domains`, typed source schemas, terminal outcomes, and composed semantics and translates
-them into deterministic generation plans.
+**ANSI, BigQuery, ClickHouse, Databricks, DuckDB, Generic, Hive, Microsoft SQL
+Server (`mssql`), MySQL, PostgreSQL (`postgresql` / `postgres`), Redshift,
+Snowflake, and SQLite.**
+
+dbt input uses its manifest's adapter dialect automatically. Dialect support
+means the SQL can be parsed and analyzed using that dialect; **exact generation
+still depends on the semantics of the particular query**, not just its dialect.
+See [SQL scope and exactness](docs/usage.md#sql-scope-and-dialects).
+
+## Contents
+
+- [SQL coverage](#sql-coverage)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Use with dbt](#use-with-dbt)
+- [Use as a Rust library](#use-as-a-rust-library)
+- [Guarantees and limitations](#guarantees-and-limitations)
+- [Documentation and contributing](#documentation-and-contributing)
+
+## Install
+
+Install the CLI from a checkout of this repository:
+
+```console
+cargo install --path .
+sql-tdg --help
+```
+
+Once the first stable release is published on crates.io, the published package can be
+installed with `cargo install sql-tdg`.
 
 ## Quick start
 
-The package exposes both a library API and an installable `sql-tdg` binary.
-
-```rust
-use sql_tdg::{RelationSchema, SchemaColumn, generate_from_sql};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let schema = RelationSchema::new(
-        "orders",
-        vec![
-            SchemaColumn::from_sql_type("amount", "INTEGER", "postgresql")?,
-            SchemaColumn::from_sql_type("created_at", "TIMESTAMPTZ", "postgresql")?,
-        ],
-    )?;
-
-    let generated = generate_from_sql(
-        "SELECT amount FROM orders WHERE amount >= 10 AND amount < 20",
-        "postgresql",
-        &[schema],
-        100,
-        42,
-    )?;
-
-    let values = generated
-        .table("orders")
-        .expect("orders is a physical source")
-        .get_ints("amount")?
-        .expect("generated column is built");
-
-    assert!(values.iter().all(|value| (10..20).contains(value)));
-    Ok(())
-}
-```
-
-The SQL convenience API delegates analysis to SQL Semantic Protocol and then consumes the returned
-bundle exactly like `generate_from_bundle`. Without an outcome selector, a bundle with more than one
-terminal outcome generates one shared set of physical source tables: every row of a source
-satisfies the supported conditions of every terminal outcome that reads it. Columns and
-relationship keys constrained by several outcomes use values that satisfy all of their domains,
-and conflicting outcomes fail with `ConflictingOutcomes` naming them. Rejected rows and
-intermediate boundaries require selecting one outcome.
-
-The Arrow-backed generator supports canonical protocol datatypes that it can represent losslessly,
-including signed and unsigned integers, floating-point and decimal values, temporal types, strings,
-binary values, nullable values, finite domains, arrays, maps, structs, and JSON-like storage. A
-source datatype that sql-tdg cannot represent exactly returns `UnsupportedSourceType`; it is never
-coerced to a weaker generation type.
-
-For negative test data, `GenerationRowCounts` can be passed to `generate_classified_from_sql` or
-`generate_classified_from_bundle`. Columns without any protocol domain are sampled from varied,
-moderate values: integers 1..=1000 (capped by the type), decimals and floats 0..=1000, dates and
-timestamps in 2020-2025, numbered strings, and NULL for one in ten values of nullable columns.
-Matching scalar range values are sampled across their full
-representable allowed intervals, while rejected range values are sampled from the representable
-complement. Each rejected row deterministically selects one constrained scalar column with a safe
-complement domain and samples every other column normally. The seed makes this random sampling
-reproducible. Unbounded or otherwise insufficient domains fail explicitly when they cannot guarantee
-the requested classification.
-
-For projected CASE expressions, generation uses SQL Semantic Protocol's physical source-column
-branch domains to exercise reachable WHEN and ELSE arms when matching rows permit. Compatible
-branches can share a witness row. Every branch is reported by the library's
-`GeneratedData::case_coverage()` API and the CLI's `case_branch=...` output as
-`covered`, `unreachable`, `unknown`, or `insufficient_rows`. CASE expressions based on
-aggregates or unsafe lineage are reported as unknown, never as covered. Branch witnesses
-are intersected with all applicable query domains and require the same comparison
-assumptions as equivalent filters.
-
-For supported inner equality relationships, multi-relation generation coordinates physical source
-keys using protocol join, graph, schema, and lineage metadata. Matching rows satisfy every connected
-equality relationship and distribute keys across distinct, moderate values when their protocol
-domains permit it. Foreign-key constraints reference existing generated parent keys and spread
-children over several parents when possible. Rejected relational rows deterministically break one
-safely isolatable relationship while keeping scalar domains and the remaining relationships valid.
-Relationship shapes that cannot guarantee those properties fail explicitly.
-
-## Exactness and comparison assumptions
-
-Generation is allowed only when SQL Semantic Protocol reports an exact row-membership contract.
-Composed domains and inner join equalities must cover every condition across the selected
-transformation layers. Unsupported conditions (for example cross-column OR, LIKE, computed
-predicates, HAVING, QUALIFY, LIMIT, OFFSET, FETCH, TABLESAMPLE, or non-inner joins) fail closed
-with the residual reason, SQL clause, and originating layer. This also applies to every terminal
-outcome in project-wide generation and to intermediate boundaries. Rejected rows are produced
-only when the same exactness guarantee holds. Exact predicates and inner equality joins inside
-CTEs and derived tables are supported through the protocol's composed physical-column semantics;
-filters on computed, aggregate, window, or CASE-derived local columns and computed join keys
-remain unsupported unless the protocol can resolve them exactly.
-
-Some comparisons are exact only when the caller attests the database's comparison semantics.
-For example, string filters can require binary collation, floating-point comparisons can require
-no NaN values and equivalent signed zero, and timestamp filters may require a fixed session
-timezone. Missing assumptions cause explicit errors that name the dependent conditions.
-
-Pass declarations through the repeatable CLI option:
-
-```console
-sql-tdg generate \\
-  --dialect generic \\
-  --sql "SELECT name FROM customers WHERE name = 'Alice'" \\
-  --schema 'customers:name=VARCHAR' \\
-  --assume-comparison binary_collation \\
-  --output .sql-tdg/customers
-```
-
-The accepted names are `binary_collation`, `no_char_padding`, `no_nan`,
-`signed_zero_equivalent`, and `session_time_zone`. Declare only settings actually
-guaranteed by the execution environment. Library callers can supply
-`generate_classified_from_sql_with_assumptions`, the boundary-specific
-`SqlGenerationSettings`, or call `AnalysisBundle::declare_comparison_assumptions`
-before generating from a bundle. The declarations are embedded in the protocol snapshot
-in `metadata.sqltdg`.
-
-Unknown or empty value domains, unresolved composition, missing source schemas, ambiguous terminal
-outcomes, and unsupported generation semantics are explicit errors. sql-tdg never reparses SQL as
-a fallback.
-
-
-Generated relations are backend-neutral Arrow data. Callers can consume the Arrow-backed tables
-directly, convert a table to an Arrow `RecordBatch`, or export it as CSV or Parquet. Parquet is the
-preferred lossless file format for the full supported Arrow type surface; CSV is an interoperability
-format for flat data, including dbt seed workflows.
-
-sql-tdg does not connect to, create, seed, or mutate user databases. Loading generated files into a
-database or warehouse is owned by the caller. DuckDB is used only by this repository's end-to-end
-test harness to prove that generated data can execute real SQL workloads.
-
-The original Python proof of concept remains under `python_poc/` as frozen reference material and
-is not part of the active implementation.
-
-
-## CLI generation
-
-Run `sql-tdg --help` (or `sql-tdg generate --help`) for grouped options and
-copyable examples. Terminal help highlights headings and flags when stdout is an
-interactive terminal; redirected output, `NO_COLOR`, and `TERM=dumb` produce plain
-text suitable for piping or documentation. Generation output is unchanged.
-
-The production CLI only generates backend-neutral relation files and reproducibility metadata. It
-does not connect to, seed, execute against, or verify a database.
-
-For raw SQL, declare the typed source schema explicitly. Repeat `--sql`, `--file`, and
-`--schema` as needed:
+Generate 50 matching and 10 rejected `orders` rows for a raw SQL filter:
 
 ```console
 sql-tdg generate \
-  --dialect duckdb \
+  --dialect generic \
   --sql 'SELECT amount FROM orders WHERE amount >= 10 AND amount < 20' \
   --schema 'orders:amount=INTEGER' \
   --matching 50 \
   --rejected 10 \
   --seed 42 \
-  --format parquet \
-  --output .sql-tdg/orders
+  --format csv \
+  --output sql-tdg-output
 ```
 
-Schema entries use `RELATION:COLUMN=SQL_TYPE`. SQL types are normalized by SQL Semantic Protocol
-using the selected dialect. Parquet is the default and preferred lossless format. CSV is available
-for flat interoperability workflows.
+The command writes `sql-tdg-output/0001-orders.csv` and
+`sql-tdg-output/metadata.sqltdg`. The first 50 rows satisfy the filter, and the
+10 rejected rows fall outside it. Use `--format parquet` (the default) for a
+lossless representation of the supported Arrow types. The CLI defaults to 100
+matching and 10 rejected rows per relation. Pass `--rejected 0` when generating
+for all terminal outcomes or when rejected rows cannot be generated safely.
 
-By default the CLI generates 100 matching and 10 rejected rows per relation. Rejected rows require
-one selected terminal outcome and a safe complement domain, so pass `--rejected 0` when generating
-for every terminal outcome, for dbt sources with relationship constraints, or for queries whose
-domains cannot be complemented.
+Multiple `--sql`, `--file`, and `--schema` options are accepted. The
+`--schema` form is `RELATION:COLUMN=SQL_TYPE`; SQL types are normalized by the
+protocol for the selected dialect.
 
-Use `--target <relation>` to generate for one named terminal outcome, or `--target-layer
-<layer-id>` for an anonymous terminal outcome. Omit both to generate one shared dataset for every
-terminal outcome, such as every model of a dbt project; the metadata then records an
-`all-terminal-outcomes` target. By default the CLI materializes
-physical source relations. Repeat `--boundary <relation>` to materialize explicitly selected
-intermediate relations instead.
+## Use with dbt
 
-For dbt, declare every physical source column's `data_type` in your dbt YAML when the
-source table is not yet present in the warehouse:
+Declare physical source column types in your dbt source YAML, particularly if the
+warehouse tables do not exist yet:
 
 ```yaml
 version: 2
@@ -194,100 +144,110 @@ sources:
       - name: orders
         columns:
           - name: id
-            data_type: INTEGER
-          - name: amount
             data_type: BIGINT
+            data_tests:
+              - unique
+              - not_null
+          - name: amount
+            data_type: INTEGER
 ```
 
-Then compile the project and generate data without first creating the sources:
+From a configured dbt project directory, compile the model SQL and generate
+the catalog when the warehouse is available:
 
 ```console
 dbt compile
-
-sql-tdg generate \
-  --dbt-project . \
-  --target warehouse.analytics.customer_summary \
-  --matching 50 \
-  --rejected 10 \
-  --seed 42 \
-  --format parquet \
-  --output .sql-tdg/customer-summary
-```
-
-The CLI reads `target/manifest.json` and uses `target/catalog.json` when it exists. Warehouse
-catalog types take precedence over manifest-declared types. Without a catalog, every physical dependency and physical source referenced only by a
-canonical constraint needs complete, typed column declarations in the manifest. This includes
-foreign-key parent sources that are not read by any compiled model. Missing schema or `data_type`
-metadata fails explicitly. If a compiled model references an undeclared source
-column, generation fails with the protocol's `unknown_schema_column` residual instead of
-silently omitting that column. Use `--dbt-catalog <path>` to require a specific catalog file.
-
-You can also pass artifacts directly:
-
-```console
-sql-tdg generate \
-  --dbt-manifest target/manifest.json \
-  --target warehouse.analytics.customer_summary \
-  --output .sql-tdg/customer-summary
-```
-
-Add `--dbt-catalog target/catalog.json` to the direct-artifact invocation when a
-specific warehouse catalog is required. The dbt adapter and dialect come from SQL Semantic
-Protocol. The CLI does not interpret dbt SQL or artifact semantics itself.
-
-Each successful run writes one deterministic relation file per generated relation plus
-`metadata.sqltdg`. The metadata records the workload identity, selected target and boundary,
-dialect, seed, generated relation row classifications, and the normalized SQL Semantic Protocol
-snapshot needed to reproduce the generation inputs.
-
-## Installation and releases
-
-After the first stable release is published, install the CLI from crates.io with:
-
-```console
-cargo install sql-tdg
-sql-tdg --version
-```
-
-Release Please owns version bumps, changelog entries, `vX.Y.Z` tags, and GitHub releases from
-Conventional Commits. The bootstrap release is forced to `1.0.0`; generated release branches run
-the full Rust and dbt acceptance checks, `cargo publish --dry-run --locked`, and an installed CLI
-smoke test before the release can be published. The release workflow publishes to crates.io with
-the repository `CARGO_REGISTRY_TOKEN` secret and can recover a tagged release that was not
-published, while skipping versions already present on crates.io.
-
-The one-time `release-as: 1.0.0` override must be removed after the initial stable release.
-
-## Verification
-
-Run the complete Rust verification suite with:
-
-```console
-make rust-checks
-```
-
-The dedicated dbt Core acceptance workflow requires dbt with the DuckDB adapter and then runs the
-real fixture project through source generation, native `dbt seed`, model execution, intermediate
-boundary generation, and result verification:
-
-```console
-python -m pip install -r tests/requirements-dbt-e2e.txt
-make dbt-e2e
-```
-
-The same production CLI path is used outside the harness after normal dbt artifacts exist:
-
-```console
-dbt seed
-dbt run
 dbt docs generate
-
-sql-tdg generate \
-  --dbt-project . \
-  --target '"warehouse"."analytics"."customer_summary"' \
-  --matching 50 \
-  --rejected 10 \
-  --seed 42 \
-  --format csv \
-  --output .sql-tdg/customer-summary
+sql-tdg generate --dbt-project . --matching 50 --rejected 0 --seed 42 --output sql-tdg-output
 ```
+
+`dbt docs generate` builds `target/catalog.json` using warehouse metadata, including
+column types for relations that already exist. For fresh projects whose physical
+sources do not yet exist in the warehouse, the catalog may be empty or
+incomplete; declare every physical source column's `data_type` in source YAML
+so generation can use the compiled manifest instead.
+
+sql-tdg reads `target/manifest.json` and, when present, `target/catalog.json`.
+Catalog types take precedence over the source YAML's `data_type` declarations.
+With no `--target`, it generates **one shared physical-source dataset** satisfying
+all compatible terminal models. This whole-project mode requires
+`--rejected 0` because deliberately rejected rows require a single selected
+terminal outcome. Conflicting outcomes fail explicitly instead of producing
+falsely labeled data.
+
+Supported dbt generic data tests and constraints (unique, not_null, accepted_values,
+and relationships) are enforced **on generated relations** through the protocol.
+Constraints on models that are not being generated are reported as not honored.
+Generation does not execute `dbt build` or load files into your warehouse; that
+remains the caller's responsibility.
+
+See [dbt options and limitations](docs/usage.md#dbt-projects) for selecting a single
+model, intermediate boundaries, and missing catalog schemas.
+
+## Use as a Rust library
+
+```rust
+use sql_tdg::{RelationSchema, SchemaColumn, generate_from_sql};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let schema = RelationSchema::new(
+        "orders",
+        vec![SchemaColumn::from_sql_type("amount", "INTEGER", "generic")?],
+    )?;
+
+    let generated = generate_from_sql(
+        "SELECT amount FROM orders WHERE amount >= 10 AND amount < 20",
+        "generic",
+        &[schema],
+        100,
+        42,
+    )?;
+
+    let amounts = generated
+        .table("orders")
+        .ok_or_else(|| std::io::Error::other("orders source was not generated"))?
+        .get_ints("amount")?
+        .ok_or_else(|| std::io::Error::other("amount column was not generated"))?;
+
+    assert!(amounts.iter().all(|value| (10..20).contains(value)));
+    Ok(())
+}
+```
+
+Library callers can also generate from an `AnalysisBundle`, select outcomes or
+boundaries, request classified rows, and consume Arrow tables directly.
+
+## Guarantees and limitations
+
+sql-tdg **does not parse or reinterpret SQL**. SQL Semantic Protocol supplies
+the canonical semantic contract. Generation succeeds only when row membership
+is exact for the selected outcome or set of outcomes.
+
+| Supported when fully described by the protocol | Fails closed or is reported |
+| --- | --- |
+| Scalar value domains, ranges, nullability, and typed source schemas | Missing schemas, contradictory domains, unknown types |
+| Supported inner equality joins, CTEs, and derived tables | Non-inner joins, computed join keys, unresolved composition |
+| Primary/unique keys, foreign keys, not-null, accepted values on generated relations | Unsupported dbt tests or constraint diagnostics |
+| Reachable projected CASE branches with physical-source witnesses | Aggregate/computed CASE branches whose coverage cannot be proven (reported as unknown) |
+| Binary-collated strings and other sensitive comparisons with caller-attested assumptions | Missing comparison assumptions or non-exact conditions such as LIKE, cross-column OR, HAVING, QUALIFY, LIMIT, OFFSET |
+
+The generator is **not** a database client or a query-execution engine. Database
+execution in this repository exists only in the DuckDB end-to-end test harness.
+
+For a detailed description of exactness, comparison assumptions, data types,
+output metadata, and rejected-row restrictions, see [Usage and semantics](docs/usage.md).
+
+## Documentation and contributing
+
+- [Usage and semantics](docs/usage.md)
+- [Contributor and architecture conventions](AGENTS.md)
+- [Changelog](CHANGELOG.md)
+- [Issue tracker](https://github.com/phdah/sql-tdg/issues)
+
+Run `make rust-checks` before opening a pull request, and `make doc` when
+public API documentation changes. The [Makefile](Makefile) defines verification
+commands; [AGENTS.md](AGENTS.md) defines development conventions.
+
+## License
+
+Licensed under the [MIT License](LICENSE).
