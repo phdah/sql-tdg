@@ -379,7 +379,10 @@ fn compiled_cli_generates_typed_dbt_sources_without_a_catalog() {
     let metadata =
         sql_tdg::TestCaseMetadata::deserialize(&metadata).expect("metadata should round-trip");
     assert!(
-        metadata.protocol().document().contains(r#""source_kind":"dbt_manifest""#),
+        metadata
+            .protocol()
+            .document()
+            .contains(r#""source_kind":"dbt_manifest""#),
         "protocol snapshot must identify manifest schema evidence"
     );
 }
