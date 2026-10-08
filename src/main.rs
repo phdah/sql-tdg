@@ -490,6 +490,19 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
                     path.display()
                 );
             }
+            for finding in scenario.data().case_coverage() {
+                println!(
+                    "scenario={name} case_branch={} status={} detail={}",
+                    finding.location(),
+                    finding.status().as_str(),
+                    finding.detail()
+                );
+            }
+            for relation in scenario.data().unhonored_constraints() {
+                println!(
+                    "scenario={name} relation_constraints={relation} status=not_honored reason=relation_not_generated"
+                );
+            }
             println!("scenario={name} metadata={}", metadata_path.display());
         }
         return Ok(());
