@@ -1687,10 +1687,10 @@ fn include_constraint_parents(
                 continue;
             }
             for constraint in set.constraints() {
-                if let sql_semantic_protocol::RelationConstraint::ForeignKey(key) = constraint {
-                    if !generated.contains_key(key.referenced_relation()) {
-                        missing.insert(key.referenced_relation().to_owned());
-                    }
+                if let sql_semantic_protocol::RelationConstraint::ForeignKey(key) = constraint
+                    && !generated.contains_key(key.referenced_relation())
+                {
+                    missing.insert(key.referenced_relation().to_owned());
                 }
             }
         }
