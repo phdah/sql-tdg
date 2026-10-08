@@ -520,7 +520,15 @@ fn compiled_cli_generates_relationship_parent_without_a_model_dependency() {
         .arg("--dbt-manifest")
         .arg(&manifest_path)
         .args(["--target", "warehouse.analytics.big_items"])
-        .args(["--matching", "4", "--seed", "42", "--format", "csv", "--output"])
+        .args([
+            "--matching",
+            "4",
+            "--seed",
+            "42",
+            "--format",
+            "csv",
+            "--output",
+        ])
         .arg(&output_dir)
         .output()
         .expect("compiled sql-tdg binary should execute");
