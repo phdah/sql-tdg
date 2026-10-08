@@ -503,6 +503,32 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
 }
 
 #[test]
+fn compiled_cli_rejects_accepted_values_conflicting_with_query_domain() {
+    let workspace = TestDir::new("dbt-accepted-value-conflict");
+    let manifest_path = workspace.path().join("manifest.json");
+    let original = include_str!("fixtures/dbt_manifest_constraints.json");
+    let conflicting = original.replace("quantity >= 5", "quantity >= 500");
+    assert_ne!(conflicting, original);
+    fs::write(&manifest_path, conflicting).expect("manifest should be writable");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .arg("generate")
+        .arg("--dbt-manifest")
+        .arg(&manifest_path)
+        .args(["--target", "warehouse.analytics.big_items"])
+        .args(["--matching", "4", "--format", "csv", "--output"])
+        .arg(workspace.path().join("generated"))
+        .output()
+        .expect("compiled sql-tdg binary should execute");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("relation constraint") && stderr.contains("quantity"),
+        "unexpected conflicting-domain diagnostic: {stderr}"
+    );
+}
+
+#[test]
 fn compiled_cli_rejects_unattributed_dbt_test_diagnostics() {
     let workspace = TestDir::new("dbt-unattributed-constraint");
     let manifest_path = workspace.path().join("manifest.json");
