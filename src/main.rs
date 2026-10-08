@@ -463,9 +463,7 @@ fn analyze_dbt(args: &GenerateArgs) -> Result<AnalysisProduct, CliError> {
     })?;
     let catalog_json = match fs::read_to_string(&catalog_path) {
         Ok(json) => Some(json),
-        Err(error) if args.dbt_catalog.is_none() && error.kind() == io::ErrorKind::NotFound => {
-            None
-        }
+        Err(error) if args.dbt_catalog.is_none() && error.kind() == io::ErrorKind::NotFound => None,
         Err(error) => {
             return Err(CliError::new(format!(
                 "failed to read dbt catalog {}: {error}",
