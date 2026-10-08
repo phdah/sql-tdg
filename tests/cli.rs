@@ -273,3 +273,59 @@ fn compiled_cli_returns_nonzero_for_missing_raw_schema() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("requires at least one --schema"));
 }
+
+#[test]
+fn compiled_cli_requires_and_records_comparison_assumptions() {
+    let workspace = TestDir::new("comparison-assumptions");
+    let without = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .args([
+            "generate",
+            "--sql",
+            "SELECT name FROM customers WHERE name = 'Alice'",
+            "--schema",
+            "customers:name=VARCHAR",
+            "--output",
+        ])
+        .arg(workspace.path().join("undeclared"))
+        .output()
+        .expect("compiled CLI must execute");
+    assert!(!without.status.success());
+    assert!(
+        String::from_utf8_lossy(&without.stderr).contains("binary_collation"),
+        "stderr: {}",
+        String::from_utf8_lossy(&without.stderr)
+    );
+
+    let output_dir = workspace.path().join("declared");
+    let with = Command::new(env!("CARGO_BIN_EXE_sql-tdg"))
+        .args([
+            "generate",
+            "--sql",
+            "SELECT name FROM customers WHERE name = 'Alice'",
+            "--schema",
+            "customers:name=VARCHAR",
+            "--assume-comparison",
+            "binary_collation",
+            "--matching",
+            "3",
+            "--format",
+            "csv",
+            "--output",
+        ])
+        .arg(&output_dir)
+        .output()
+        .expect("compiled CLI must execute");
+    assert!(
+        with.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&with.stderr)
+    );
+    let metadata = fs::read_to_string(output_dir.join("metadata.sqltdg"))
+        .expect("metadata must be written");
+    let metadata = sql_tdg::TestCaseMetadata::deserialize(&metadata)
+        .expect("metadata must round-trip");
+    assert!(
+        metadata.protocol().document().contains("binary_collation"),
+        "protocol snapshot must retain comparison declarations"
+    );
+}
