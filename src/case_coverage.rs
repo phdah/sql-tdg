@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sql_semantic_protocol::{
-    AnalysisBundle, CaseSourceDomains, ComparisonAssumption, DataType, Expression,
-    RelationSchema, ResolvedComposedSemantics, ValueDomain,
+    AnalysisBundle, CaseSourceDomains, ComparisonAssumption, DataType, Expression, RelationSchema,
+    ResolvedComposedSemantics, ValueDomain,
 };
 
 use crate::protocol::ProtocolGenerationError;
@@ -37,12 +37,14 @@ pub(crate) fn cover_case_branches(
         if !visited.insert(id.clone()) {
             continue;
         }
-        let layer = bundle.layers().iter().find(|layer| layer.id() == id).ok_or_else(|| {
-            ProtocolGenerationError::CaseCoverage {
+        let layer = bundle
+            .layers()
+            .iter()
+            .find(|layer| layer.id() == id)
+            .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
                 location: id.clone(),
                 message: "referenced transformation layer is missing".to_owned(),
-            }
-        })?;
+            })?;
         if let sql_semantic_protocol::ComposedSemantics::Resolved(semantics) =
             layer.composed_semantics()
         {
@@ -54,7 +56,12 @@ pub(crate) fn cover_case_branches(
                 );
             }
         }
-        for edge in bundle.graph().edges().iter().filter(|edge| edge.consumer_layer_id() == id) {
+        for edge in bundle
+            .graph()
+            .edges()
+            .iter()
+            .filter(|edge| edge.consumer_layer_id() == id)
+        {
             pending.extend(edge.producer_layer_ids().iter().cloned());
         }
     }
@@ -65,7 +72,8 @@ pub(crate) fn cover_case_branches(
             location: "matching rows".to_owned(),
             message: format!(
                 "{} CASE branches require at least {} matching rows, got {matching_rows}",
-                targets.len(), targets.len()
+                targets.len(),
+                targets.len()
             ),
         });
     }
@@ -106,7 +114,10 @@ pub(crate) fn cover_case_branches(
                     });
                 };
                 by_column
-                    .entry((relation.to_owned(), column_domain.column().name().to_owned()))
+                    .entry((
+                        relation.to_owned(),
+                        column_domain.column().name().to_owned(),
+                    ))
                     .or_default()
                     .push(column_domain.domain());
             }
@@ -115,37 +126,43 @@ pub(crate) fn cover_case_branches(
             let mut possible = true;
             for (key, mut domains) in by_column {
                 let (relation, column) = (&key.0, &key.1);
-                let schema = schemas.get(relation).ok_or_else(|| {
-                    ProtocolGenerationError::CaseCoverage {
-                        location: target.location.clone(),
-                        message: format!("CASE source relation {relation} has no schema"),
-                    }
-                })?;
-                let source_column = schema.columns().iter().find(|item| item.name() == column)
+                let schema =
+                    schemas
+                        .get(relation)
+                        .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
+                            location: target.location.clone(),
+                            message: format!("CASE source relation {relation} has no schema"),
+                        })?;
+                let source_column = schema
+                    .columns()
+                    .iter()
+                    .find(|item| item.name() == column)
                     .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
                         location: target.location.clone(),
                         message: format!("CASE source column {relation}.{column} has no schema"),
                     })?;
                 for outcome in outcomes {
                     domains.extend(
-                        outcome.column_domains().iter()
-                            .filter(|domain| domain.column().relation() == Some(relation.as_str())
-                                && domain.column().name() == column)
+                        outcome
+                            .column_domains()
+                            .iter()
+                            .filter(|domain| {
+                                domain.column().relation() == Some(relation.as_str())
+                                    && domain.column().name() == column
+                            })
                             .map(|domain| domain.domain()),
                     );
                 }
 
-                require_case_assumptions(
-                    &target.location,
-                    source_column.data_type(),
-                    outcomes,
-                )?;
+                require_case_assumptions(&target.location, source_column.data_type(), outcomes)?;
                 let mut pool = Vec::new();
                 for domain in &domains {
-                    for candidate in candidates(source_column.data_type(), Some(domain))
-                        .map_err(|message| ProtocolGenerationError::CaseCoverage {
-                            location: target.location.clone(),
-                            message: format!("cannot sample {relation}.{column}: {message}"),
+                    for candidate in
+                        candidates(source_column.data_type(), Some(domain)).map_err(|message| {
+                            ProtocolGenerationError::CaseCoverage {
+                                location: target.location.clone(),
+                                message: format!("cannot sample {relation}.{column}: {message}"),
+                            }
                         })?
                     {
                         if !pool.contains(&candidate) {
@@ -186,23 +203,27 @@ pub(crate) fn cover_case_branches(
         let Some(witness) = witness else {
             return Err(ProtocolGenerationError::CaseCoverage {
                 location: target.location.clone(),
-                message: "branch is unreachable under the composed query column domains"
-                    .to_owned(),
+                message: "branch is unreachable under the composed query column domains".to_owned(),
             });
         };
         for ((relation, column), value) in witness {
-            let schema = schemas.get(&relation).ok_or_else(|| {
-                ProtocolGenerationError::CaseCoverage {
-                    location: target.location.clone(),
-                    message: format!("missing source schema for {relation}"),
-                }
-            })?;
-            let index = schema.columns().iter().position(|item| item.name() == column)
+            let schema =
+                schemas
+                    .get(&relation)
+                    .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
+                        location: target.location.clone(),
+                        message: format!("missing source schema for {relation}"),
+                    })?;
+            let index = schema
+                .columns()
+                .iter()
+                .position(|item| item.name() == column)
                 .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
                     location: target.location.clone(),
                     message: format!("missing source column {relation}.{column}"),
                 })?;
-            let slot = generated.get_mut(&relation)
+            let slot = generated
+                .get_mut(&relation)
                 .and_then(|columns| columns.get_mut(index))
                 .and_then(|values| values.get_mut(row))
                 .ok_or_else(|| ProtocolGenerationError::CaseCoverage {
@@ -241,18 +262,27 @@ fn require_case_assumptions(
             }
         }
         DataType::FloatingPoint { .. } => {
-            required.extend([ComparisonAssumption::NoNan, ComparisonAssumption::SignedZeroEquivalent]);
+            required.extend([
+                ComparisonAssumption::NoNan,
+                ComparisonAssumption::SignedZeroEquivalent,
+            ]);
         }
         DataType::Timestamp { .. } => required.push(ComparisonAssumption::SessionTimeZone),
         _ => {}
     };
     for assumption in required {
-        if !outcomes.iter().all(|outcome| outcome.condition_exactness()
-            .declared_assumptions().contains(&assumption))
-        {
+        if !outcomes.iter().all(|outcome| {
+            outcome
+                .condition_exactness()
+                .declared_assumptions()
+                .contains(&assumption)
+        }) {
             return Err(ProtocolGenerationError::CaseCoverage {
                 location: location.to_owned(),
-                message: format!("CASE comparison requires declared assumption {}", assumption.as_str()),
+                message: format!(
+                    "CASE comparison requires declared assumption {}",
+                    assumption.as_str()
+                ),
             });
         }
     }
