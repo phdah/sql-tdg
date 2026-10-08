@@ -17,7 +17,8 @@ use sql_semantic_protocol::{
 use sql_tdg::{
     GeneratedData, GeneratedRelation, GenerationBoundary, GenerationRowCounts, OutcomeSelector,
     ProtocolSnapshot, TargetKind, TestCaseMetadata, TestTarget, WorkloadIdentity,
-    generate_classified_from_bundle_at_boundary, generate_scenarios_from_bundle, write_csv, write_parquet,
+    generate_classified_from_bundle_at_boundary, generate_scenarios_from_bundle, write_csv,
+    write_parquet,
 };
 
 const HELP: &str = r#"sql-tdg
@@ -384,11 +385,18 @@ fn validate_generate_args(args: &GenerateArgs) -> Result<(), CliError> {
     }
 
     if args.scenarios {
-        if args.target_relation.is_some() || args.target_layer.is_some() || !args.boundaries.is_empty() {
-            return Err(CliError::new("--scenarios cannot be combined with --target, --target-layer, or --boundary"));
+        if args.target_relation.is_some()
+            || args.target_layer.is_some()
+            || !args.boundaries.is_empty()
+        {
+            return Err(CliError::new(
+                "--scenarios cannot be combined with --target, --target-layer, or --boundary",
+            ));
         }
         if args.rejected != 0 {
-            return Err(CliError::new("--scenarios requires --rejected 0; rejected rows cannot be classified across outcomes"));
+            return Err(CliError::new(
+                "--scenarios requires --rejected 0; rejected rows cannot be classified across outcomes",
+            ));
         }
     }
 
@@ -446,7 +454,9 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
                 CliError::new(format!("failed to inspect output directory: {error}"))
             })?;
             if entries.next().is_some() {
-                return Err(CliError::new("--scenarios requires a new or empty output directory to prevent stale scenario files"));
+                return Err(CliError::new(
+                    "--scenarios requires a new or empty output directory to prevent stale scenario files",
+                ));
             }
         }
         for (index, scenario) in scenarios.iter().enumerate() {
@@ -461,14 +471,24 @@ fn generate(args: GenerateArgs) -> Result<(), CliError> {
                 args.seed,
                 scenario.data(),
             )?;
-            let exported = write_generated_outputs(scenario.data(), args.output_format, &directory)?;
+            let exported =
+                write_generated_outputs(scenario.data(), args.output_format, &directory)?;
             let metadata_path = directory.join("metadata.sqltdg");
             fs::write(&metadata_path, metadata.serialize()).map_err(|error| {
-                CliError::new(format!("failed to write metadata {}: {error}", metadata_path.display()))
+                CliError::new(format!(
+                    "failed to write metadata {}: {error}",
+                    metadata_path.display()
+                ))
             })?;
-            println!("scenario={name} outcomes={}", scenario.outcomes().join(", "));
+            println!(
+                "scenario={name} outcomes={}",
+                scenario.outcomes().join(", ")
+            );
             for (relation, path) in exported {
-                println!("scenario={name} relation={relation} path={}", path.display());
+                println!(
+                    "scenario={name} relation={relation} path={}",
+                    path.display()
+                );
             }
             println!("scenario={name} metadata={}", metadata_path.display());
         }
