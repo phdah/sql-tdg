@@ -2897,9 +2897,9 @@ fn relationship_candidates(
             message,
         };
         let mut values = Vec::new();
-        for value in moderate_key_values(data_type).map_err(&unsupported)? {
+        for value in moderate_key_values(data_type).map_err(unsupported)? {
             let allowed = if let Some(restriction) = domain {
-                value_satisfies_domain(data_type, &value, restriction).map_err(&unsupported)?
+                value_satisfies_domain(data_type, &value, restriction).map_err(unsupported)?
             } else {
                 true
             };
