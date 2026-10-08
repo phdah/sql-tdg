@@ -221,6 +221,8 @@ fn sample_valid<R: Rng + ?Sized>(
                 .ok_or_else(|| failure(relation, "missing accepted value"))?
         } else if let Some(domain) = restriction {
             match domain {
+                ValueDomain::Unbounded => sample_unconstrained_value(data_type, rng)
+                    .map_err(|reason| failure(relation, reason))?,
                 ValueDomain::Ranges(ranges) => sample_range_value(data_type, ranges.ranges(), rng)
                     .map_err(|reason| failure(relation, reason))?,
                 _ => {
