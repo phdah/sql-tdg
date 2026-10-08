@@ -45,7 +45,7 @@ GENERATION OPTIONS
   --boundary <relation>           Materialize an intermediate (repeatable)
   --assume-comparison <name>      Attest comparison semantics (repeatable)
   --matching <n>                  Matching rows per relation (default: 100)
-  --rejected <n>                  Rejected rows per relation (default: 0)
+  --rejected <n>                  Rejected rows per relation (default: 10)
   --seed <n>                      Deterministic seed (default: 42)
 
 OUTPUT OPTIONS
@@ -263,7 +263,7 @@ where
         comparison_assumptions: Vec::new(),
         seed: 42,
         matching: 100,
-        rejected: 0,
+        rejected: 10,
         output_format: OutputFormat::Parquet,
         output_dir: PathBuf::from("sql-tdg-output"),
         workload_name: None,

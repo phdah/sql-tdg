@@ -171,6 +171,11 @@ Schema entries use `RELATION:COLUMN=SQL_TYPE`. SQL types are normalized by SQL S
 using the selected dialect. Parquet is the default and preferred lossless format. CSV is available
 for flat interoperability workflows.
 
+By default the CLI generates 100 matching and 10 rejected rows per relation. Rejected rows require
+one selected terminal outcome and a safe complement domain, so pass `--rejected 0` when generating
+for every terminal outcome, for dbt sources with relationship constraints, or for queries whose
+domains cannot be complemented.
+
 Use `--target <relation>` to generate for one named terminal outcome, or `--target-layer
 <layer-id>` for an anonymous terminal outcome. Omit both to generate one shared dataset for every
 terminal outcome, such as every model of a dbt project; the metadata then records an
