@@ -576,6 +576,44 @@ fn non_null_candidates(
     }
 }
 
+/// Moderate, deterministic key candidates; consumers must still check every protocol domain.
+pub(crate) fn moderate_key_values(data_type: &DataType) -> Result<Vec<ProtocolValue>, String> {
+    if let DataType::Nullable(inner) = data_type {
+        return moderate_key_values(inner);
+    }
+
+    let mut values = Vec::new();
+    for number in 1..=64_i128 {
+        let value = match data_type {
+            DataType::SignedInteger { .. } | DataType::UnsignedInteger { .. } => {
+                let (_, upper) = ordered_type_bounds(data_type)?;
+                integer_like(&upper, number)?
+            }
+            DataType::Decimal { scale, .. } => {
+                let factor = pow10_i128(scale.unwrap_or(0))?;
+                ProtocolValue::Decimal128(
+                    number
+                        .checked_mul(factor)
+                        .ok_or("moderate decimal key overflow")?,
+                )
+            }
+            DataType::FloatingPoint { bits } if bits.unwrap_or(64) <= 32 => {
+                ProtocolValue::Float32((number as f32).to_bits())
+            }
+            DataType::FloatingPoint { bits } if bits.unwrap_or(64) <= 64 => {
+                ProtocolValue::Float64((number as f64).to_bits())
+            }
+            DataType::String { fixed: false, .. } => ProtocolValue::String(number.to_string()),
+            DataType::Date => ProtocolValue::Date32(18_262 + number as i32),
+            _ => return Ok(Vec::new()),
+        };
+        if value_satisfies_domain(data_type, &value, &ValueDomain::Unbounded)? {
+            values.push(value);
+        }
+    }
+    Ok(values)
+}
+
 pub(crate) fn sample_range_value<R: Rng + ?Sized>(
     data_type: &DataType,
     ranges: &[ValueRange],

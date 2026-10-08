@@ -10,7 +10,7 @@ use sql_semantic_protocol::{
 
 use crate::protocol::ProtocolGenerationError;
 use crate::protocol_value::{
-    ProtocolValue, candidates, sample_range_value, sample_unconstrained_value,
+    ProtocolValue, candidates, moderate_key_values, sample_range_value, sample_unconstrained_value,
     value_satisfies_domain,
 };
 
@@ -323,6 +323,7 @@ pub(crate) fn enforce(
     let mut unhonored = Vec::new();
     let mut accepted = BTreeMap::<String, BTreeMap<String, Vec<ProtocolValue>>>::new();
     let mut nonnull = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut key_columns = BTreeMap::<String, BTreeSet<String>>::new();
     for constraints in bundle.relation_constraints() {
         let relation = constraints.relation();
         if !data.contains_key(relation) {
@@ -339,10 +340,12 @@ pub(crate) fn enforce(
         }
         let mut relation_accepted = BTreeMap::new();
         let mut relation_nonnull = BTreeSet::new();
+        let mut relation_keys = BTreeSet::new();
         for constraint in constraints.constraints() {
             match constraint {
                 RelationConstraint::PrimaryKey(key) => {
                     relation_nonnull.extend(key.columns().iter().cloned());
+                    relation_keys.extend(key.columns().iter().cloned());
                 }
                 RelationConstraint::NotNull(column) => {
                     relation_nonnull.insert(column.column().to_owned());
@@ -361,7 +364,12 @@ pub(crate) fn enforce(
                         .collect::<Result<Vec<_>, _>>()?;
                     relation_accepted.insert(column.column().to_owned(), values);
                 }
-                RelationConstraint::UniqueKey(_) | RelationConstraint::ForeignKey(_) => {}
+                RelationConstraint::UniqueKey(key) => {
+                    relation_keys.extend(key.columns().iter().cloned());
+                }
+                RelationConstraint::ForeignKey(key) => {
+                    relation_keys.extend(key.columns().iter().cloned());
+                }
                 _ => {
                     return Err(failure(
                         relation,
@@ -372,6 +380,7 @@ pub(crate) fn enforce(
         }
         accepted.insert(relation.to_owned(), relation_accepted);
         nonnull.insert(relation.to_owned(), relation_nonnull);
+        key_columns.insert(relation.to_owned(), relation_keys);
     }
 
     if data.values().any(|columns| {
@@ -399,20 +408,60 @@ pub(crate) fn enforce(
             .get(relation)
             .ok_or_else(|| failure(relation, "missing non-null metadata"))?;
         for column in schema.columns() {
-            if !required.contains(column.name()) && !relation_accepted.contains_key(column.name()) {
+            let is_key = key_columns
+                .get(relation)
+                .is_some_and(|columns| columns.contains(column.name()));
+            if !required.contains(column.name())
+                && !relation_accepted.contains_key(column.name())
+                && !is_key
+            {
                 continue;
             }
-            for row in 0..matching_rows {
-                if !permitted(
+
+            let moderate = if is_key {
+                moderate_key_values(column.data_type())
+                    .map_err(|message| failure(relation, format!("{}: {message}", column.name())))?
+            } else {
+                Vec::new()
+            };
+            let mut allowed_moderate = Vec::new();
+            for candidate in moderate {
+                if permitted(
                     domains,
                     relation,
                     column.name(),
                     column.data_type(),
-                    field(data, schemas, relation, column.name(), row)?,
+                    &candidate,
                     relation_accepted.get(column.name()),
                     required.contains(column.name()),
                 )? {
-                    let replacement = sample_valid(
+                    allowed_moderate.push(candidate);
+                }
+            }
+
+            for row in 0..matching_rows {
+                let current = field(data, schemas, relation, column.name(), row)?;
+                let valid = permitted(
+                    domains,
+                    relation,
+                    column.name(),
+                    column.data_type(),
+                    current,
+                    relation_accepted.get(column.name()),
+                    required.contains(column.name()),
+                )?;
+                if valid && (allowed_moderate.is_empty() || allowed_moderate.contains(current)) {
+                    continue;
+                }
+                let replacement = if !allowed_moderate.is_empty() {
+                    let index = choose_index(&mut rng, allowed_moderate.len())
+                        .map_err(|reason| failure(relation, reason))?;
+                    allowed_moderate
+                        .get(index)
+                        .cloned()
+                        .ok_or_else(|| failure(relation, "missing moderate key candidate"))?
+                } else {
+                    sample_valid(
                         &mut rng,
                         domains,
                         relation,
@@ -420,9 +469,9 @@ pub(crate) fn enforce(
                         column.data_type(),
                         relation_accepted.get(column.name()),
                         required.contains(column.name()),
-                    )?;
-                    replace(data, schemas, relation, column.name(), row, replacement)?;
-                }
+                    )?
+                };
+                replace(data, schemas, relation, column.name(), row, replacement)?;
             }
         }
     }
@@ -513,17 +562,9 @@ pub(crate) fn enforce(
                 {
                     continue;
                 }
-                let mut existing = false;
-                for parent_row in 0..parent_rows {
-                    if tuple(data, schemas, target, key.referenced_columns(), parent_row)? == child
-                    {
-                        existing = true;
-                        break;
-                    }
-                }
-                if existing {
-                    continue;
-                }
+                // Choose a valid parent cyclically even when the child already
+                // references some parent. Otherwise a shared first key can trap
+                // every child row on the same parent forever.
                 let mut selected = None;
                 for offset in 0..parent_rows {
                     let parent_row = (row + offset) % parent_rows;

@@ -196,13 +196,7 @@ fn cli_rejects_having_and_executes_exact_intermediate_boundary() {
         .execute_text(CORE_FROM_STAGE, 2)
         .expect("intermediate-boundary workload should execute");
 
-    assert_eq!(
-        boundary_result,
-        vec![
-            expected_row(&["high", "100"]),
-            expected_row(&["high", "100"]),
-        ]
-    );
+    assert_eq!(boundary_result, vec![expected_row(&["high", "100"])]);
 }
 
 #[test]

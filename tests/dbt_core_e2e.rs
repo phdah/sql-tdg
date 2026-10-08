@@ -245,20 +245,16 @@ ORDER BY 1, 2, 3, 4
 }
 
 fn expected_physical_snapshot() -> Vec<Vec<String>> {
+    // Only the matching join-key witness participates in joined models.
     vec![
-        row(&["aggregate_summary", "north", "2", "55"]),
-        row(&["derived_orders", "medium", "1", ""]),
+        row(&["aggregate_summary", "north", "1", "40"]),
         row(&["derived_orders", "medium", "1", ""]),
         row(&["final_orders", "40", "paid", "north"]),
-        row(&["final_orders", "55", "paid", "north"]),
         row(&["independent_return_summary", "full", "1", "70"]),
-        row(&["ranked_orders", "north", "40", "2"]),
-        row(&["ranked_orders", "north", "55", "1"]),
+        row(&["ranked_orders", "north", "40", "1"]),
         row(&["subquery_orders", "north", "40", ""]),
-        row(&["subquery_orders", "north", "55", ""]),
         row(&["unioned_orders", "north", "40", ""]),
         row(&["unioned_orders", "north", "42", ""]),
-        row(&["unioned_orders", "north", "55", ""]),
     ]
 }
 

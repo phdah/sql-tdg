@@ -19,7 +19,7 @@ use crate::case_coverage::{CaseCoverageFinding, cover_case_branches};
 use crate::constraint_generation::{self, ColumnDomains};
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
-    ProtocolValue, build_array, candidates, is_supported, rejected_candidates,
+    ProtocolValue, build_array, candidates, is_supported, moderate_key_values, rejected_candidates,
     value_satisfies_domain,
 };
 use crate::solver::SolverError;
@@ -1083,6 +1083,47 @@ fn generate_intermediate_boundary_data(
         plans_by_relation.insert(relation.clone(), plans);
     }
 
+    // Intermediate boundaries have independent producer and consumer domains.
+    // Enrich their join-key candidates without inventing constraints outside the protocol.
+    for key in relationships
+        .iter()
+        .flat_map(|relationship| [&relationship.left, &relationship.right])
+        .collect::<BTreeSet<_>>()
+    {
+        let data_type = relationship_data_type(schemas, key)?;
+        let restrictions = boundary_domains.get(&(key.relation.clone(), key.column.clone()));
+        let values = candidates_by_column.get_mut(key).ok_or_else(|| {
+            ProtocolGenerationError::MissingSchemaColumn {
+                relation: key.relation.clone(),
+                column: key.column.clone(),
+            }
+        })?;
+        for candidate in moderate_key_values(data_type).map_err(|message| {
+            ProtocolGenerationError::UnsupportedDomain {
+                relation: key.relation.clone(),
+                column: key.column.clone(),
+                message,
+            }
+        })? {
+            let mut valid = true;
+            for domain in restrictions.into_iter().flatten() {
+                if !value_satisfies_domain(data_type, &candidate, domain).map_err(|message| {
+                    ProtocolGenerationError::UnsupportedDomain {
+                        relation: key.relation.clone(),
+                        column: key.column.clone(),
+                        message,
+                    }
+                })? {
+                    valid = false;
+                    break;
+                }
+            }
+            if valid && !values.contains(&candidate) {
+                values.push(candidate);
+            }
+        }
+    }
+
     if relationships.is_empty() {
         generate_prepared_scalar_data(
             bundle,
@@ -1520,8 +1561,12 @@ fn generate_prepared_relational_data(
 
     let adjacency = relationship_adjacency(relationship_plan.relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values =
-        choose_component_values(relationship_plan.candidates_by_column, &adjacency, &mut rng)?;
+    let matching_values = choose_component_values(
+        relationship_plan.candidates_by_column,
+        &adjacency,
+        prepared.schemas,
+        &mut rng,
+    )?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -1535,12 +1580,27 @@ fn generate_prepared_relational_data(
         }
     }
 
+    assign_relationship_values(
+        relationship_plan.candidates_by_column,
+        &adjacency,
+        prepared.schemas,
+        &mut generated_by_relation,
+        RelationshipRows {
+            layer_id,
+            matching: row_counts.matching(),
+            rejected: row_counts.rejected(),
+            relationship_count: relationship_plan.relationships.len(),
+        },
+        &mut rng,
+    )?;
+
     if row_counts.rejected() > 0 {
         let witnesses = relationship_witnesses(
             relationship_plan.relationships,
             relationship_plan.candidates_by_column,
             &adjacency,
-            &matching_values,
+            &generated_by_relation,
+            prepared.schemas,
             &mut rng,
         )?;
         if witnesses.is_empty() {
@@ -1960,7 +2020,8 @@ fn generate_relational_data(
     let candidates_by_column = relationship_candidates(semantics, schemas, relationships)?;
     let adjacency = relationship_adjacency(relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values = choose_component_values(&candidates_by_column, &adjacency, &mut rng)?;
+    let matching_values =
+        choose_component_values(&candidates_by_column, &adjacency, schemas, &mut rng)?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -1974,12 +2035,27 @@ fn generate_relational_data(
         }
     }
 
+    assign_relationship_values(
+        &candidates_by_column,
+        &adjacency,
+        schemas,
+        &mut generated_by_relation,
+        RelationshipRows {
+            layer_id,
+            matching: row_counts.matching(),
+            rejected: row_counts.rejected(),
+            relationship_count: relationships.len(),
+        },
+        &mut rng,
+    )?;
+
     if row_counts.rejected() > 0 {
         let witnesses = relationship_witnesses(
             relationships,
             &candidates_by_column,
             &adjacency,
-            &matching_values,
+            &generated_by_relation,
+            schemas,
             &mut rng,
         )?;
         if witnesses.is_empty() {
@@ -2162,10 +2238,39 @@ fn generate_all_outcomes_data(
             }
             let (plan, values) = shared_column_plan(relation, schema_column, &constraints)?;
             if relationship_columns.contains(&column) {
-                let values = values
-                    .into_iter()
-                    .filter(|value| !matches!(value, ProtocolValue::Null))
-                    .collect::<Vec<_>>();
+                let mut preferred = Vec::new();
+                for candidate in
+                    moderate_key_values(schema_column.data_type()).map_err(|message| {
+                        ProtocolGenerationError::UnsupportedDomain {
+                            relation: relation.clone(),
+                            column: schema_column.name().to_owned(),
+                            message,
+                        }
+                    })?
+                {
+                    let mut valid = true;
+                    for (_, domain) in &constraints {
+                        if !value_satisfies_domain(schema_column.data_type(), &candidate, domain)
+                            .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
+                                relation: relation.clone(),
+                                column: schema_column.name().to_owned(),
+                                message,
+                            })?
+                        {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if valid {
+                        preferred.push(candidate);
+                    }
+                }
+                for value in values {
+                    if !matches!(value, ProtocolValue::Null) && !preferred.contains(&value) {
+                        preferred.push(value);
+                    }
+                }
+                let values = preferred;
                 if values.is_empty() {
                     return Err(ProtocolGenerationError::UnsatisfiableRelationship {
                         relationship: column.describe(),
@@ -2223,7 +2328,8 @@ fn generate_all_outcomes_data(
         }
 
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let matching_values = choose_component_values(&shared_candidates, &adjacency, &mut rng)?;
+        let matching_values =
+            choose_component_values(&shared_candidates, &adjacency, &schemas, &mut rng)?;
         for (column, value) in &matching_values {
             for row in 0..row_counts.matching() {
                 set_generated_value(
@@ -2235,6 +2341,19 @@ fn generate_all_outcomes_data(
                 )?;
             }
         }
+        assign_relationship_values(
+            &shared_candidates,
+            &adjacency,
+            &schemas,
+            &mut generated_by_relation,
+            RelationshipRows {
+                layer_id: "all-terminal-outcomes",
+                matching: row_counts.matching(),
+                rejected: 0,
+                relationship_count: relationships.len(),
+            },
+            &mut rng,
+        )?;
     }
 
     let selected_semantics = outcomes
@@ -2830,15 +2949,27 @@ fn relationship_candidates(
         let data_type = relationship_data_type(schemas, &column)?;
         let domain =
             find_column_domain(semantics.column_domains(), &column.relation, &column.column)?;
-        let values = candidates(data_type, domain)
-            .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
-                relation: column.relation.clone(),
-                column: column.column.clone(),
-                message,
-            })?
-            .into_iter()
-            .filter(|value| !matches!(value, ProtocolValue::Null))
-            .collect::<Vec<_>>();
+        let unsupported = |message: String| ProtocolGenerationError::UnsupportedDomain {
+            relation: column.relation.clone(),
+            column: column.column.clone(),
+            message,
+        };
+        let mut values = Vec::new();
+        for value in moderate_key_values(data_type).map_err(unsupported)? {
+            let allowed = if let Some(restriction) = domain {
+                value_satisfies_domain(data_type, &value, restriction).map_err(unsupported)?
+            } else {
+                true
+            };
+            if allowed {
+                values.push(value);
+            }
+        }
+        for value in candidates(data_type, domain).map_err(unsupported)? {
+            if !matches!(value, ProtocolValue::Null) && !values.contains(&value) {
+                values.push(value);
+            }
+        }
         if values.is_empty() {
             return Err(ProtocolGenerationError::UnsatisfiableRelationship {
                 relationship: column.describe(),
@@ -2869,16 +3000,45 @@ fn relationship_adjacency(
     adjacency
 }
 
+fn preferred_component_values(
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    component: &[RelationshipColumn],
+    schemas: &BTreeMap<String, &RelationSchema>,
+) -> Result<Vec<ProtocolValue>, ProtocolGenerationError> {
+    let common = component_common_values(candidates_by_column, component);
+    let Some(first) = component.first() else {
+        return Ok(common);
+    };
+    let data_type = relationship_data_type(schemas, first)?;
+    let preferred = moderate_key_values(data_type).map_err(|message| {
+        ProtocolGenerationError::UnsupportedDomain {
+            relation: first.relation.clone(),
+            column: first.column.clone(),
+            message,
+        }
+    })?;
+    let moderate = common
+        .iter()
+        .filter(|value| preferred.contains(value))
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(if moderate.is_empty() {
+        common
+    } else {
+        moderate
+    })
+}
+
 fn choose_component_values<R: Rng + ?Sized>(
     candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
     adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
     rng: &mut R,
 ) -> Result<BTreeMap<RelationshipColumn, ProtocolValue>, ProtocolGenerationError> {
     let mut selected = BTreeMap::new();
 
     for component in relationship_components(candidates_by_column, adjacency) {
-        let common = component_common_values(candidates_by_column, &component);
-
+        let common = preferred_component_values(candidates_by_column, &component, schemas)?;
         if common.is_empty() {
             return Err(ProtocolGenerationError::UnsatisfiableRelationship {
                 relationship: component
@@ -2901,6 +3061,129 @@ fn choose_component_values<R: Rng + ?Sized>(
     }
 
     Ok(selected)
+}
+
+/// Row layout of one relationship-generation run.
+#[derive(Debug, Clone, Copy)]
+struct RelationshipRows<'a> {
+    layer_id: &'a str,
+    matching: usize,
+    rejected: usize,
+    /// Number of equality relationships; key reuse among rejected rows is safe only for one.
+    relationship_count: usize,
+}
+
+/// Assign join keys to every row of each relationship component.
+///
+/// Matching rows receive distinct shared keys when the protocol domains allow it. Rejected rows
+/// receive keys reserved exclusively for them, one per rejected row, so no rejected row of any
+/// relation can join a matching row; the relationship witness applied afterwards then keeps
+/// rejected rows from joining each other. Reuse of a reserved key across rejected rows would let
+/// rows of different rejected indices combine through a chain of relationships, so it is allowed
+/// only when the bundle has a single relationship.
+fn assign_relationship_values<R: Rng + ?Sized>(
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    generated: &mut BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    rows: RelationshipRows<'_>,
+    rng: &mut R,
+) -> Result<(), ProtocolGenerationError> {
+    for component in relationship_components(candidates_by_column, adjacency) {
+        // Boundary candidates also cover non-key columns; only equality-relationship
+        // components take part in rejected-row key isolation.
+        let is_relationship = component
+            .iter()
+            .any(|column| adjacency.contains_key(column));
+        let rejected = if is_relationship { rows.rejected } else { 0 };
+        let rows = RelationshipRows { rejected, ..rows };
+        let preferred = preferred_component_values(candidates_by_column, &component, schemas)?;
+        let (choices, reserved) = if rows.rejected == 0 {
+            (preferred, Vec::new())
+        } else {
+            split_reserved_relationship_values(
+                &preferred,
+                &component_common_values(candidates_by_column, &component),
+                rows,
+            )?
+        };
+
+        let start = sample_relationship_index(rng, choices.len(), "relationship distribution")?;
+        for row in 0..rows.matching {
+            let index = (start + row % choices.len()) % choices.len();
+            let value = choices.get(index).ok_or_else(|| {
+                ProtocolGenerationError::InvalidRowConfiguration {
+                    message: "distributed relationship value is missing".to_owned(),
+                }
+            })?;
+            for column in &component {
+                set_generated_value(generated, schemas, column, row, value.clone())?;
+            }
+        }
+        for offset in 0..rows.rejected {
+            let value = reserved
+                .get(offset % reserved.len().max(1))
+                .ok_or_else(|| ProtocolGenerationError::InvalidRowConfiguration {
+                    message: "reserved rejected relationship value is missing".to_owned(),
+                })?;
+            for column in &component {
+                set_generated_value(
+                    generated,
+                    schemas,
+                    column,
+                    rows.matching + offset,
+                    value.clone(),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Split a component's candidate keys into keys for matching rows and keys reserved for
+/// rejected rows. Reserved keys come from the end of the moderate-first candidate order, so
+/// matching rows keep the most moderate keys.
+fn split_reserved_relationship_values(
+    preferred: &[ProtocolValue],
+    common: &[ProtocolValue],
+    rows: RelationshipRows<'_>,
+) -> Result<(Vec<ProtocolValue>, Vec<ProtocolValue>), ProtocolGenerationError> {
+    let mut ordered = preferred.to_vec();
+    for value in common {
+        if !ordered.contains(value) {
+            ordered.push(value.clone());
+        }
+    }
+    let reserve = rows.rejected.min(ordered.len().saturating_sub(1));
+    let unbreakable = || ProtocolGenerationError::NoBreakableRelationship {
+        layer_id: rows.layer_id.to_owned(),
+    };
+    if reserve == 0 || (reserve < rows.rejected && rows.relationship_count > 1) {
+        return Err(unbreakable());
+    }
+
+    let reserved = if preferred.len() > reserve {
+        preferred[preferred.len() - reserve..].to_vec()
+    } else {
+        ordered[ordered.len() - reserve..].to_vec()
+    };
+    let remaining_preferred = preferred
+        .iter()
+        .filter(|value| !reserved.contains(value))
+        .cloned()
+        .collect::<Vec<_>>();
+    let choices = if remaining_preferred.is_empty() {
+        ordered
+            .into_iter()
+            .filter(|value| !reserved.contains(value))
+            .collect()
+    } else {
+        remaining_preferred
+    };
+    if choices.is_empty() {
+        return Err(unbreakable());
+    }
+    Ok((choices, reserved))
 }
 
 /// Group relationship columns into sorted connected components in deterministic order.
@@ -2957,7 +3240,8 @@ fn relationship_witnesses<R: Rng + ?Sized>(
     relationships: &[EqualityRelationship],
     candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
     adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
-    matching_values: &BTreeMap<RelationshipColumn, ProtocolValue>,
+    generated: &BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
     rng: &mut R,
 ) -> Result<Vec<RelationshipWitness>, ProtocolGenerationError> {
     let mut witnesses = Vec::new();
@@ -2965,37 +3249,65 @@ fn relationship_witnesses<R: Rng + ?Sized>(
     for relationship in relationships {
         let left_degree = adjacency.get(&relationship.left).map_or(0, BTreeSet::len);
         let right_degree = adjacency.get(&relationship.right).map_or(0, BTreeSet::len);
-
-        let candidate_column = if left_degree == 1 {
-            Some(&relationship.left)
+        let (column, neighbor) = if left_degree == 1 {
+            (&relationship.left, &relationship.right)
         } else if right_degree == 1 {
-            Some(&relationship.right)
+            (&relationship.right, &relationship.left)
         } else {
-            None
+            continue;
         };
 
-        let Some(column) = candidate_column else {
-            continue;
-        };
-        let Some(matching_value) = matching_values.get(column) else {
-            continue;
-        };
+        let schema = source_schema(schemas, &neighbor.relation)?;
+        let column_index = schema
+            .columns()
+            .iter()
+            .position(|item| item.name() == neighbor.column)
+            .ok_or_else(|| ProtocolGenerationError::MissingSchemaColumn {
+                relation: neighbor.relation.clone(),
+                column: neighbor.column.clone(),
+            })?;
+        let neighbor_values = generated
+            .get(&neighbor.relation)
+            .and_then(|columns| columns.get(column_index))
+            .ok_or_else(|| ProtocolGenerationError::MissingSourceSchema {
+                relation: neighbor.relation.clone(),
+            })?;
+
+        // A rejected row must not join ANY generated parent row, not just the
+        // row at the same index. The neighbor's values include matching and
+        // rejected baseline rows.
         let alternates = candidates_by_column
             .get(column)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter(|value| *value != matching_value)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+            .into_iter()
+            .flatten()
+            .filter(|value| !neighbor_values.contains(value))
+            .cloned()
+            .collect::<Vec<_>>();
         if alternates.is_empty() {
             continue;
         }
 
-        let index = sample_relationship_index(rng, alternates.len(), "relationship break")?;
-        let value = alternates.get(index).cloned().ok_or_else(|| {
+        let data_type = relationship_data_type(schemas, column)?;
+        let preferred = moderate_key_values(data_type).map_err(|message| {
+            ProtocolGenerationError::UnsupportedDomain {
+                relation: column.relation.clone(),
+                column: column.column.clone(),
+                message,
+            }
+        })?;
+        let moderate = alternates
+            .iter()
+            .filter(|value| preferred.contains(value))
+            .cloned()
+            .collect::<Vec<_>>();
+        let options = if moderate.is_empty() {
+            &alternates
+        } else {
+            &moderate
+        };
+
+        let index = sample_relationship_index(rng, options.len(), "relationship break")?;
+        let value = options.get(index).cloned().ok_or_else(|| {
             ProtocolGenerationError::UnsatisfiableRelationship {
                 relationship: relationship.describe(),
             }

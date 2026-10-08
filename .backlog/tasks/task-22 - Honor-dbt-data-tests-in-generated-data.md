@@ -53,7 +53,7 @@ Protocol status (verified at protocol commit 3a4d3c6, release 2.0.0):
 - [x] #10 Constraints on relations that are neither generated sources nor selected boundaries are reported as not honored rather than silently ignored
 - [x] #11 Unknown future RelationConstraint or ConstraintValue variants fail with an explicit unsupported error
 - [x] #12 The `unattributed_dbt_test` diagnostic from protocol 2.0.2 fails generation like every other constraint diagnostic, and a test asserts this
-- [x] #13 The maintainer's paper_trail fixture generates sources that pass every dbt source test it declares (unique, not_null, accepted_values, and the order_items to orders relationship)
+- [x] #13 The maintainer's paper_trail fixture generates sources that pass every dbt source test it declares (all 12: unique, not_null, accepted_values, and the order_items to orders relationship)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -71,7 +71,7 @@ Steps:
 2. Loaded both CSVs into a fresh DuckDB file as main.orders and main.order_items (database `target`).
 3. Ran `dbt build` (dbt-core 1.12.5, dbt-duckdb 1.11.0).
 
-Result: all 13 source tests PASS:
+Result: all 12 source tests PASS (corrected 2026-10-08 from 13; a grep had also counted the daily_revenue relationships test):
 - unique and not_null on orders.order_id and order_items.item_id;
 - not_null on orders.order_date and orders.customer_id;
 - not_null on order_items.order_id, product_id, quantity, and unit_price;
@@ -102,7 +102,7 @@ How it fails or reports:
 
 Verification:
 - CLI tests and a dbt Core `dbt build` end-to-end regression; CI green.
-- On the maintainer's paper_trail fixture, generated sources pass all 13 source tests and the 6 daily_revenue model tests. Only the two singular tests fail; they hard-code seed-specific totals and are reported as unsupported.
+- On the maintainer's paper_trail fixture, generated sources pass all 12 source tests and the 6 daily_revenue model tests. Only the two singular tests fail; they hard-code seed-specific totals and are reported as unsupported.
 
 Follow-up: TASK-21.10, because generated join keys collapse to a single extreme value.
 <!-- SECTION:FINAL_SUMMARY:END -->
