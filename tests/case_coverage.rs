@@ -133,34 +133,43 @@ fn insufficient_rows_are_reported_instead_of_claiming_coverage() {
 #[test]
 fn string_case_branches_require_attested_comparison_semantics() {
     use sql_semantic_protocol::ComparisonAssumption;
-    use sql_tdg::{
-        GenerationRowCounts, generate_classified_from_sql_with_assumptions,
-    };
+    use sql_tdg::{GenerationRowCounts, generate_classified_from_sql_with_assumptions};
 
     let schema = RelationSchema::new(
         "t",
         vec![
-            SchemaColumn::from_sql_type("name", "VARCHAR", "generic")
-                .expect("string fixture type"),
+            SchemaColumn::from_sql_type("name", "VARCHAR", "generic").expect("string fixture type"),
         ],
     )
     .expect("fixture relation");
     let sql = "SELECT CASE WHEN name = 'alice' THEN 1 ELSE 2 END AS kind FROM t";
     let rows = GenerationRowCounts::matching_only(8);
     let err = generate_classified_from_sql_with_assumptions(
-        sql, "generic", &[schema.clone()], rows, 42, &[],
+        sql,
+        "generic",
+        &[schema.clone()],
+        rows,
+        42,
+        &[],
     )
     .expect_err("without binary collation, CASE coverage must not claim witnesses");
     assert!(matches!(err, ProtocolGenerationError::CaseCoverage { .. }));
     assert!(err.to_string().contains("binary_collation"));
 
     let generated = generate_classified_from_sql_with_assumptions(
-        sql, "generic", &[schema], rows, 42,
+        sql,
+        "generic",
+        &[schema],
+        rows,
+        42,
         &[ComparisonAssumption::BinaryCollation],
     )
     .expect("attested comparison setting permits coverage");
     assert_eq!(generated.case_coverage().len(), 2);
-    assert!(generated.case_coverage().iter().all(|finding|
-        finding.status() == sql_tdg::CaseCoverageStatus::Covered
-    ));
+    assert!(
+        generated
+            .case_coverage()
+            .iter()
+            .all(|finding| finding.status() == sql_tdg::CaseCoverageStatus::Covered)
+    );
 }
