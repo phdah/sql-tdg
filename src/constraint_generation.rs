@@ -50,14 +50,19 @@ fn typed_value(data_type: &DataType, value: &ConstraintValue) -> Result<Protocol
                 ConstraintValue::UnsignedInteger(value) => {
                     i64::try_from(*value).map_err(|_| "signed integer overflow")?
                 }
-                ConstraintValue::String(value) => value.parse::<i64>()
+                ConstraintValue::String(value) => value
+                    .parse::<i64>()
                     .map_err(|_| "integer accepted value is not numeric")?,
                 _ => return Err("expected signed integer accepted value".to_owned()),
             };
             match bits.unwrap_or(64) {
                 0..=8 => ProtocolValue::Int8(i8::try_from(numeric).map_err(|_| "INT8 overflow")?),
-                9..=16 => ProtocolValue::Int16(i16::try_from(numeric).map_err(|_| "INT16 overflow")?),
-                17..=32 => ProtocolValue::Int32(i32::try_from(numeric).map_err(|_| "INT32 overflow")?),
+                9..=16 => {
+                    ProtocolValue::Int16(i16::try_from(numeric).map_err(|_| "INT16 overflow")?)
+                }
+                17..=32 => {
+                    ProtocolValue::Int32(i32::try_from(numeric).map_err(|_| "INT32 overflow")?)
+                }
                 33..=64 => ProtocolValue::Int64(numeric),
                 _ => return Err("unsupported signed integer width".to_owned()),
             }
@@ -68,21 +73,27 @@ fn typed_value(data_type: &DataType, value: &ConstraintValue) -> Result<Protocol
                 ConstraintValue::Integer(value) => {
                     u64::try_from(*value).map_err(|_| "negative unsigned integer")?
                 }
-                ConstraintValue::String(value) => value.parse::<u64>()
+                ConstraintValue::String(value) => value
+                    .parse::<u64>()
                     .map_err(|_| "unsigned accepted value is not numeric")?,
                 _ => return Err("expected unsigned integer accepted value".to_owned()),
             };
             match bits.unwrap_or(64) {
                 0..=8 => ProtocolValue::UInt8(u8::try_from(numeric).map_err(|_| "UINT8 overflow")?),
-                9..=16 => ProtocolValue::UInt16(u16::try_from(numeric).map_err(|_| "UINT16 overflow")?),
-                17..=32 => ProtocolValue::UInt32(u32::try_from(numeric).map_err(|_| "UINT32 overflow")?),
+                9..=16 => {
+                    ProtocolValue::UInt16(u16::try_from(numeric).map_err(|_| "UINT16 overflow")?)
+                }
+                17..=32 => {
+                    ProtocolValue::UInt32(u32::try_from(numeric).map_err(|_| "UINT32 overflow")?)
+                }
                 33..=64 => ProtocolValue::UInt64(numeric),
                 _ => return Err("unsupported unsigned integer width".to_owned()),
             }
         }
-        (DataType::String { .. } | DataType::Enum { .. } | DataType::Set { .. }, ConstraintValue::String(value)) => {
-            ProtocolValue::String(value.clone())
-        }
+        (
+            DataType::String { .. } | DataType::Enum { .. } | DataType::Set { .. },
+            ConstraintValue::String(value),
+        ) => ProtocolValue::String(value.clone()),
         (DataType::FloatingPoint { bits }, value) => {
             let text = match value {
                 ConstraintValue::Number(value) | ConstraintValue::String(value) => value.clone(),
@@ -91,9 +102,17 @@ fn typed_value(data_type: &DataType, value: &ConstraintValue) -> Result<Protocol
                 _ => return Err("expected floating-point accepted value".to_owned()),
             };
             if bits.unwrap_or(64) <= 32 {
-                ProtocolValue::Float32(text.parse::<f32>().map_err(|_| "invalid FLOAT32")?.to_bits())
+                ProtocolValue::Float32(
+                    text.parse::<f32>()
+                        .map_err(|_| "invalid FLOAT32")?
+                        .to_bits(),
+                )
             } else {
-                ProtocolValue::Float64(text.parse::<f64>().map_err(|_| "invalid FLOAT64")?.to_bits())
+                ProtocolValue::Float64(
+                    text.parse::<f64>()
+                        .map_err(|_| "invalid FLOAT64")?
+                        .to_bits(),
+                )
             }
         }
         (DataType::Decimal { precision, scale }, value) => {
@@ -109,7 +128,11 @@ fn typed_value(data_type: &DataType, value: &ConstraintValue) -> Result<Protocol
                 scale.unwrap_or(0),
             )?)
         }
-        _ => return Err(format!("unsupported accepted-value type: {data_type:?}, {value:?}")),
+        _ => {
+            return Err(format!(
+                "unsupported accepted-value type: {data_type:?}, {value:?}"
+            ));
+        }
     };
     if !value_satisfies_domain(data_type, &result, &ValueDomain::Unbounded)? {
         return Err("accepted value is outside its declared column datatype".to_owned());
@@ -122,11 +145,21 @@ fn schema_column<'a>(
     relation: &str,
     column: &str,
 ) -> Result<(usize, &'a DataType), ProtocolGenerationError> {
-    let schema = schemas.get(relation).ok_or_else(|| failure(relation, "missing schema"))?;
-    schema.columns().iter().enumerate()
+    let schema = schemas
+        .get(relation)
+        .ok_or_else(|| failure(relation, "missing schema"))?;
+    schema
+        .columns()
+        .iter()
+        .enumerate()
         .find(|(_, candidate)| candidate.name() == column)
         .map(|(index, column)| (index, column.data_type()))
-        .ok_or_else(|| failure(relation, format!("constraint references missing column {column}")))
+        .ok_or_else(|| {
+            failure(
+                relation,
+                format!("constraint references missing column {column}"),
+            )
+        })
 }
 
 fn field<'a>(
@@ -137,7 +170,8 @@ fn field<'a>(
     row: usize,
 ) -> Result<&'a ProtocolValue, ProtocolGenerationError> {
     let (index, _) = schema_column(schemas, relation, column)?;
-    data.get(relation).and_then(|columns| columns.get(index))
+    data.get(relation)
+        .and_then(|columns| columns.get(index))
         .and_then(|values| values.get(row))
         .ok_or_else(|| failure(relation, format!("{column}: missing row {row}")))
 }
@@ -151,7 +185,9 @@ fn replace(
     value: ProtocolValue,
 ) -> Result<(), ProtocolGenerationError> {
     let (index, _) = schema_column(schemas, relation, column)?;
-    let slot = data.get_mut(relation).and_then(|columns| columns.get_mut(index))
+    let slot = data
+        .get_mut(relation)
+        .and_then(|columns| columns.get_mut(index))
         .and_then(|values| values.get_mut(row))
         .ok_or_else(|| failure(relation, format!("{column}: missing row {row}")))?;
     *slot = value;
@@ -165,7 +201,10 @@ fn tuple(
     columns: &[String],
     row: usize,
 ) -> Result<Vec<ProtocolValue>, ProtocolGenerationError> {
-    columns.iter().map(|column| field(data, schemas, relation, column, row).cloned()).collect()
+    columns
+        .iter()
+        .map(|column| field(data, schemas, relation, column, row).cloned())
+        .collect()
 }
 
 fn permitted(
@@ -212,13 +251,16 @@ fn sample_valid<R: Rng + ?Sized>(
     accepted: Option<&Vec<ProtocolValue>>,
     require_nonnull: bool,
 ) -> Result<ProtocolValue, ProtocolGenerationError> {
-    let restriction = domains.get(&(relation.to_owned(), column.to_owned()))
+    let restriction = domains
+        .get(&(relation.to_owned(), column.to_owned()))
         .and_then(|items| items.first());
     for _ in 0..1024 {
         let value = if let Some(accepted) = accepted {
             let index = choose_index(rng, accepted.len())
                 .map_err(|reason| failure(relation, format!("{column}: {reason}")))?;
-            accepted.get(index).cloned()
+            accepted
+                .get(index)
+                .cloned()
                 .ok_or_else(|| failure(relation, "missing accepted value"))?
         } else if let Some(domain) = restriction {
             match domain {
@@ -231,7 +273,9 @@ fn sample_valid<R: Rng + ?Sized>(
                         .map_err(|reason| failure(relation, reason))?;
                     let index = choose_index(rng, options.len())
                         .map_err(|reason| failure(relation, reason))?;
-                    options.get(index).cloned()
+                    options
+                        .get(index)
+                        .cloned()
                         .ok_or_else(|| failure(relation, "missing domain candidate"))?
                 }
             }
@@ -239,13 +283,23 @@ fn sample_valid<R: Rng + ?Sized>(
             sample_unconstrained_value(data_type, rng)
                 .map_err(|reason| failure(relation, reason))?
         };
-        if permitted(domains, relation, column, data_type, &value, accepted, require_nonnull)? {
+        if permitted(
+            domains,
+            relation,
+            column,
+            data_type,
+            &value,
+            accepted,
+            require_nonnull,
+        )? {
             return Ok(value);
         }
     }
-    Err(failure(relation, format!("{column}: no sampled value satisfies the query domains and relation constraints")))
+    Err(failure(
+        relation,
+        format!("{column}: no sampled value satisfies the query domains and relation constraints"),
+    ))
 }
-
 
 /// Enforce constraints on physical relation values before Arrow arrays are built.
 ///
@@ -260,7 +314,10 @@ pub(crate) fn enforce(
     seed: u64,
 ) -> Result<Vec<String>, ProtocolGenerationError> {
     if let Some(diagnostic) = bundle.constraint_diagnostics().first() {
-        return Err(failure("<bundle>", format!("{}: {}", diagnostic.code(), diagnostic.message())));
+        return Err(failure(
+            "<bundle>",
+            format!("{}: {}", diagnostic.code(), diagnostic.message()),
+        ));
     }
 
     let mut unhonored = Vec::new();
@@ -275,7 +332,10 @@ pub(crate) fn enforce(
             continue;
         }
         if let Some(diagnostic) = constraints.diagnostics().first() {
-            return Err(failure(relation, format!("{}: {}", diagnostic.code(), diagnostic.message())));
+            return Err(failure(
+                relation,
+                format!("{}: {}", diagnostic.code(), diagnostic.message()),
+            ));
         }
         let mut relation_accepted = BTreeMap::new();
         let mut relation_nonnull = BTreeSet::new();
@@ -289,45 +349,77 @@ pub(crate) fn enforce(
                 }
                 RelationConstraint::AcceptedValues(column) => {
                     let (_, datatype) = schema_column(schemas, relation, column.column())?;
-                    let values = column.values().iter()
+                    let values = column
+                        .values()
+                        .iter()
                         .filter(|value| !matches!(value, ConstraintValue::Null))
-                        .map(|value| typed_value(datatype, value)
-                            .map_err(|reason| failure(relation, format!("{}: {reason}", column.column()))))
+                        .map(|value| {
+                            typed_value(datatype, value).map_err(|reason| {
+                                failure(relation, format!("{}: {reason}", column.column()))
+                            })
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
                     relation_accepted.insert(column.column().to_owned(), values);
                 }
                 RelationConstraint::UniqueKey(_) | RelationConstraint::ForeignKey(_) => {}
-                _ => return Err(failure(relation, "unsupported future RelationConstraint variant")),
+                _ => {
+                    return Err(failure(
+                        relation,
+                        "unsupported future RelationConstraint variant",
+                    ));
+                }
             }
         }
         accepted.insert(relation.to_owned(), relation_accepted);
         nonnull.insert(relation.to_owned(), relation_nonnull);
     }
 
-    if data.values().any(|columns| columns.first().is_some_and(|values| values.len() != matching_rows))
-        && bundle.relation_constraints().iter().any(|set| data.contains_key(set.relation()) && !set.constraints().is_empty())
+    if data.values().any(|columns| {
+        columns
+            .first()
+            .is_some_and(|values| values.len() != matching_rows)
+    }) && bundle
+        .relation_constraints()
+        .iter()
+        .any(|set| data.contains_key(set.relation()) && !set.constraints().is_empty())
     {
-        return Err(failure("<bundle>", "relation constraints with deliberately rejected rows are not supported"));
+        return Err(failure(
+            "<bundle>",
+            "relation constraints with deliberately rejected rows are not supported",
+        ));
     }
 
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     // First ensure all constrained scalar columns are typed and within query domains.
     for (relation, relation_accepted) in &accepted {
-        let schema = schemas.get(relation).ok_or_else(|| failure(relation, "missing schema"))?;
-        let required = nonnull.get(relation).ok_or_else(|| failure(relation, "missing non-null metadata"))?;
+        let schema = schemas
+            .get(relation)
+            .ok_or_else(|| failure(relation, "missing schema"))?;
+        let required = nonnull
+            .get(relation)
+            .ok_or_else(|| failure(relation, "missing non-null metadata"))?;
         for column in schema.columns() {
             if !required.contains(column.name()) && !relation_accepted.contains_key(column.name()) {
                 continue;
             }
             for row in 0..matching_rows {
                 if !permitted(
-                    domains, relation, column.name(), column.data_type(),
+                    domains,
+                    relation,
+                    column.name(),
+                    column.data_type(),
                     field(data, schemas, relation, column.name(), row)?,
-                    relation_accepted.get(column.name()), required.contains(column.name()),
+                    relation_accepted.get(column.name()),
+                    required.contains(column.name()),
                 )? {
                     let replacement = sample_valid(
-                        &mut rng, domains, relation, column.name(), column.data_type(),
-                        relation_accepted.get(column.name()), required.contains(column.name()),
+                        &mut rng,
+                        domains,
+                        relation,
+                        column.name(),
+                        column.data_type(),
+                        relation_accepted.get(column.name()),
+                        required.contains(column.name()),
                     )?;
                     replace(data, schemas, relation, column.name(), row, replacement)?;
                 }
@@ -339,7 +431,9 @@ pub(crate) fn enforce(
     // while primary keys require every component to be non-NULL.
     for set in bundle.relation_constraints() {
         let relation = set.relation();
-        if !data.contains_key(relation) { continue; }
+        if !data.contains_key(relation) {
+            continue;
+        }
         for constraint in set.constraints() {
             let (columns, primary) = match constraint {
                 RelationConstraint::PrimaryKey(key) => (key.columns(), true),
@@ -358,9 +452,15 @@ pub(crate) fn enforce(
                         let column = &columns[attempt % columns.len()];
                         let (_, datatype) = schema_column(schemas, relation, column)?;
                         let candidate = sample_valid(
-                            &mut rng, domains, relation, column, datatype,
+                            &mut rng,
+                            domains,
+                            relation,
+                            column,
+                            datatype,
                             accepted.get(relation).and_then(|fields| fields.get(column)),
-                            nonnull.get(relation).is_some_and(|cols| cols.contains(column)),
+                            nonnull
+                                .get(relation)
+                                .is_some_and(|cols| cols.contains(column)),
                         )?;
                         let previous = field(data, schemas, relation, column, row)?.clone();
                         replace(data, schemas, relation, column, row, candidate)?;
@@ -372,7 +472,10 @@ pub(crate) fn enforce(
                         replace(data, schemas, relation, column, row, previous)?;
                     }
                     if !resolved {
-                        return Err(failure(relation, format!("key {columns:?} cannot be unique for {matching_rows} rows")));
+                        return Err(failure(
+                            relation,
+                            format!("key {columns:?} cannot be unique for {matching_rows} rows"),
+                        ));
                     }
                 }
                 seen.push(key);
@@ -383,37 +486,62 @@ pub(crate) fn enforce(
     // Assign each foreign-key tuple from an actual generated parent row.
     for set in bundle.relation_constraints() {
         let relation = set.relation();
-        if !data.contains_key(relation) { continue; }
+        if !data.contains_key(relation) {
+            continue;
+        }
         for constraint in set.constraints() {
-            let RelationConstraint::ForeignKey(key) = constraint else { continue };
+            let RelationConstraint::ForeignKey(key) = constraint else {
+                continue;
+            };
             let target = key.referenced_relation();
-            let parent_rows = data.get(target)
+            let parent_rows = data
+                .get(target)
                 .and_then(|columns| columns.first())
                 .map(Vec::len)
-                .ok_or_else(|| failure(relation, format!("foreign key references non-generated relation {target}")))?;
+                .ok_or_else(|| {
+                    failure(
+                        relation,
+                        format!("foreign key references non-generated relation {target}"),
+                    )
+                })?;
 
             for row in 0..matching_rows {
                 let child = tuple(data, schemas, relation, key.columns(), row)?;
-                if child.iter().any(|value| matches!(value, ProtocolValue::Null)) { continue; }
+                if child
+                    .iter()
+                    .any(|value| matches!(value, ProtocolValue::Null))
+                {
+                    continue;
+                }
                 let mut existing = false;
                 for parent_row in 0..parent_rows {
-                    if tuple(data, schemas, target, key.referenced_columns(), parent_row)? == child {
+                    if tuple(data, schemas, target, key.referenced_columns(), parent_row)? == child
+                    {
                         existing = true;
                         break;
                     }
                 }
-                if existing { continue; }
+                if existing {
+                    continue;
+                }
                 let mut selected = None;
                 for offset in 0..parent_rows {
                     let parent_row = (row + offset) % parent_rows;
-                    let parent = tuple(data, schemas, target, key.referenced_columns(), parent_row)?;
+                    let parent =
+                        tuple(data, schemas, target, key.referenced_columns(), parent_row)?;
                     let mut valid = true;
                     for (column, value) in key.columns().iter().zip(&parent) {
                         let (_, datatype) = schema_column(schemas, relation, column)?;
                         if !permitted(
-                            domains, relation, column, datatype, value,
+                            domains,
+                            relation,
+                            column,
+                            datatype,
+                            value,
                             accepted.get(relation).and_then(|fields| fields.get(column)),
-                            nonnull.get(relation).is_some_and(|cols| cols.contains(column)),
+                            nonnull
+                                .get(relation)
+                                .is_some_and(|cols| cols.contains(column)),
                         )? {
                             valid = false;
                             break;
@@ -448,7 +576,9 @@ pub(crate) fn validate(
 ) -> Result<(), ProtocolGenerationError> {
     for set in bundle.relation_constraints() {
         let relation = set.relation();
-        if !data.contains_key(relation) { continue; }
+        if !data.contains_key(relation) {
+            continue;
+        }
         let mut primary_columns = BTreeSet::new();
         for constraint in set.constraints() {
             if let RelationConstraint::PrimaryKey(key) = constraint {
@@ -459,25 +589,41 @@ pub(crate) fn validate(
             match constraint {
                 RelationConstraint::NotNull(column) => {
                     for row in 0..rows {
-                        if matches!(field(data, schemas, relation, column.column(), row)?, ProtocolValue::Null) {
-                            return Err(failure(relation, format!("not_null violated: {}", column.column())));
+                        if matches!(
+                            field(data, schemas, relation, column.column(), row)?,
+                            ProtocolValue::Null
+                        ) {
+                            return Err(failure(
+                                relation,
+                                format!("not_null violated: {}", column.column()),
+                            ));
                         }
                     }
                 }
                 RelationConstraint::AcceptedValues(column) => {
                     let (_, datatype) = schema_column(schemas, relation, column.column())?;
-                    let allowed = column.values().iter()
+                    let allowed = column
+                        .values()
+                        .iter()
                         .filter(|value| !matches!(value, ConstraintValue::Null))
-                        .map(|value| typed_value(datatype, value)
-                            .map_err(|reason| failure(relation, reason)))
+                        .map(|value| {
+                            typed_value(datatype, value).map_err(|reason| failure(relation, reason))
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
                     for row in 0..rows {
                         if !permitted(
-                            domains, relation, column.column(), datatype,
+                            domains,
+                            relation,
+                            column.column(),
+                            datatype,
                             field(data, schemas, relation, column.column(), row)?,
-                            Some(&allowed), primary_columns.contains(column.column()),
+                            Some(&allowed),
+                            primary_columns.contains(column.column()),
                         )? {
-                            return Err(failure(relation, format!("accepted_values violated: {}", column.column())));
+                            return Err(failure(
+                                relation,
+                                format!("accepted_values violated: {}", column.column()),
+                            ));
                         }
                     }
                 }
@@ -486,34 +632,60 @@ pub(crate) fn validate(
                     let mut seen = Vec::new();
                     for row in 0..rows {
                         let key_value = tuple(data, schemas, relation, key.columns(), row)?;
-                        if key_value.iter().any(|value| matches!(value, ProtocolValue::Null)) {
+                        if key_value
+                            .iter()
+                            .any(|value| matches!(value, ProtocolValue::Null))
+                        {
                             if primary {
-                                return Err(failure(relation, format!("primary key {:?} contains NULL", key.columns())));
+                                return Err(failure(
+                                    relation,
+                                    format!("primary key {:?} contains NULL", key.columns()),
+                                ));
                             }
                             continue;
                         }
                         if seen.contains(&key_value) {
-                            return Err(failure(relation, format!("key {:?} contains duplicate values", key.columns())));
+                            return Err(failure(
+                                relation,
+                                format!("key {:?} contains duplicate values", key.columns()),
+                            ));
                         }
                         seen.push(key_value);
                     }
                 }
                 RelationConstraint::ForeignKey(key) => {
-                    let parent_rows = data.get(key.referenced_relation())
-                        .and_then(|columns| columns.first()).map(Vec::len)
+                    let parent_rows = data
+                        .get(key.referenced_relation())
+                        .and_then(|columns| columns.first())
+                        .map(Vec::len)
                         .ok_or_else(|| failure(relation, "foreign key parent is not generated"))?;
                     for row in 0..rows {
                         let child = tuple(data, schemas, relation, key.columns(), row)?;
-                        if child.iter().any(|value| matches!(value, ProtocolValue::Null)) { continue; }
+                        if child
+                            .iter()
+                            .any(|value| matches!(value, ProtocolValue::Null))
+                        {
+                            continue;
+                        }
                         let mut found = false;
                         for parent_row in 0..parent_rows {
-                            if tuple(data, schemas, key.referenced_relation(), key.referenced_columns(), parent_row)? == child {
+                            if tuple(
+                                data,
+                                schemas,
+                                key.referenced_relation(),
+                                key.referenced_columns(),
+                                parent_row,
+                            )? == child
+                            {
                                 found = true;
                                 break;
                             }
                         }
                         if !found {
-                            return Err(failure(relation, format!("foreign key {:?} has no matching parent", key.columns())));
+                            return Err(failure(
+                                relation,
+                                format!("foreign key {:?} has no matching parent", key.columns()),
+                            ));
                         }
                     }
                 }
@@ -522,15 +694,24 @@ pub(crate) fn validate(
         }
 
         // A modifier must never invalidate any composed SQL domain, including shared outcomes.
-        let schema = schemas.get(relation).ok_or_else(|| failure(relation, "missing schema"))?;
+        let schema = schemas
+            .get(relation)
+            .ok_or_else(|| failure(relation, "missing schema"))?;
         for column in schema.columns() {
             for row in 0..rows {
                 if !permitted(
-                    domains, relation, column.name(), column.data_type(),
-                    field(data, schemas, relation, column.name(), row)?, None,
+                    domains,
+                    relation,
+                    column.name(),
+                    column.data_type(),
+                    field(data, schemas, relation, column.name(), row)?,
+                    None,
                     primary_columns.contains(column.name()),
                 )? {
-                    return Err(failure(relation, format!("column {} violates a composed query domain", column.name())));
+                    return Err(failure(
+                        relation,
+                        format!("column {} violates a composed query domain", column.name()),
+                    ));
                 }
             }
         }
