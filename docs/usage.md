@@ -5,6 +5,43 @@ sql-tdg generates reproducible relation data from a
 It does not connect to a database or execute the input SQL. The generated
 Parquet/CSV files can be loaded by a separate test harness or application.
 
+## SQL scope and dialects
+
+SQL analysis runs through SQL Semantic Protocol, which recognizes
+`ansi`, `bigquery`, `clickhouse`, `databricks`, `duckdb`,
+`generic`, `hive`, `mssql`, `mysql`, `postgresql` (also
+`postgres`), `redshift`, `snowflake`, and `sqlite`.
+Use `--dialect <name>` for raw SQL; dbt artifacts supply their
+adapter dialect. Each dialect can have different syntax, and not
+every feature or construct has exact generation semantics.
+
+SQL Semantic Protocol tracks many kinds of transformations: multiple
+statements, named output relations, query-backed DDL, CTEs and derived
+tables, joins, CASE expressions, grouping, aggregate expressions,
+window definitions, and set operations. sql-tdg consumes the
+**composed physical-source conditions** from that analysis. For example:
+
+- Supported filters and inner equality relationships can become source
+  domains and coordinated join-key values, including through chains
+  of CTEs and named materialization layers.
+- `GROUP BY`, `COUNT`, `SUM`, and
+  `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` may appear in
+  projection-only analytic outputs. Generated sources can execute those
+  queries, but sql-tdg does not set their computed output totals or
+  ranking results.
+- Aggregate-dependent `HAVING`, window-dependent `QUALIFY`, and
+  filtering on other derived expressions are residual conditions when
+  the protocol cannot reduce them exactly to source-row constraints.
+- Although the protocol can describe `UNION`, `INTERSECT`, and
+  `EXCEPT`, sql-tdg does not claim exact generation for unsupported
+  set-operation conditions. Unknown row-membership effects fail closed.
+
+Generation operates on source tables or a selected intermediate
+boundary. It does **not** generate final query results or prove all
+possible database semantics. Use the [exactness contract](#classification-and-exactness)
+to distinguish a construct present in the input from a condition
+the tool can guarantee.
+
 ## Raw SQL
 
 Pass one or more inline queries with `--sql`, files with `--file`, and
