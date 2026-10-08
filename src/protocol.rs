@@ -19,8 +19,8 @@ use crate::case_coverage::{CaseCoverageFinding, cover_case_branches};
 use crate::constraint_generation::{self, ColumnDomains};
 use crate::generator::{ColumnPlan, GenerationDomain, Generator, GeneratorError};
 use crate::protocol_value::{
-    ProtocolValue, build_array, candidates, is_supported, moderate_key_values,
-    rejected_candidates, value_satisfies_domain,
+    ProtocolValue, build_array, candidates, is_supported, moderate_key_values, rejected_candidates,
+    value_satisfies_domain,
 };
 use crate::solver::SolverError;
 use crate::table::{Table, TableError};
@@ -1520,8 +1520,12 @@ fn generate_prepared_relational_data(
 
     let adjacency = relationship_adjacency(relationship_plan.relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values =
-        choose_component_values(relationship_plan.candidates_by_column, &adjacency, prepared.schemas, &mut rng)?;
+    let matching_values = choose_component_values(
+        relationship_plan.candidates_by_column,
+        &adjacency,
+        prepared.schemas,
+        &mut rng,
+    )?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -1969,7 +1973,8 @@ fn generate_relational_data(
     let candidates_by_column = relationship_candidates(semantics, schemas, relationships)?;
     let adjacency = relationship_adjacency(relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values = choose_component_values(&candidates_by_column, &adjacency, schemas, &mut rng)?;
+    let matching_values =
+        choose_component_values(&candidates_by_column, &adjacency, schemas, &mut rng)?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -2181,13 +2186,15 @@ fn generate_all_outcomes_data(
             let (plan, values) = shared_column_plan(relation, schema_column, &constraints)?;
             if relationship_columns.contains(&column) {
                 let mut preferred = Vec::new();
-                for candidate in moderate_key_values(schema_column.data_type()).map_err(
-                    |message| ProtocolGenerationError::UnsupportedDomain {
-                        relation: relation.clone(),
-                        column: schema_column.name().to_owned(),
-                        message,
-                    },
-                )? {
+                for candidate in
+                    moderate_key_values(schema_column.data_type()).map_err(|message| {
+                        ProtocolGenerationError::UnsupportedDomain {
+                            relation: relation.clone(),
+                            column: schema_column.name().to_owned(),
+                            message,
+                        }
+                    })?
+                {
                     let mut valid = true;
                     for (_, domain) in &constraints {
                         if !value_satisfies_domain(schema_column.data_type(), &candidate, domain)
@@ -2268,7 +2275,8 @@ fn generate_all_outcomes_data(
         }
 
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let matching_values = choose_component_values(&shared_candidates, &adjacency, &schemas, &mut rng)?;
+        let matching_values =
+            choose_component_values(&shared_candidates, &adjacency, &schemas, &mut rng)?;
         for (column, value) in &matching_values {
             for row in 0..row_counts.matching() {
                 set_generated_value(
@@ -2944,18 +2952,23 @@ fn preferred_component_values(
         return Ok(common);
     };
     let data_type = relationship_data_type(schemas, first)?;
-    let preferred = moderate_key_values(data_type)
-        .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
+    let preferred = moderate_key_values(data_type).map_err(|message| {
+        ProtocolGenerationError::UnsupportedDomain {
             relation: first.relation.clone(),
             column: first.column.clone(),
             message,
-        })?;
+        }
+    })?;
     let moderate = common
         .iter()
         .filter(|value| preferred.contains(value))
         .cloned()
         .collect::<Vec<_>>();
-    Ok(if moderate.is_empty() { common } else { moderate })
+    Ok(if moderate.is_empty() {
+        common
+    } else {
+        moderate
+    })
 }
 
 fn choose_component_values<R: Rng + ?Sized>(
