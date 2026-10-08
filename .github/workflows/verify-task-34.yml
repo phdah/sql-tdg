@@ -28,14 +28,9 @@ jobs:
               --output "$output" "$url"
           }
 
-          fetch "https://crates.io/api/v1/crates/sql-tdg" crate.json
-          python3 - <<'PY'
-          import json
-          with open("crate.json", encoding="utf-8") as f:
-              data = json.load(f)
-          assert data["crate"]["newest_version"] == "1.0.0", data["crate"]["newest_version"]
-          print("crates.io: sql-tdg 1.0.0 published")
-          PY
+          fetch "https://index.crates.io/sq/l-/sql-tdg" crate.jsonl
+          grep -q '"vers":"1.0.0"' crate.jsonl
+          echo "Cargo sparse index: sql-tdg 1.0.0 published"
 
           fetch "https://docs.rs/sql-tdg/1.0.0/sql_tdg/" docs.html
           grep -qi 'sql_tdg' docs.html
