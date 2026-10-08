@@ -10,8 +10,8 @@ use sql_semantic_protocol::{
 
 use crate::protocol::ProtocolGenerationError;
 use crate::protocol_value::{
-    ProtocolValue, candidates, moderate_key_values, sample_range_value,
-    sample_unconstrained_value, value_satisfies_domain,
+    ProtocolValue, candidates, moderate_key_values, sample_range_value, sample_unconstrained_value,
+    value_satisfies_domain,
 };
 
 pub(crate) type ColumnDomains = BTreeMap<(String, String), Vec<ValueDomain>>;
@@ -427,8 +427,13 @@ pub(crate) fn enforce(
             let mut allowed_moderate = Vec::new();
             for candidate in moderate {
                 if permitted(
-                    domains, relation, column.name(), column.data_type(), &candidate,
-                    relation_accepted.get(column.name()), required.contains(column.name()),
+                    domains,
+                    relation,
+                    column.name(),
+                    column.data_type(),
+                    &candidate,
+                    relation_accepted.get(column.name()),
+                    required.contains(column.name()),
                 )? {
                     allowed_moderate.push(candidate);
                 }
@@ -437,8 +442,13 @@ pub(crate) fn enforce(
             for row in 0..matching_rows {
                 let current = field(data, schemas, relation, column.name(), row)?;
                 let valid = permitted(
-                    domains, relation, column.name(), column.data_type(), current,
-                    relation_accepted.get(column.name()), required.contains(column.name()),
+                    domains,
+                    relation,
+                    column.name(),
+                    column.data_type(),
+                    current,
+                    relation_accepted.get(column.name()),
+                    required.contains(column.name()),
                 )?;
                 if valid && (allowed_moderate.is_empty() || allowed_moderate.contains(current)) {
                     continue;
@@ -446,12 +456,19 @@ pub(crate) fn enforce(
                 let replacement = if !allowed_moderate.is_empty() {
                     let index = choose_index(&mut rng, allowed_moderate.len())
                         .map_err(|reason| failure(relation, reason))?;
-                    allowed_moderate.get(index).cloned()
+                    allowed_moderate
+                        .get(index)
+                        .cloned()
                         .ok_or_else(|| failure(relation, "missing moderate key candidate"))?
                 } else {
                     sample_valid(
-                        &mut rng, domains, relation, column.name(), column.data_type(),
-                        relation_accepted.get(column.name()), required.contains(column.name()),
+                        &mut rng,
+                        domains,
+                        relation,
+                        column.name(),
+                        column.data_type(),
+                        relation_accepted.get(column.name()),
+                        required.contains(column.name()),
                     )?
                 };
                 replace(data, schemas, relation, column.name(), row, replacement)?;
