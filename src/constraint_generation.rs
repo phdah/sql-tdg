@@ -689,7 +689,12 @@ pub(crate) fn validate(
                         }
                     }
                 }
-                _ => return Err(failure(relation, "unsupported future RelationConstraint variant")),
+                _ => {
+                    return Err(failure(
+                        relation,
+                        "unsupported future RelationConstraint variant",
+                    ));
+                }
             }
         }
 
