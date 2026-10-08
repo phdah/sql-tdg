@@ -180,10 +180,11 @@ fn permitted(
     if require_nonnull && matches!(value, ProtocolValue::Null) {
         return Ok(false);
     }
-    if let Some(accepted) = accepted {
-        if !matches!(value, ProtocolValue::Null) && !accepted.contains(value) {
-            return Ok(false);
-        }
+    if let Some(accepted) = accepted
+        && !matches!(value, ProtocolValue::Null)
+        && !accepted.contains(value)
+    {
+        return Ok(false);
     }
     if !value_satisfies_domain(data_type, value, &ValueDomain::Unbounded)
         .map_err(|reason| failure(relation, format!("{column}: {reason}")))?
