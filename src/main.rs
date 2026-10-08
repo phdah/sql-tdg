@@ -845,8 +845,14 @@ mod tests {
         assert_eq!(plain, HELP);
         assert!(!plain.contains("\x1b["));
         assert!(plain.lines().all(|line| line.len() <= 80));
-        for heading in ["USAGE", "RAW SQL INPUT", "DBT INPUT",
-                        "GENERATION OPTIONS", "OUTPUT OPTIONS", "EXAMPLES"] {
+        for heading in [
+            "USAGE",
+            "RAW SQL INPUT",
+            "DBT INPUT",
+            "GENERATION OPTIONS",
+            "OUTPUT OPTIONS",
+            "EXAMPLES",
+        ] {
             assert!(plain.lines().any(|line| line == heading));
         }
         assert!(plain.contains("--assume-comparison"));

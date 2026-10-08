@@ -22,7 +22,10 @@ fn help_is_readable_and_plain_when_redirected() {
         assert!(output.status.success(), "help failed for {args:?}");
         assert!(output.stderr.is_empty(), "unexpected stderr for {args:?}");
         let stdout = String::from_utf8(output.stdout).expect("help should be UTF-8");
-        assert!(!stdout.contains("\x1b["), "redirected help must not have ANSI");
+        assert!(
+            !stdout.contains("\x1b["),
+            "redirected help must not have ANSI"
+        );
         assert!(stdout.contains("RAW SQL INPUT\n"));
         assert!(stdout.contains("DBT INPUT\n"));
         assert!(stdout.contains("GENERATION OPTIONS\n"));
