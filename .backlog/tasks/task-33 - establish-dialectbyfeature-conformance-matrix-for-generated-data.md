@@ -1,9 +1,10 @@
 ---
 id: TASK-33
 title: Establish dialect-by-feature conformance matrix for generated data
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08'
+updated_date: '2026-10-08 21:29'
 labels: []
 milestone: m-3
 dependencies: []
@@ -31,3 +32,14 @@ This is post-1.0 feature work, not a claim about existing CLI behavior. Canonica
 - [ ] #4 Ensure every new semantic feature in this milestone updates the matrix and its fixtures as part of definition of done.
 - [ ] #5 Publish the matrix in docs and link it from README without hardcoding a production dialect whitelist.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: Added `tests/dialect_conformance.rs` with the shared protocol-dialect
+filter, inner-join, CTE, projection-only aggregate, and fail-closed HAVING fixtures,
+plus quoted identifier dialect variants. Added `docs/dialect-conformance.md` to
+separate parser/analysis, generator assertions, and DuckDB-only execution evidence.
+The README links the matrix; AGENTS.md requires updating matrix evidence and
+fixtures together for new SQL features. Pending CI verification before task completion.
+<!-- SECTION:NOTES:END -->
