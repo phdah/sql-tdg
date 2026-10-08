@@ -256,8 +256,6 @@ requirements and generate synthetic data that satisfies them? sql-tdg builds
 on that idea, using SQL Semantic Protocol to turn supported SQL semantics into
 constraints for deterministic, randomized source-data generation.
 
-Thanks, Eric, for the inspiration.
-
 ## Documentation and contributing
 
 - [Usage and semantics](docs/usage.md)
