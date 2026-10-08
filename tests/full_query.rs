@@ -556,6 +556,16 @@ fn relational_generation_coordinates_inner_join_keys_and_breaks_one_relationship
     for index in 0..counts.matching() {
         assert_eq!(order_customer_ids[index], customer_ids[index]);
     }
+    let matching_keys = order_customer_ids
+        .iter()
+        .take(counts.matching())
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(matching_keys.len() >= 3, "join keys should be distributed");
+    assert!(
+        matching_keys.iter().all(|key| (1..=1000).contains(key)),
+        "unconstrained join keys should be moderate: {matching_keys:?}"
+    );
     for index in counts.matching()..counts.total() {
         assert_ne!(order_customer_ids[index], customer_ids[index]);
     }
@@ -620,11 +630,63 @@ fn relational_generation_resolves_intermediate_join_keys_to_physical_sources() {
     for index in 0..counts.matching() {
         assert_eq!(order_customer_ids[index], customer_ids[index]);
     }
+    let matching_keys = order_customer_ids
+        .iter()
+        .take(counts.matching())
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(matching_keys.len() >= 3, "join keys should be distributed");
+    assert!(
+        matching_keys.iter().all(|key| (1..=1000).contains(key)),
+        "unconstrained join keys should be moderate: {matching_keys:?}"
+    );
     for index in counts.matching()..counts.total() {
         assert_ne!(order_customer_ids[index], customer_ids[index]);
     }
     assert!(amounts.iter().all(|amount| *amount >= 10));
     assert!(active.iter().all(|value| *value));
+}
+
+#[test]
+fn cte_join_keys_are_distributed_and_seeded() {
+    let counts = GenerationRowCounts::new(8, 4).expect("valid row counts");
+    let schemas = [
+        schema("orders", &[("customer_id", "INTEGER"), ("amount", "INTEGER")]),
+        schema("customers", &[("id", "INTEGER"), ("active", "BOOLEAN")]),
+    ];
+    let sql = "
+        WITH filtered_orders AS (
+            SELECT customer_id, amount FROM orders WHERE amount >= 10
+        ), filtered_customers AS (
+            SELECT id FROM customers WHERE active = true
+        )
+        SELECT o.customer_id
+        FROM filtered_orders AS o
+        JOIN filtered_customers AS c ON o.customer_id = c.id
+    ";
+    let generate = || {
+        generate_classified_from_sql(sql, "generic", &schemas, counts, SEED)
+            .expect("CTE join should generate")
+    };
+    let first = generate();
+    let second = generate();
+    let orders = first.table("orders").expect("orders");
+    let customers = first.table("customers").expect("customers");
+    let child_keys = orders.get_ints("customer_id").expect("keys").expect("built");
+    let parent_keys = customers.get_ints("id").expect("keys").expect("built");
+    let replay = second.table("orders").expect("replayed orders")
+        .get_ints("customer_id").expect("keys").expect("built");
+    assert_eq!(child_keys, replay, "the seed must reproduce identical keys");
+    for row in 0..counts.matching() {
+        assert_eq!(child_keys[row], parent_keys[row]);
+    }
+    for row in counts.matching()..counts.total() {
+        assert_ne!(child_keys[row], parent_keys[row]);
+    }
+    let distinct = child_keys[..counts.matching()].iter().copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(distinct.len() >= 3);
+    assert!(distinct.iter().all(|key| (1..=1000).contains(key)));
 }
 
 #[test]
