@@ -1521,7 +1521,7 @@ fn generate_prepared_relational_data(
     let adjacency = relationship_adjacency(relationship_plan.relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let matching_values =
-        choose_component_values(relationship_plan.candidates_by_column, &adjacency, &mut rng)?;
+        choose_component_values(relationship_plan.candidates_by_column, &adjacency, prepared.schemas, &mut rng)?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -1960,7 +1960,7 @@ fn generate_relational_data(
     let candidates_by_column = relationship_candidates(semantics, schemas, relationships)?;
     let adjacency = relationship_adjacency(relationships);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let matching_values = choose_component_values(&candidates_by_column, &adjacency, &mut rng)?;
+    let matching_values = choose_component_values(&candidates_by_column, &adjacency, schemas, &mut rng)?;
 
     for (column, value) in &matching_values {
         for row in 0..row_counts.total() {
@@ -2250,7 +2250,7 @@ fn generate_all_outcomes_data(
         }
 
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let matching_values = choose_component_values(&shared_candidates, &adjacency, &mut rng)?;
+        let matching_values = choose_component_values(&shared_candidates, &adjacency, &schemas, &mut rng)?;
         for (column, value) in &matching_values {
             for row in 0..row_counts.matching() {
                 set_generated_value(
@@ -2908,16 +2908,40 @@ fn relationship_adjacency(
     adjacency
 }
 
+fn preferred_component_values(
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    component: &[RelationshipColumn],
+    schemas: &BTreeMap<String, &RelationSchema>,
+) -> Result<Vec<ProtocolValue>, ProtocolGenerationError> {
+    let common = component_common_values(candidates_by_column, component);
+    let Some(first) = component.first() else {
+        return Ok(common);
+    };
+    let data_type = relationship_data_type(schemas, first)?;
+    let preferred = moderate_key_values(data_type)
+        .map_err(|message| ProtocolGenerationError::UnsupportedDomain {
+            relation: first.relation.clone(),
+            column: first.column.clone(),
+            message,
+        })?;
+    let moderate = common
+        .iter()
+        .filter(|value| preferred.contains(value))
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(if moderate.is_empty() { common } else { moderate })
+}
+
 fn choose_component_values<R: Rng + ?Sized>(
     candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
     adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
     rng: &mut R,
 ) -> Result<BTreeMap<RelationshipColumn, ProtocolValue>, ProtocolGenerationError> {
     let mut selected = BTreeMap::new();
 
     for component in relationship_components(candidates_by_column, adjacency) {
-        let common = component_common_values(candidates_by_column, &component);
-
+        let common = preferred_component_values(candidates_by_column, &component, schemas)?;
         if common.is_empty() {
             return Err(ProtocolGenerationError::UnsatisfiableRelationship {
                 relationship: component
@@ -2940,6 +2964,34 @@ fn choose_component_values<R: Rng + ?Sized>(
     }
 
     Ok(selected)
+}
+
+/// Assign distinct shared keys to matching rows when their protocol domains allow it.
+/// Rejected rows retain a common baseline, so their selected equality break remains isolated.
+fn distribute_matching_relationship_values<R: Rng + ?Sized>(
+    candidates_by_column: &BTreeMap<RelationshipColumn, Vec<ProtocolValue>>,
+    adjacency: &BTreeMap<RelationshipColumn, BTreeSet<RelationshipColumn>>,
+    schemas: &BTreeMap<String, &RelationSchema>,
+    generated: &mut BTreeMap<String, Vec<Vec<ProtocolValue>>>,
+    matching_rows: usize,
+    rng: &mut R,
+) -> Result<(), ProtocolGenerationError> {
+    for component in relationship_components(candidates_by_column, adjacency) {
+        let choices = preferred_component_values(candidates_by_column, &component, schemas)?;
+        let start = sample_relationship_index(rng, choices.len(), "relationship distribution")?;
+        for row in 0..matching_rows {
+            let index = (start + row % choices.len()) % choices.len();
+            let value = choices.get(index).ok_or_else(|| {
+                ProtocolGenerationError::InvalidRowConfiguration {
+                    message: "distributed relationship value is missing".to_owned(),
+                }
+            })?;
+            for column in &component {
+                set_generated_value(generated, schemas, column, row, value.clone())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Group relationship columns into sorted connected components in deterministic order.
