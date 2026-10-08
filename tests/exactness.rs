@@ -244,3 +244,59 @@ fn implicit_where_join_equalities_coordinate_physical_keys() {
         .expect("values");
     assert_eq!(left, right);
 }
+
+#[test]
+fn missing_schema_columns_and_lossy_literals_are_residual() {
+    for (sql, reason) in [
+        ("SELECT a FROM t WHERE ghost = 1", "unknown_schema_column"),
+        ("SELECT a FROM t WHERE a = 1.5", "lossy_coercion"),
+    ] {
+        let error = generate_classified_from_sql_with_assumptions(
+            sql,
+            "postgresql",
+            &[schema("t", &[("a", "INTEGER")], "postgresql")],
+            GenerationRowCounts::matching_only(4),
+            42,
+            &[],
+        )
+        .expect_err(sql);
+        let ProtocolGenerationError::ResidualConditions { conditions, .. } = &error else {
+            panic!("{sql}: unexpected {error:?}");
+        };
+        assert!(
+            conditions.iter().any(|condition| condition.contains(&format!("reason={reason}"))
+                && condition.contains("clause=where")),
+            "{sql}: {conditions:?}"
+        );
+    }
+}
+
+#[test]
+fn timezone_dependent_timestamp_filters_require_session_assumption() {
+    let schemas = [schema("t", &[("tz", "TIMESTAMP WITH TIME ZONE")], "duckdb")];
+    let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00+00'";
+    let error = generate_classified_from_sql_with_assumptions(
+        sql,
+        "duckdb",
+        &schemas,
+        GenerationRowCounts::matching_only(4),
+        42,
+        &[],
+    )
+    .expect_err("session timezone must be explicitly declared");
+    assert!(
+        matches!(error, ProtocolGenerationError::MissingComparisonAssumptions { .. }),
+        "{error:?}"
+    );
+    assert!(error.to_string().contains("session_time_zone"));
+
+    generate_classified_from_sql_with_assumptions(
+        sql,
+        "duckdb",
+        &schemas,
+        GenerationRowCounts::matching_only(4),
+        42,
+        &[ComparisonAssumption::SessionTimeZone],
+    )
+    .expect("attested timezone semantics must permit generation");
+}
