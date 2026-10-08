@@ -508,7 +508,8 @@ fn compiled_cli_honors_source_unique_not_null_accepted_values_and_relationships(
     );
     assert!(
         unique_orders.iter().all(|key| {
-            key.parse::<i64>().is_ok_and(|value| (1..=1000).contains(&value))
+            key.parse::<i64>()
+                .is_ok_and(|value| (1..=1000).contains(&value))
         }),
         "parent keys should be moderate: {unique_orders:?}"
     );
