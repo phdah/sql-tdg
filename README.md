@@ -70,6 +70,15 @@ complement domain and samples every other column normally. The seed makes this r
 reproducible. Unbounded or otherwise insufficient domains fail explicitly when they cannot guarantee
 the requested classification.
 
+For projected CASE expressions, generation uses SQL Semantic Protocol's physical source-column
+branch domains to exercise reachable WHEN and ELSE arms when matching rows permit. Compatible
+branches can share a witness row. Every branch is reported by the library's
+`GeneratedData::case_coverage()` API and the CLI's `case_branch=...` output as
+`covered`, `unreachable`, `unknown`, or `insufficient_rows`. CASE expressions based on
+aggregates or unsafe lineage are reported as unknown, never as covered. Branch witnesses
+are intersected with all applicable query domains and require the same comparison
+assumptions as equivalent filters.
+
 For supported inner equality relationships, multi-relation generation coordinates physical source
 keys using protocol join, graph, schema, and lineage metadata. Matching rows satisfy every connected
 equality relationship. Rejected relational rows deterministically break one safely isolatable
