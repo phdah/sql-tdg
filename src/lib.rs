@@ -8,6 +8,7 @@ pub mod protocol;
 mod protocol_value;
 pub mod solver;
 pub mod table;
+mod case_coverage;
 pub mod test_case;
 pub mod types;
 
