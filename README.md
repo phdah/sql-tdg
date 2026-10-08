@@ -203,9 +203,10 @@ sql-tdg generate \
 ```
 
 The CLI reads `target/manifest.json` and uses `target/catalog.json` when it exists. Warehouse
-catalog types take precedence over manifest-declared types. Without a catalog, every physical
-dependency needs complete, typed column declarations in the manifest; missing schema or
-`data_type` metadata fails explicitly. If a compiled model references an undeclared source
+catalog types take precedence over manifest-declared types. Without a catalog, every physical dependency and physical source referenced only by a
+canonical constraint needs complete, typed column declarations in the manifest. This includes
+foreign-key parent sources that are not read by any compiled model. Missing schema or `data_type`
+metadata fails explicitly. If a compiled model references an undeclared source
 column, generation fails with the protocol's `unknown_schema_column` residual instead of
 silently omitting that column. Use `--dbt-catalog <path>` to require a specific catalog file.
 

@@ -17,6 +17,7 @@ references:
   - sql-semantic-protocol TASK-41
   - sql-semantic-protocol TASK-42
   - sql-semantic-protocol TASK-48
+  - sql-semantic-protocol TASK-57
 priority: medium
 type: feature
 ---
@@ -40,7 +41,7 @@ Protocol status (verified at protocol commit 3a4d3c6, release 2.0.0):
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 sql-tdg depends on a protocol 2.x release exposing canonical unique, not-null, accepted-values, and foreign-key constraints from dbt artifacts
+- [x] #1 sql-tdg depends on protocol 2.0.3, which exposes canonical constraints and schemas for constraint-only physical relations
 - [x] #2 Generated data satisfies unique and not_null constraints
 - [x] #3 Generated data satisfies accepted_values constraints
 - [x] #4 Generated data satisfies relationships (foreign key) constraints across generated relations
@@ -61,4 +62,5 @@ Protocol status (verified at protocol commit 3a4d3c6, release 2.0.0):
 2026-10-08: Protocol 2.0.2 (PR #72) adds the constraint diagnostic code `unattributed_dbt_test` (bundle-level `constraint_diagnostics`) for built-in dbt tests whose tested resource cannot be identified. Source-level tests, where dbt writes attached_node: null, are now attributed from the test's `kwargs.model` argument, including relationships between sources and self-referencing ones. Verified on the maintainer's paper_trail fixture: all 19 generic tests attach to the right relation; the two singular tests are reported as `unsupported_dbt_singular_test` on daily_revenue. Constraints on daily_revenue (a model, not a generated source) must be reported as not honored under AC #10.
 2026-10-08: Implementing canonical constraint enforcement in sql-tdg. Enforces typed accepted_values, not_null, primary/unique keys, and foreign keys; generated relation diagnostics fail by code, unrelated model constraints are reported as not honored, and unsupported metadata fails explicitly. Adds CLI tests and a dbt build E2E case. The SQL Semantic Protocol 2.0.2 catalog-less adapter only includes manifest-declared schemas for direct model dependencies, not for sources referenced exclusively by relationships tests. A source used only as a foreign-key parent cannot be materialized without an upstream protocol change; generation must fail with missing source schema rather than guessing a datatype. The regression fixture also includes an independent model reading the parent source to expose the catalog-less schema evidence. Work remains to verify every acceptance criterion and green CI.
 2026-10-08: All five CI jobs passed for commit c6c9b6b7 (workflow run 37805782629): fmt, lint, doc, Rust tests, and dbt Core E2E. The new dbt build regression exercises source unique, not_null, accepted_values, and cross-source relationships. Criteria #1 through #12 implemented and checked; #13 remains open because the maintainer's exact paper_trail manifest/catalog fixture is not committed to this repository, and passing the representative fixture is not proof it passed.
+2026-10-08: Upgraded sql-semantic-protocol from 2.0.2 to 2.0.3 (upstream TASK-57) with the crates.io registry checksum in Cargo.lock. Removed the `orders_probe` model dependency from both dbt manifest fixtures so the foreign-key parent now has no model SQL consumer. Added a targeted CLI FK regression and a real dbt Core catalog-less compile/generation regression with a parent source referenced only by a relationships test. The exact maintainer paper_trail fixture is still not in this repository; acceptance criterion #13 remains pending direct validation.
 <!-- SECTION:NOTES:END -->

@@ -43,21 +43,6 @@
           "source.demo.raw.order_items"
         ]
       }
-    },
-    "model.demo.orders_probe": {
-      "unique_id": "model.demo.orders_probe",
-      "resource_type": "model",
-      "relation_name": "warehouse.analytics.orders_probe",
-      "database": "warehouse",
-      "schema": "analytics",
-      "original_file_path": "models/orders_probe.sql",
-      "language": "sql",
-      "compiled_code": "SELECT order_id FROM warehouse.raw.orders",
-      "depends_on": {
-        "nodes": [
-          "source.demo.raw.orders"
-        ]
-      }
     }
   },
   "sources": {

@@ -450,6 +450,16 @@ sources:
           - {name: status, data_type: VARCHAR}
           - {name: created_at, data_type: TIMESTAMP}
           - {name: region, data_type: VARCHAR}
+          - name: parent_id
+            data_type: INTEGER
+            data_tests:
+              - relationships:
+                  arguments:
+                    to: "source('raw', 'parent_lookup')"
+                    field: id
+      - name: parent_lookup
+        columns:
+          - {name: id, data_type: INTEGER}
       - name: customers
         columns:
           - {name: id, data_type: INTEGER}
@@ -483,5 +493,5 @@ sources:
     let output = run_tdg(&project, TARGET_RELATION, &output_dir, &[], 3, 0);
     assert_success("catalog-less dbt source generation", &output);
     let paths = generated_paths(&output.stdout);
-    assert_generated_rows(&paths, &["customers", "orders"], 3);
+    assert_generated_rows(&paths, &["customers", "orders", "parent_lookup"], 3);
 }
