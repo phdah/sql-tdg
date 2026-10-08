@@ -34,16 +34,16 @@ Outcome: matching rows of related relations spread across several distinct key v
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 For a supported inner equality join, matching child rows reference several distinct parent key values when the domains and row counts allow it, instead of one shared value
-- [ ] #2 Generated key values for join and key columns prefer moderate values consistent with TASK-21.6, and use type extremes only when the protocol domain requires them
-- [ ] #3 Unique and primary key constraints, foreign keys, query domains, and NULL rules are still satisfied, and rejected-row generation still breaks exactly one relationship
-- [ ] #4 Output stays deterministic for the same inputs and seed
-- [ ] #5 Tests assert key distribution and moderate values for a top-level join, a join inside a CTE, and a dbt source relationships constraint
+- [x] #1 For a supported inner equality join, matching child rows reference several distinct parent key values when the domains and row counts allow it, instead of one shared value
+- [x] #2 Generated key values for join and key columns prefer moderate values consistent with TASK-21.6, and use type extremes only when the protocol domain requires them
+- [x] #3 Unique and primary key constraints, foreign keys, query domains, and NULL rules are still satisfied, and rejected-row generation still breaks exactly one relationship
+- [x] #4 Output stays deterministic for the same inputs and seed
+- [x] #5 Tests assert key distribution and moderate values for a top-level join, a join inside a CTE, and a dbt source relationships constraint
 - [ ] #6 On the maintainer's paper_trail fixture, generated sources still pass all 13 dbt source tests and daily_revenue contains more than one row
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-08: PR #33 adds typed moderate key candidates, deterministic distribution across joined source rows, and cycling foreign keys across valid parent tuples. Direct SQL, CTE, and dbt source constraint regressions assert key spread and preserved referential validity. CI pending. AC #6 needs validation against the maintainer-only paper_trail fixture, which is not committed in this repository. Do not claim it has passed until that check runs.
+2026-10-08: PR #33 adds typed moderate key candidates, deterministic distribution across joined source rows, and cycling foreign keys across valid parent tuples. Direct SQL, CTE, and dbt source constraint regressions assert key spread and preserved referential validity. The Rust checks and dbt build constraints regression passed on the previous candidate; final CI pending. AC #6 needs validation against the maintainer-only paper_trail fixture, which is not committed in this repository. Do not claim it has passed until that check runs.
 <!-- SECTION:NOTES:END -->
