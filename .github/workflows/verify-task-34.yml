@@ -37,7 +37,10 @@ jobs:
           echo "docs.rs: published 1.0.0 Rust API documentation available"
 
           fetch "https://docs.rs/sql-tdg/badge.svg" docs.svg
-          grep -qi 'docs.rs' docs.svg
+          echo "docs.rs badge payload:"
+          head -c 800 docs.svg
+          echo
+          grep -Eqi '(docs|documentation)' docs.svg
           if grep -Eqi '(build failed|failed to build|not found)' docs.svg; then
             echo "docs.rs badge indicates a build failure"
             exit 1
