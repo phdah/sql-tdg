@@ -1,10 +1,11 @@
 ---
 id: TASK-22
 title: Honor dbt data tests in generated data
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@opencode'
 created_date: '2026-10-06 12:39'
-updated_date: '2026-10-08 14:51'
+updated_date: '2026-10-08 17:36'
 labels: []
 dependencies:
   - TASK-21.8
@@ -58,4 +59,5 @@ Protocol status (verified at protocol commit 3a4d3c6, release 2.0.0):
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-08: Protocol 2.0.2 (PR #72) adds the constraint diagnostic code `unattributed_dbt_test` (bundle-level `constraint_diagnostics`) for built-in dbt tests whose tested resource cannot be identified. Source-level tests, where dbt writes attached_node: null, are now attributed from the test's `kwargs.model` argument, including relationships between sources and self-referencing ones. Verified on the maintainer's paper_trail fixture: all 19 generic tests attach to the right relation; the two singular tests are reported as `unsupported_dbt_singular_test` on daily_revenue. Constraints on daily_revenue (a model, not a generated source) must be reported as not honored under AC #10.
+2026-10-08: Implementing canonical constraint enforcement in sql-tdg. Enforces typed accepted_values, not_null, primary/unique keys, and foreign keys; generated relation diagnostics fail by code, unrelated model constraints are reported as not honored, and unsupported metadata fails explicitly. Adds CLI tests and a dbt build E2E case. The SQL Semantic Protocol 2.0.2 catalog-less adapter only includes manifest-declared schemas for direct model dependencies, not for sources referenced exclusively by relationships tests. A source used only as a foreign-key parent cannot be materialized without an upstream protocol change; generation must fail with missing source schema rather than guessing a datatype. The regression fixture also includes an independent model reading the parent source to expose the catalog-less schema evidence. Work remains to verify every acceptance criterion and green CI.
 <!-- SECTION:NOTES:END -->
