@@ -10,8 +10,13 @@ labels:
   - cli
   - generation
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-37
+  - TASK-38
+  - TASK-43
+
 references:
+  - 'sql-semantic-protocol TASK-86'
   - TASK-21.3
   - TASK-13
   - TASK-14
@@ -51,4 +56,9 @@ Semantics, lineage and predicate analysis belong to SQL Semantic Protocol. If th
 - [ ] #8 Library, CLI and dbt DuckDB e2e tests cover shared sources, disjoint sources, conflicting outcomes and the default --rejected 10 invocation
 - [ ] #9 README, docs/usage.md and CLI help describe rejected-row semantics in whole-project mode
 - [ ] #10 Whole-project generation succeeds with the default --rejected 10 (no --rejected flag passed) for projects whose terminal models are all supported
+- [ ] #11 After maintainer approval of the rejection definition, require protocol-issued per-terminal classification vectors and independently provable absence; do not infer outcome membership from source predicates.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.

@@ -6,8 +6,14 @@ assignee: []
 created_date: '2026-10-08'
 labels: []
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-37
+  - TASK-40
+  - TASK-43
+
 references:
+  - 'sql-semantic-protocol TASK-70'
+  - 'sql-semantic-protocol TASK-79'
   - 'sql-semantic-protocol TASK-63'
   - 'TASK-13'
   - 'TASK-21.8'
@@ -30,4 +36,9 @@ This is post-1.0 feature work, not a claim about existing CLI behavior. Canonica
 - [ ] #3 Guarantee matching and rejected witnesses with appropriate coupling across columns, or fail explicitly for unsatisfiable/noninvertible conditions.
 - [ ] #4 Run SQL-level DuckDB comparisons for a matrix of expressions, casts, prefix patterns and cross-column disjunctions.
 - [ ] #5 Update the feature matrix and provide actionable errors where protocol exactness is absent.
+- [ ] #6 Cover full reviewed predicate families and typed correlations across filters, joins and projected expressions, including computed source dependencies without independent Cartesian sampling.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.
