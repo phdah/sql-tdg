@@ -6,11 +6,16 @@ assignee: []
 created_date: '2026-10-08'
 labels: []
 milestone: m-3
-dependencies: 
+dependencies:
   - TASK-24
   - TASK-28
   - TASK-29
+  - TASK-37
+  - TASK-38
+  - TASK-43
 references:
+  - 'sql-semantic-protocol TASK-69'
+  - 'sql-semantic-protocol TASK-85'
   - 'sql-semantic-protocol TASK-64'
   - 'TASK-24'
   - 'TASK-28'
@@ -34,4 +39,9 @@ This is post-1.0 feature work, not a claim about existing CLI behavior. Canonica
 - [ ] #3 Handle multiplicity from supported joins, grouping, DISTINCT and compatible set/window capabilities without claiming unsupported shapes.
 - [ ] #4 Validate target counts and distributions by executing fixture SQL in DuckDB; include a negative impossible-goal test.
 - [ ] #5 Document exact scope and guarantee level, with backwards-compatible defaults.
+- [ ] #6 Guarantee requested output counts and typed distributions through cross-operator and multi-column composed pipelines, including shared-source and impossible goals.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.

@@ -6,8 +6,14 @@ assignee: []
 created_date: '2026-10-08'
 labels: []
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-37
+  - TASK-43
+
 references:
+  - 'sql-semantic-protocol TASK-68'
+  - 'sql-semantic-protocol TASK-69'
+  - 'sql-semantic-protocol TASK-71'
   - 'sql-semantic-protocol TASK-61'
   - 'TASK-14'
   - 'TASK-18'
@@ -30,4 +36,9 @@ This is post-1.0 feature work, not a claim about existing CLI behavior. Canonica
 - [ ] #3 Preserve cardinality, nullability, keys, foreign keys, duplicate relations, and deterministic matching/rejected classification; impossible shape gives an actionable error.
 - [ ] #4 Verify complete SQL results with DuckDB across missing parent, unmatched child, NULL join key, multi-match and alias cases.
 - [ ] #5 Document remaining unsupported join shapes and assumptions.
+- [ ] #6 Include composite/non-equi/outer join trees and filtered producer relations; prove matching, unmatched, anti and self-join behavior on complete source graphs.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.

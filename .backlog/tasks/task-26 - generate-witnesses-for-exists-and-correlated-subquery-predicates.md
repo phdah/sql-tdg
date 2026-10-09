@@ -6,8 +6,13 @@ assignee: []
 created_date: '2026-10-08'
 labels: []
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-37
+  - TASK-43
+
 references:
+  - 'sql-semantic-protocol TASK-68'
+  - 'sql-semantic-protocol TASK-75'
   - 'sql-semantic-protocol TASK-62'
   - 'TASK-14'
   - 'TASK-18'
@@ -30,4 +35,9 @@ This is post-1.0 feature work, not a claim about existing CLI behavior. Canonica
 - [ ] #3 Preserve composed predicates through CTEs and multi-layer models, and classify rejected witnesses only when nonmembership is guaranteed.
 - [ ] #4 Test empty/nonempty subquery sets, nullable keys, duplicate keys and impossible correlations by executing SQL in DuckDB.
 - [ ] #5 Fail closed on unsupported nested or ambiguous subquery semantics and document the supported surface.
+- [ ] #6 Support joined/nested, scalar/quantified, correlated and uncorrelated subqueries through intermediate/dbt models with correct SQL three-valued membership.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.

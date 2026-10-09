@@ -6,8 +6,15 @@ assignee: []
 created_date: '2026-10-08'
 labels: []
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-37
+  - TASK-43
+
 references:
+  - 'sql-semantic-protocol TASK-68'
+  - 'sql-semantic-protocol TASK-69'
+  - 'sql-semantic-protocol TASK-72'
+  - 'sql-semantic-protocol TASK-85'
   - 'sql-semantic-protocol TASK-58'
   - 'TASK-18'
   - 'docs/usage.md'
@@ -30,4 +37,9 @@ This is post-1.0 feature work, not a claim about existing CLI behavior. Canonica
 - [ ] #3 Handle overlapping vs disjoint branches, duplicate elimination, NULL, input schemas and impossible constraints without mislabeling matching or rejected rows.
 - [ ] #4 Add CLI and Rust API DuckDB E2E tests that verify final SQL results against documented expectations and explicit failures for residual shapes.
 - [ ] #5 Update usage docs and feature matrix to distinguish fully supported set operation shapes from unsupported variants.
+- [ ] #6 Expand fixture coverage to multi-column, nested, overlapping, branch-filtered, shared-source and intermediate set transformations using upstream exact construction; mark only explicitly out-of-scope variants residual.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.

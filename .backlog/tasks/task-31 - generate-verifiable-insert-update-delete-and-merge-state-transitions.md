@@ -6,8 +6,18 @@ assignee: []
 created_date: '2026-10-08'
 labels: []
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-37
+  - TASK-39
+  - TASK-40
+  - TASK-43
+
 references:
+  - 'sql-semantic-protocol TASK-79'
+  - 'sql-semantic-protocol TASK-80'
+  - 'sql-semantic-protocol TASK-81'
+  - 'sql-semantic-protocol TASK-82'
+  - 'sql-semantic-protocol TASK-84'
   - 'sql-semantic-protocol TASK-65'
   - 'TASK-18'
   - 'TASK-19'
@@ -30,4 +40,9 @@ This is post-1.0 feature work, not a claim about existing CLI behavior. Canonica
 - [ ] #3 Honor key/foreign-key constraints, matched/unmatched branches, source filters and exact after-state obligations; fail closed for unsupported effect semantics.
 - [ ] #4 Execute real DuckDB mutations and assert before/after snapshots, idempotence where specified and intentionally nonmatching cases.
 - [ ] #5 Document incremental-model capabilities, limitations and how exported files are loaded by callers.
+- [ ] #6 Provide verifiable prestate, target effects, constraints, afterstate and idempotence for the reviewed INSERT/UPDATE/DELETE/MERGE/UPSERT and dialect-specific branches, including joined updates and conflicts.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.

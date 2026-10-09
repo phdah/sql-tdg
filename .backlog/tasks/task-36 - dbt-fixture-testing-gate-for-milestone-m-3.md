@@ -20,7 +20,17 @@ dependencies:
   - TASK-30
   - TASK-31
   - TASK-35
+  - TASK-37
+  - TASK-38
+  - TASK-39
+  - TASK-40
+  - TASK-41
+  - TASK-42
+  - TASK-43
 references:
+  - 'sql-semantic-protocol TASK-66'
+  - 'sql-semantic-protocol TASK-89'
+  - 'sql-semantic-protocol TASK-91'
   - TASK-21
   - TASK-19
   - tests/fixtures/dbt_core_project/Makefile
@@ -64,4 +74,9 @@ Expected outcomes for row-preserving models and for aggregate or grouped models 
 - [ ] #9 README or docs/usage.md describe how to run the dbt demo gate locally
 - [ ] #10 The maintainer signs off on the gate before milestone m-3 is closed
 - [ ] #11 `make all` with default variables (100 matching, 10 rejected, no target) runs end to end on the committed fixture without disabling models or passing extra arguments
+- [ ] #12 The final gate must run against the pinned protocol v3 candidate *before* its release, cover the complete approved feature matrix, assert complete model values/counts/negative membership, and sign off protocol TASK-91 before release PR #79 is merged.
 <!-- AC:END -->
+
+## Protocol v3 release gate (2026-10-09)
+
+**Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.
