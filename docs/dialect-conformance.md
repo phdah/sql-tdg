@@ -70,3 +70,9 @@ actual engine execution evidence. Add a dialect-specific execution claim only
 when a test runs its generated data through that engine and checks the SQL
 result. This matrix is an evidence record, not a hardcoded production dialect
 whitelist.
+
+## Required m-3 certification (approved scope, not current coverage)
+
+The maintainer approved a stronger v3 release gate on 2026-10-09. **TASK-33's representative matrix above remains accurate for the current implementation but does not satisfy the future gate by itself.** [TASK-44](../.backlog/tasks/task-44%20-%20certify-dialect-equivalent-canonical-generator-contract.md) and [the unified E2E plan](m3-acceptance-plan.md) require every advertised supported feature/variant to parse and produce an **identical canonical protocol outcome across all 13 dialects** when SQL meaning is equivalent, including exact domains/bounds, lineage, positive/negative membership, cardinality, and DDL/DML state effects. Dialect-specific SQL must receive an equivalent canonical fixture or a typed residual/conditional-law classification; parse success alone is insufficient.
+
+DuckDB executes the committed dbt model DAG **and** required scripted DDL/DML transition harness under one `make all` and checks complete results, source-to-terminal negative classifications and seeded variation across all provable rejecting predicates/columns. Execution in DuckDB does not claim native engine validation for other SQL dialects. These are **requirements still to implement**, not present-tense E2E guarantees.
