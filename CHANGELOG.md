@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/phdah/sql-tdg/compare/v1.0.0...v1.1.0) (2026-10-09)
+
+
+### Features
+
+* partition conflicting terminal outcomes into reproducible scenarios ([#43](https://github.com/phdah/sql-tdg/issues/43)) ([69e4511](https://github.com/phdah/sql-tdg/commit/69e451175561355a9b15a4972922cce4fc4ee38c))
+
 ## [1.0.0](https://github.com/phdah/sql-tdg/compare/v0.1.0...v1.0.0) (2026-10-08)
 
 
