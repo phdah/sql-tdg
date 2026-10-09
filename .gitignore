@@ -2,3 +2,10 @@ __pycache__
 .venv
 __debug_bin*
 /target/
+
+# dbt fixture local testing
+tests/fixtures/dbt_core_project/generate.log
+tests/fixtures/dbt_core_project/fixture.duckdb
+tests/fixtures/dbt_core_project/target
+tests/fixtures/dbt_core_project/logs
+tests/fixtures/dbt_core_project/.user.yml
