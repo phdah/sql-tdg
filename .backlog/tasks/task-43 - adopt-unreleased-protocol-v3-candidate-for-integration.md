@@ -31,4 +31,9 @@ Generator-side implementation for the single SQL Semantic Protocol 3.0.0 contrac
 - [ ] #4 Prevent a dependency cycle: execute protocol+generator acceptance before protocol 3.0.0 exists, then switch to exactly published protocol 3.0.0 and verify the same fixture signatures.
 - [ ] #5 Document compatibility evidence and the precise pinned commit used for protocol TASK-91 sign-off.
 - [ ] #6 Document supported versus residual variants, add full-result differential tests and update docs/dialect-conformance.md for every changed feature.
+- [ ] #7 Verify the pinned protocol candidate includes approved multi-terminal randomized rejecting-alternative contracts, documented conditional future support for opaque behavior, and equivalent canonical semantic outputs for every advertised dialect/feature pair.
 <!-- AC:END -->
+
+## Approved upstream scope (2026-10-09)
+
+Scope decisions 1–4 are approved in upstream protocol PR #88, but upstream TASK-91 remains closed for release. The candidate must be pinned by a Git SHA and validated with the unified dbt/DDL/DML `make all` plus 13-dialect canonical equivalence tests before publication.
