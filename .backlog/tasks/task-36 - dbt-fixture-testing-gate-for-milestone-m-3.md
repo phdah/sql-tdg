@@ -27,6 +27,7 @@ dependencies:
   - TASK-41
   - TASK-42
   - TASK-43
+  - TASK-44
 references:
   - 'sql-semantic-protocol TASK-66'
   - 'sql-semantic-protocol TASK-89'
@@ -56,14 +57,14 @@ Current state (2026-10-09):
 - The Rust dbt e2e suite (`make dbt-e2e`, tests/dbt_core_e2e.rs) runs on the same fixture and asserts that whole-project mode fails on aggregate_summary with reason=having; that assertion becomes obsolete when TASK-28 lands.
 - CI installs dbt-core and dbt-duckdb (tests/requirements-dbt-e2e.txt) but not the DuckDB CLI the Makefile uses.
 
-Open decision (maintainer, before the fixture is extended): how TASK-31 (INSERT/UPDATE/DELETE/MERGE state transitions) is covered: through a dbt pattern in this fixture (for example incremental models or snapshots) or verified outside the dbt gate with the reason recorded here.
+**Maintainer-approved decision (2026-10-09):** use **both** dbt-native workflows (including incremental models and snapshots where relevant) and a **required companion scripted DuckDB DML/DDL transition harness**, invoked by the **same** committed fixture `make all`. This does not permit skipping DDL/MERGE/INSERT cases because a dbt model DAG alone cannot express them. The single CI acceptance gate fails if either portion fails.
 
 Expected outcomes for row-preserving models and for aggregate or grouped models (where output rows differ from source rows) must follow the output-cardinality contract defined by TASK-30 rather than ad hoc numbers.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The maintainer's decision on how TASK-31 is covered is recorded in this task
+- [x] #1 The maintainer's decision on how TASK-31 is covered is recorded in this task
 - [ ] #2 The dbt fixture contains models exercising every m-3 feature (set operations, extended joins and self-joins, EXISTS/correlated subqueries, computed and correlated predicates, grouped aggregates with HAVING, window ranks with QUALIFY, output cardinality) or this task records each feature explicitly excluded from the dbt gate with the maintainer's approval
 - [ ] #3 `make all` exits non-zero when any source relation, model output or rejected-row expectation does not hold
 - [ ] #4 Expected matching and rejected outcomes are derived from the generated metadata.sqltdg and the TASK-30 cardinality contract, not hard-coded counts
@@ -75,8 +76,15 @@ Expected outcomes for row-preserving models and for aggregate or grouped models 
 - [ ] #10 The maintainer signs off on the gate before milestone m-3 is closed
 - [ ] #11 `make all` with default variables (100 matching, 10 rejected, no target) runs end to end on the committed fixture without disabling models or passing extra arguments
 - [ ] #12 The final gate must run against the pinned protocol v3 candidate *before* its release, cover the complete approved feature matrix, assert complete model values/counts/negative membership, and sign off protocol TASK-91 before release PR #79 is merged.
+- [ ] #13 The committed dbt fixture `make all` performs a mandatory scripted DuckDB DDL/DML E2E with exact pre/post snapshots (CREATE/REPLACE/ALTER/DROP, INSERT/UPDATE/DELETE/MERGE/UPSERT, transactions, conflict branches) plus feasible native dbt incremental and model DAG cases; failure anywhere makes the single gate red.
+- [ ] #14 Seeded randomized per-terminal negative predicates/columns cover **every protocol-proven alternative across multiple seeds** and all terminal absence vectors agree with independently executed SQL; fixed-seed output remains reproducible.
+- [ ] #15 Every approved supported dialect/feature pair is parsed and semantically compared to its canonical equivalent in CI, with all 13 exposed dialects checked and DuckDB used only for executable equivalent transformations. Evidence is recorded in the upstream and downstream conformance matrices.
 <!-- AC:END -->
 
 ## Protocol v3 release gate (2026-10-09)
 
 **Release dependency:** This task must be validated against the upstream single 3.0.0 release candidate pinned by sql-tdg TASK-43; the protocol release remains blocked on upstream TASK-91. Original criteria remain binding. Do not mark Done using only an operator-local proof where the physical-source DAG cannot realize it. Fully execute SQL to verify terminal rows and deliberately rejected cases, and document supported/residual variants in the feature-by-dialect matrix. Companion planning PR: https://github.com/phdah/sql-semantic-protocol/pull/87.
+
+## Approved E2E scope (2026-10-09)
+
+The maintainer approved one **unified**, mandatory and repeatable `make all` gate. It covers the dbt DAG plus scripted DuckDB DML/DDL, not a separate optional sign-off. The repo's existing fixture Makefile currently only runs dbt models and prints counts; it **does not yet satisfy** this decision. Extend verification to full values, bag multiplicities, physical-source pre/post state, constraints and per-terminal negatives, with deterministic seeds and varied failing columns. Follow [docs/m3-acceptance-plan.md](../../docs/m3-acceptance-plan.md) and [protocol scope](https://github.com/phdah/sql-semantic-protocol/blob/feat/task-66-dialect-feature-inventory/docs/coverage-signoff.md).
