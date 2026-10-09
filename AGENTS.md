@@ -2,8 +2,8 @@
 
 See [README.md](README.md) for the project overview: given a SQL query and a table schema,
 generate test data that satisfies the query's supported conditions. The Rust crate at the
-repository root is the sole active implementation. `python_poc/` is frozen unless the user asks
-otherwise. This file holds project principles and Rust-specific conventions.
+repository root is the sole implementation. This file holds project principles and Rust-specific
+conventions.
 
 ## Architecture
 
