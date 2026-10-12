@@ -16,6 +16,7 @@ references:
   - 'sql-semantic-protocol TASK-66'
   - 'sql-semantic-protocol TASK-88'
   - 'sql-semantic-protocol TASK-89'
+  - 'sql-semantic-protocol TASK-99 / PR #105'
   - 'TASK-33'
   - 'TASK-36'
 priority: high
@@ -36,8 +37,23 @@ TASK-33 established a **representative** dialect matrix. The maintainer-approved
 - [ ] #4 Evaluate generated physical sources under DuckDB's equivalent executable SQL, including joined group/window/set/CTE combinations and ordered DML/DDL scripts. Test complete result values, multiplicities and requested per-terminal membership rather than only row counts.
 - [ ] #5 Explicitly distinguish parser/canonical/generator proof from native engine execution: DuckDB E2E is mandatory; unprovisioned BigQuery, Snowflake, MSSQL, PostgreSQL, MySQL, etc. are not labeled execution-certified.
 - [ ] #6 Update docs/dialect-conformance.md, upstream coverage manifest, runnable fixture tests and the pinned candidate SHA documentation; block final TASK-36/91 sign-off for any uncovered advertised support.
+- [ ] #7 Reuse the protocol-owned `tests/fixtures/conformance/v1/suite.json` cases and canonical expected semantic/dialect outcomes from TASK-43's **same pinned protocol SHA**, together with the protocol's authoritative coverage manifest. Do not fork or re-author the canonical dialect/feature matrix inside sql-tdg; record only consumer generation and execution certification as a separate layer.
+- [ ] #8 For each advertised dialect/variant, distinguish the protocol parser boundary and canonical semantics from an exact physical generator proof and independently executed DuckDB result. Fail closed on protocol residual/unsupported classifications and report untested native-engine behavior explicitly; parsing success is never sufficient to declare generator conformance.
 <!-- AC:END -->
 
 ## Delivery guidance
 
 Required for the single protocol 3.0.0 and sql-tdg m-3 acceptance before Release Please PR #79. Depends on the upstream TASK-88 dialect equivalence semantics and pinned protocol candidate in TASK-43. Parser tests require no external vendor database; use DuckDB only for independently executable equivalent shapes. The scope approval itself is documented in protocol PR #88.
+
+## Shared dialect suite dependency (2026-10-12)
+
+Use the versioned protocol-owned suite and the authoritative protocol
+feature/dialect coverage manifest established by
+https://github.com/phdah/sql-semantic-protocol/pull/105, pinned in TASK-43. Canonical outcomes are an
+upstream responsibility; downstream evidence proves sql-tdg can realize
+those outcomes in physical source data. Local
+`docs/dialect-conformance.md` documents **generator** support and verified
+execution, not a competing specification of SQL meaning. Broader approved
+dialect/variant coverage beyond the initial v1 examples must be contributed
+to the protocol-owned conformance inventory and exercised here once it is
+available. No release sign-off is implied.

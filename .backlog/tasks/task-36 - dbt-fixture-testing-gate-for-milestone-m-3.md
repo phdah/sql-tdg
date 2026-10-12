@@ -32,6 +32,7 @@ references:
   - 'sql-semantic-protocol TASK-66'
   - 'sql-semantic-protocol TASK-89'
   - 'sql-semantic-protocol TASK-91'
+  - 'sql-semantic-protocol TASK-99 / PR #105'
   - TASK-21
   - TASK-19
   - tests/fixtures/dbt_core_project/Makefile
@@ -79,6 +80,8 @@ Expected outcomes for row-preserving models and for aggregate or grouped models 
 - [ ] #13 The committed dbt fixture `make all` performs a mandatory scripted DuckDB DDL/DML E2E with exact pre/post snapshots (CREATE/REPLACE/ALTER/DROP, INSERT/UPDATE/DELETE/MERGE/UPSERT, transactions, conflict branches) plus feasible native dbt incremental and model DAG cases; failure anywhere makes the single gate red.
 - [ ] #14 Seeded randomized per-terminal negative predicates/columns cover **every protocol-proven alternative across multiple seeds** and all terminal absence vectors agree with independently executed SQL; fixed-seed output remains reproducible.
 - [ ] #15 Every approved supported dialect/feature pair is parsed and semantically compared to its canonical equivalent in CI, with all 13 exposed dialects checked and DuckDB used only for executable equivalent transformations. Evidence is recorded in the upstream and downstream conformance matrices.
+- [ ] #16 With TASK-43's pinned protocol revision, use the canonical `tests/fixtures/conformance/v1/suite.json` and its SQL/dbt/seed files as the semantic fixture source and fixed-population DuckDB oracle; fail CI for missing or divergent canonical cases. This repository may extend the **generator-specific** dbt `make all` harness, but must not maintain an independently authoritative duplicate of protocol SQL semantics or expected outcomes.
+- [ ] #17 Independently execute the **generated** shared physical-source data through every target model and scripted DDL/DML transition, checking output values, multiplicities, terminal presence/absence and before/after state against protocol-issued proof obligations plus generated `metadata.sqltdg`. The conformance suite's fixed-seed output snapshots apply only to its fixed source populations, not arbitrary randomized generated rows; ensure the two oracle classes are not conflated.
 <!-- AC:END -->
 
 ## Protocol v3 release gate (2026-10-09)
@@ -88,3 +91,19 @@ Expected outcomes for row-preserving models and for aggregate or grouped models 
 ## Approved E2E scope (2026-10-09)
 
 The maintainer approved one **unified**, mandatory and repeatable `make all` gate. It covers the dbt DAG plus scripted DuckDB DML/DDL, not a separate optional sign-off. The repo's existing fixture Makefile currently only runs dbt models and prints counts; it **does not yet satisfy** this decision. Extend verification to full values, bag multiplicities, physical-source pre/post state, constraints and per-terminal negatives, with deterministic seeds and varied failing columns. Follow [docs/m3-acceptance-plan.md](../../docs/m3-acceptance-plan.md) and [protocol scope](https://github.com/phdah/sql-semantic-protocol/blob/feat/task-66-dialect-feature-inventory/docs/coverage-signoff.md).
+
+## Canonical fixture ownership for the release gate (2026-10-12)
+
+Protocol https://github.com/phdah/sql-semantic-protocol/pull/105 moves the conformance source of truth to
+`sql-semantic-protocol/tests/fixtures/conformance/v1/suite.json`. TASK-43
+pins the library and fixture suite to the **same protocol Git SHA**. Use the
+protocol's authored SQL/dbt corpus, known outcomes and proof classifications as
+the shared baseline; keep this repo's `tests/fixtures/dbt_core_project/`
+workflow as the generator-specific integration harness. Its independently
+generated data and randomized rejected alternatives must still be executed
+and verified by DuckDB, using metadata and protocol proofs rather than
+pretending they match the suite's fixed-source snapshots. Missing canonical
+coverage must be added upstream to the protocol conformance suite;
+generator-specific workload extensions remain here and must not reinterpret
+SQL locally. The unified `make all` and maintainer sign-off criteria remain
+unchanged and incomplete.
