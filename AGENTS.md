@@ -151,3 +151,22 @@ Todos, planned work, and decisions are tracked in the local
 [Backlog.md](https://github.com/MrLesk/Backlog.md) board under `.backlog/`. Use Backlog.md tooling
 when available; otherwise edit the Markdown files directly following the existing format. Commit
 task changes alongside the work they describe.
+
+The MCP tools are a convenience, not a requirement. Agents without them (e.g. ChatGPT's
+GitHub connector, or any agent limited to reading and writing repo files) are not blocked:
+do not wait for or request an MCP server; read and write the task files directly using the
+"Direct file access" section of `docs/agents/issue-tracker.md`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in the local Backlog.md board under `.backlog/`. Use the `backlog_*` MCP tools when available; otherwise read and write the task Markdown files directly. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary, applied as Backlog.md task labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain.md`.
