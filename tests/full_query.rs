@@ -122,8 +122,9 @@ fn protocol_driven_boolean_generation() {
 #[test]
 fn protocol_driven_timestamp_generation() {
     let literal = "2013-06-17T14:29:00Z";
+    let local_time = literal.trim_end_matches('Z');
     let generated = generate_classified_from_sql_with_assumptions(
-        &format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{literal}'"),
+        &format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{local_time}'"),
         "generic",
         &[schema("t", &[("created_at", "TIMESTAMP")])],
         GenerationRowCounts::matching_only(ROWS),
@@ -142,6 +143,21 @@ fn protocol_driven_timestamp_generation() {
 
     assert_eq!(values.len(), ROWS);
     assert!(values.iter().all(|value| value.timestamp() == expected));
+
+    let invalid_sql = format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{literal}'");
+    let error = generate_classified_from_sql_with_assumptions(
+        &invalid_sql,
+        "generic",
+        &[schema("t", &[("created_at", "TIMESTAMP")])],
+        GenerationRowCounts::matching_only(ROWS),
+        SEED,
+        &[ComparisonAssumption::SessionTimeZone],
+    )
+    .expect_err("timezone-free TIMESTAMP cannot accept a UTC offset");
+    assert!(
+        matches!(error, ProtocolGenerationError::ResidualConditions { .. }),
+        "{error:?}"
+    );
 }
 
 #[test]
