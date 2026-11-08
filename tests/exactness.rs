@@ -276,7 +276,7 @@ fn missing_schema_columns_and_lossy_literals_are_residual() {
 #[test]
 fn timezone_dependent_timestamp_filters_require_session_assumption() {
     let schemas = [schema("t", &[("tz", "TIMESTAMP WITH TIME ZONE")], "duckdb")];
-    let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00'";
+    let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMP '2024-01-01 00:00:00'";
     let error = generate_classified_from_sql_with_assumptions(
         sql,
         "duckdb",
@@ -304,4 +304,28 @@ fn timezone_dependent_timestamp_filters_require_session_assumption() {
         &[ComparisonAssumption::SessionTimeZone],
     )
     .expect("attested timezone semantics must permit generation");
+
+    // A timezone-qualified literal without an explicit UTC offset is
+    // underdetermined before source/session comparison. The session
+    // assumption cannot turn unsupported literal coercion into Exact.
+    let unsupported_sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00'";
+    let failure = generate_classified_from_sql_with_assumptions(
+        unsupported_sql,
+        "duckdb",
+        &schemas,
+        GenerationRowCounts::matching_only(4),
+        42,
+        &[ComparisonAssumption::SessionTimeZone],
+    )
+    .expect_err("session assumptions cannot certify an offset-free TIMESTAMPTZ literal");
+    let ProtocolGenerationError::ResidualConditions { conditions, .. } = failure else {
+        panic!("expected explicit unsupported expression boundary, got {failure:?}");
+    };
+    assert!(
+        conditions
+            .iter()
+            .any(|condition| condition.contains("reason=computed_expression")
+                && condition.contains("clause=where")),
+        "unsupported literal coercion must remain residual: {conditions:?}"
+    );
 }
