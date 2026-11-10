@@ -280,10 +280,7 @@ fn offset_free_timestamptz_literal_fails_closed_even_with_session_assumption() {
     // for a TIMESTAMPTZ literal with no offset. Supplying an assumption cannot
     // turn an unsupported typed expression into an exact output constraint.
     let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00'";
-    for assumptions in [
-        &[][..],
-        &[ComparisonAssumption::SessionTimeZone][..],
-    ] {
+    for assumptions in [&[][..], &[ComparisonAssumption::SessionTimeZone][..]] {
         let error = generate_classified_from_sql_with_assumptions(
             sql,
             "duckdb",
