@@ -137,8 +137,10 @@ fn offset_bearing_timestamp_without_zone_fails_closed() {
             panic!("unexpected generated outcome for unsupported temporal SQL: {error:?}");
         };
         assert!(
-            conditions.iter().any(|text| text.contains("reason=computed_expression")
-                && text.contains("clause=where")),
+            conditions
+                .iter()
+                .any(|text| text.contains("reason=computed_expression")
+                    && text.contains("clause=where")),
             "expected typed temporal residual: {conditions:?}"
         );
     }
