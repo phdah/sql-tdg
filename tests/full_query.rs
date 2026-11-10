@@ -5,7 +5,7 @@ use sql_semantic_protocol::{
 use sql_tdg::{
     DataType, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError, RelationSchema,
     SchemaColumn, generate_classified_from_sql, generate_classified_from_sql_with_assumptions,
-    generate_from_bundle, generate_from_sql, to_timestamp,
+    generate_from_bundle, generate_from_sql,
 };
 
 const ROWS: usize = 12;
@@ -123,10 +123,7 @@ fn protocol_driven_boolean_generation() {
 fn offset_bearing_timestamp_without_zone_fails_closed() {
     let literal = "2013-06-17T14:29:00Z";
     let sql = format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{literal}'");
-    for assumptions in [
-        &[][..],
-        &[ComparisonAssumption::SessionTimeZone][..],
-    ] {
+    for assumptions in [&[][..], &[ComparisonAssumption::SessionTimeZone][..]] {
         let error = generate_classified_from_sql_with_assumptions(
             &sql,
             "generic",
@@ -136,7 +133,7 @@ fn offset_bearing_timestamp_without_zone_fails_closed() {
             assumptions,
         )
         .expect_err("unsupported timezone conversion must not fabricate source rows");
-        let sql_tdg::ProtocolGenerationError::ResidualConditions { conditions, .. } = error else {
+        let ProtocolGenerationError::ResidualConditions { conditions, .. } = error else {
             panic!("unexpected generated outcome for unsupported temporal SQL: {error:?}");
         };
         assert!(
