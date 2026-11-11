@@ -274,34 +274,31 @@ fn missing_schema_columns_and_lossy_literals_are_residual() {
 }
 
 #[test]
-fn timezone_dependent_timestamp_filters_require_session_assumption() {
+fn offset_free_timestamptz_literal_fails_closed_even_with_session_assumption() {
     let schemas = [schema("t", &[("tz", "TIMESTAMP WITH TIME ZONE")], "duckdb")];
+    // No timezone offset or calendar/session rule is certified by the protocol
+    // for a TIMESTAMPTZ literal with no offset. Supplying an assumption cannot
+    // turn an unsupported typed expression into an exact output constraint.
     let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00'";
-    let error = generate_classified_from_sql_with_assumptions(
-        sql,
-        "duckdb",
-        &schemas,
-        GenerationRowCounts::matching_only(4),
-        42,
-        &[],
-    )
-    .expect_err("session timezone must be explicitly declared");
-    assert!(
-        matches!(
-            error,
-            ProtocolGenerationError::MissingComparisonAssumptions { .. }
-        ),
-        "{error:?}"
-    );
-    assert!(error.to_string().contains("session_time_zone"));
-
-    generate_classified_from_sql_with_assumptions(
-        sql,
-        "duckdb",
-        &schemas,
-        GenerationRowCounts::matching_only(4),
-        42,
-        &[ComparisonAssumption::SessionTimeZone],
-    )
-    .expect("attested timezone semantics must permit generation");
+    for assumptions in [&[][..], &[ComparisonAssumption::SessionTimeZone][..]] {
+        let error = generate_classified_from_sql_with_assumptions(
+            sql,
+            "duckdb",
+            &schemas,
+            GenerationRowCounts::matching_only(4),
+            42,
+            assumptions,
+        )
+        .expect_err("uncertified timestamp conversion must remain fail-closed");
+        let ProtocolGenerationError::ResidualConditions { conditions, .. } = error else {
+            panic!("unsupported timestamp must be a named residual, got {error:?}");
+        };
+        assert!(
+            conditions
+                .iter()
+                .any(|condition| condition.contains("reason=computed_expression")
+                    && condition.contains("clause=where")),
+            "expected explicit computed/uncertified temporal boundary, got {conditions:?}"
+        );
+    }
 }
