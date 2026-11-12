@@ -2898,28 +2898,38 @@ fn query_for_layer<'a>(
     })
 }
 
+fn record_predicate_source_column(
+    expression: &Expression,
+    columns: &mut BTreeSet<(Option<String>, String)>,
+) {
+    if let Expression::Column(column) = expression {
+        columns.insert((
+            column.relation().map(str::to_owned),
+            column.name().to_owned(),
+        ));
+    }
+}
+
 fn collect_predicate_source_columns(
     predicate: &Predicate,
     columns: &mut BTreeSet<(Option<String>, String)>,
 ) {
-    let mut record = |expression: &Expression| {
-        if let Expression::Column(column) = expression {
-            columns.insert((
-                column.relation().map(str::to_owned),
-                column.name().to_owned(),
-            ));
-        }
-    };
     match predicate {
         Predicate::Comparison(comparison) => {
-            record(comparison.left());
-            record(comparison.right());
+            record_predicate_source_column(comparison.left(), columns);
+            record_predicate_source_column(comparison.right(), columns);
         }
-        Predicate::IsNull(test) => record(test.expression()),
-        Predicate::Between(between) => record(between.expression()),
-        Predicate::In(test) => record(test.expression()),
-        Predicate::LikePrefix(prefix) => record(prefix.expression()),
-        Predicate::BooleanExpression(expression) => record(expression),
+        Predicate::IsNull(test) => record_predicate_source_column(test.expression(), columns),
+        Predicate::Between(between) => {
+            record_predicate_source_column(between.expression(), columns)
+        }
+        Predicate::In(test) => record_predicate_source_column(test.expression(), columns),
+        Predicate::LikePrefix(prefix) => {
+            record_predicate_source_column(prefix.expression(), columns)
+        }
+        Predicate::BooleanExpression(expression) => {
+            record_predicate_source_column(expression, columns)
+        },
         Predicate::And(logical) | Predicate::Or(logical) => {
             for operand in logical.operands() {
                 collect_predicate_source_columns(operand, columns);
