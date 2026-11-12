@@ -24,12 +24,6 @@ fn schema(relation: &str, columns: &[(&str, &str)], dialect: &str) -> RelationSc
 fn residual_conditions_fail_with_reason_clause_and_origin() {
     let cases = [
         (
-            "SELECT a, b FROM t WHERE a = 1 OR b = 2",
-            "cross_column_disjunction",
-            "where",
-            "generic",
-        ),
-        (
             "SELECT name FROM t WHERE name LIKE 'x%'",
             "computed_expression",
             "where",
@@ -104,6 +98,42 @@ fn residual_conditions_fail_with_reason_clause_and_origin() {
                     && item.contains("layer=")),
             "{sql}: {conditions:?}"
         );
+    }
+}
+
+#[test]
+fn exact_coupled_boolean_or_requires_a_generator_that_honors_same_row_truth() {
+    for (sql, relation, columns) in [
+        (
+            "SELECT a, b FROM t WHERE a = 1 OR b = 2",
+            "t",
+            vec![("a", "INTEGER"), ("b", "INTEGER")],
+        ),
+        (
+            "SELECT id FROM orders WHERE amount > 1 OR id > 0",
+            "orders",
+            vec![("id", "INTEGER"), ("amount", "INTEGER")],
+        ),
+    ] {
+        for row_counts in [
+            GenerationRowCounts::matching_only(5),
+            GenerationRowCounts::new(3, 2).expect("valid selected/rejected counts"),
+        ] {
+            let error = generate_classified_from_sql_with_assumptions(
+                sql,
+                "generic",
+                &[schema(relation, &columns, "generic")],
+                row_counts,
+                42,
+                &[],
+            )
+            .expect_err("whole-row correlated disjunction has no scalar-only generator proof");
+            let ProtocolGenerationError::UnsupportedSemantics { code, message, .. } = error else {
+                panic!("{sql}: expected an unsupported coupled row generator");
+            };
+            assert_eq!(code, "unhonored_coupled_disjunction", "{sql}");
+            assert!(message.contains("cross-column OR"), "{sql}: {message}");
+        }
     }
 }
 
