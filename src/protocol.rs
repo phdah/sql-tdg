@@ -2929,7 +2929,7 @@ fn collect_predicate_source_columns(
         }
         Predicate::BooleanExpression(expression) => {
             record_predicate_source_column(expression, columns)
-        },
+        }
         Predicate::And(logical) | Predicate::Or(logical) => {
             for operand in logical.operands() {
                 collect_predicate_source_columns(operand, columns);
