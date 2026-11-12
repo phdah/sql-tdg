@@ -819,7 +819,7 @@ pub fn generate_classified_from_bundle_at_boundary(
         })?;
 
     let semantics = resolved_layer_semantics(layer)?;
-    require_exact_conditions(layer.id(), semantics)?;
+    require_exact_conditions(bundle, layer.id(), semantics)?;
 
     if let Some(diagnostic) = semantics.diagnostics().first() {
         return Err(ProtocolGenerationError::UnsupportedSemantics {
@@ -951,6 +951,7 @@ fn stable_reason<T: fmt::Debug>(value: T) -> String {
 }
 
 fn require_exact_conditions(
+    bundle: &AnalysisBundle,
     layer_id: &str,
     semantics: &ResolvedComposedSemantics,
 ) -> Result<(), ProtocolGenerationError> {
@@ -999,6 +1000,20 @@ fn require_exact_conditions(
             layer_id: layer_id.to_owned(),
             conditions: missing,
         });
+    }
+
+    // Exact analyzer truth is not a guarantee that a scalar-only generator
+    // can honor a correlated Boolean row predicate. Check the canonical
+    // query tree before sampling, even when there are no join relationships.
+    let layer = bundle
+        .layers()
+        .iter()
+        .find(|layer| layer.id() == layer_id)
+        .ok_or_else(|| ProtocolGenerationError::MissingOutcomeLayer {
+            outcome: layer_id.to_owned(),
+        })?;
+    if let Some(query) = query_for_layer_if_query(bundle, layer)? {
+        reject_unsupported_relational_predicates(layer_id, query)?;
     }
     Ok(())
 }
@@ -1138,7 +1153,7 @@ fn generate_intermediate_boundary_data(
             }
         })?;
         let producer_semantics = resolved_layer_semantics(producer)?;
-        require_exact_conditions(producer.id(), producer_semantics)?;
+        require_exact_conditions(bundle, producer.id(), producer_semantics)?;
         if let Some(diagnostic) = producer_semantics.diagnostics().first() {
             return Err(ProtocolGenerationError::UnsupportedSemantics {
                 layer_id: producer.id().to_owned(),
@@ -2549,7 +2564,7 @@ fn prepare_outcome<'a>(
             outcome: description.to_owned(),
         })?;
     let semantics = resolved_layer_semantics(layer)?;
-    require_exact_conditions(layer.id(), semantics)?;
+    require_exact_conditions(bundle, layer.id(), semantics)?;
     if let Some(diagnostic) = semantics.diagnostics().first() {
         return Err(ProtocolGenerationError::UnsupportedSemantics {
             layer_id: layer.id().to_owned(),
@@ -2845,10 +2860,10 @@ fn collect_equality_relationships(
     Ok(relationships.into_iter().collect())
 }
 
-fn query_for_layer<'a>(
+fn query_for_layer_if_query<'a>(
     bundle: &'a AnalysisBundle,
     layer: &TransformationLayer,
-) -> Result<&'a QueryStatement, ProtocolGenerationError> {
+) -> Result<Option<&'a QueryStatement>, ProtocolGenerationError> {
     let input = bundle
         .inputs()
         .iter()
@@ -2866,11 +2881,52 @@ fn query_for_layer<'a>(
         })?;
 
     match statement {
-        ProtocolStatement::Query(query) => Ok(query),
-        _ => Err(ProtocolGenerationError::UnsupportedRelationship {
+        ProtocolStatement::Query(query) => Ok(Some(query)),
+        _ => Ok(None),
+    }
+}
+
+fn query_for_layer<'a>(
+    bundle: &'a AnalysisBundle,
+    layer: &TransformationLayer,
+) -> Result<&'a QueryStatement, ProtocolGenerationError> {
+    query_for_layer_if_query(bundle, layer)?.ok_or_else(|| {
+        ProtocolGenerationError::UnsupportedRelationship {
             layer_id: layer.id().to_owned(),
             message: "relationship layer does not contain query semantics".to_owned(),
-        }),
+        }
+    })
+}
+
+fn collect_predicate_source_columns(
+    predicate: &Predicate,
+    columns: &mut BTreeSet<(Option<String>, String)>,
+) {
+    let mut record = |expression: &Expression| {
+        if let Expression::Column(column) = expression {
+            columns.insert((
+                column.relation().map(str::to_owned),
+                column.name().to_owned(),
+            ));
+        }
+    };
+    match predicate {
+        Predicate::Comparison(comparison) => {
+            record(comparison.left());
+            record(comparison.right());
+        }
+        Predicate::IsNull(test) => record(test.expression()),
+        Predicate::Between(between) => record(between.expression()),
+        Predicate::In(test) => record(test.expression()),
+        Predicate::LikePrefix(prefix) => record(prefix.expression()),
+        Predicate::BooleanExpression(expression) => record(expression),
+        Predicate::And(logical) | Predicate::Or(logical) => {
+            for operand in logical.operands() {
+                collect_predicate_source_columns(operand, columns);
+            }
+        }
+        Predicate::Not(not) => collect_predicate_source_columns(not.operand(), columns),
+        _ => {}
     }
 }
 
@@ -2907,9 +2963,24 @@ fn reject_unsupported_relational_predicate(
             message: "IN/NOT IN subquery relationship semantics are not yet supported by relational witness generation"
                 .to_owned(),
         }),
-        Predicate::And(logical) | Predicate::Or(logical) => {
+        Predicate::And(logical) => {
             for operand in logical.operands() {
                 reject_unsupported_relational_predicate(layer_id, operand)?;
+            }
+            Ok(())
+        }
+        Predicate::Or(logical) => {
+            let mut columns = BTreeSet::new();
+            for operand in logical.operands() {
+                collect_predicate_source_columns(operand, &mut columns);
+                reject_unsupported_relational_predicate(layer_id, operand)?;
+            }
+            if columns.len() > 1 {
+                return Err(ProtocolGenerationError::UnsupportedSemantics {
+                    layer_id: layer_id.to_owned(),
+                    code: "unhonored_coupled_disjunction".to_owned(),
+                    message: "the generator cannot guarantee one row jointly satisfies a cross-column OR; a scalar domain per column is insufficient".to_owned(),
+                });
             }
             Ok(())
         }
