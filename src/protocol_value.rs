@@ -2379,7 +2379,7 @@ mod tests {
 
     #[test]
     fn non_nullable_join_keys_satisfy_null_exclusion_without_materializing_null() {
-        use sql_semantic_protocol::{analyze_sql, dialect_from_name, ProtocolStatement};
+        use sql_semantic_protocol::{ProtocolStatement, analyze_sql, dialect_from_name};
 
         let dialect = dialect_from_name("duckdb").expect("supported parser");
         let protocol = analyze_sql(
@@ -2395,11 +2395,7 @@ mod tests {
         assert_eq!(domain.admits_null(), Some(false));
         let data_type = DataType::SignedInteger { bits: Some(32) };
         assert_eq!(
-            super::value_satisfies_domain(
-                &data_type,
-                &ProtocolValue::Int32(1),
-                domain,
-            ),
+            super::value_satisfies_domain(&data_type, &ProtocolValue::Int32(1), domain,),
             Ok(true),
         );
     }
