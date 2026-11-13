@@ -2,8 +2,8 @@
 //! must not let a scalar-only generator advertise unproved terminal row bags.
 
 use sql_tdg::{
-    generate_classified_from_sql_with_assumptions, GenerationRowCounts, RelationSchema,
-    SchemaColumn,
+    GenerationRowCounts, RelationSchema, SchemaColumn,
+    generate_classified_from_sql_with_assumptions,
 };
 
 fn schema(name: &str) -> RelationSchema {
@@ -11,7 +11,9 @@ fn schema(name: &str) -> RelationSchema {
         name,
         ["id", "amount"]
             .into_iter()
-            .map(|col| SchemaColumn::from_sql_type(col, "INTEGER", "generic").expect("integer schema"))
+            .map(|col| {
+                SchemaColumn::from_sql_type(col, "INTEGER", "generic").expect("integer schema")
+            })
             .collect(),
     )
     .expect("source schema")
