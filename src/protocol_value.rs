@@ -232,6 +232,13 @@ pub(crate) fn value_satisfies_domain(
             let members = set
                 .values()
                 .iter()
+                // Excluding SQL NULL is already satisfied by a non-nullable
+                // datatype. Never try to materialize NULL as a typed integer.
+                .filter(|literal| {
+                    set.mode() != SetMode::Exclude
+                        || is_nullable(data_type)
+                        || !matches!(literal.value(), LiteralValue::Null)
+                })
                 .map(|literal| value_from_literal(data_type, literal))
                 .collect::<Result<Vec<_>, _>>()?;
             let contains = members.contains(value);
@@ -2369,6 +2376,29 @@ mod tests {
     use sql_semantic_protocol::{DataType, DataTypeField, parse_data_type};
 
     use super::{ProtocolValue, arrow_data_type, build_array, default_values};
+
+    #[test]
+    fn non_nullable_join_keys_satisfy_null_exclusion_without_materializing_null() {
+        use sql_semantic_protocol::{ProtocolStatement, analyze_sql, dialect_from_name};
+
+        let dialect = dialect_from_name("duckdb").expect("supported parser");
+        let protocol = analyze_sql(
+            "SELECT l.id FROM orders l INNER JOIN customers r ON l.id = r.id",
+            "duckdb",
+            dialect.as_ref(),
+        )
+        .expect("ordinary equality join");
+        let [ProtocolStatement::Query(query)] = protocol.statements() else {
+            panic!("expected join query");
+        };
+        let domain = query.output().columns()[0].domain();
+        assert_eq!(domain.admits_null(), Some(false));
+        let data_type = DataType::SignedInteger { bits: Some(32) };
+        assert_eq!(
+            super::value_satisfies_domain(&data_type, &ProtocolValue::Int32(1), domain,),
+            Ok(true),
+        );
+    }
 
     #[test]
     fn integer_boundaries_are_lossless() {
