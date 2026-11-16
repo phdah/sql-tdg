@@ -1,2 +1,4 @@
 dbt-core==1.12.5
 dbt-duckdb==1.11.0
+# Match Rust duckdb ~1.10506.0; Python DuckDB 2.0 writes unreadable storage v69.
+duckdb==1.5.6
