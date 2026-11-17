@@ -24,12 +24,6 @@ fn schema(relation: &str, columns: &[(&str, &str)], dialect: &str) -> RelationSc
 fn residual_conditions_fail_with_reason_clause_and_origin() {
     let cases = [
         (
-            "SELECT a, b FROM t WHERE a = 1 OR b = 2",
-            "cross_column_disjunction",
-            "where",
-            "generic",
-        ),
-        (
             "SELECT name FROM t WHERE name LIKE 'x%'",
             "computed_expression",
             "where",
@@ -104,6 +98,42 @@ fn residual_conditions_fail_with_reason_clause_and_origin() {
                     && item.contains("layer=")),
             "{sql}: {conditions:?}"
         );
+    }
+}
+
+#[test]
+fn exact_coupled_boolean_or_requires_a_generator_that_honors_same_row_truth() {
+    for (sql, relation, columns) in [
+        (
+            "SELECT a, b FROM t WHERE a = 1 OR b = 2",
+            "t",
+            vec![("a", "INTEGER"), ("b", "INTEGER")],
+        ),
+        (
+            "SELECT id FROM orders WHERE amount > 1 OR id > 0",
+            "orders",
+            vec![("id", "INTEGER"), ("amount", "INTEGER")],
+        ),
+    ] {
+        for row_counts in [
+            GenerationRowCounts::matching_only(5),
+            GenerationRowCounts::new(3, 2).expect("valid selected/rejected counts"),
+        ] {
+            let error = generate_classified_from_sql_with_assumptions(
+                sql,
+                "generic",
+                &[schema(relation, &columns, "generic")],
+                row_counts,
+                42,
+                &[],
+            )
+            .expect_err("whole-row correlated disjunction has no scalar-only generator proof");
+            let ProtocolGenerationError::UnsupportedSemantics { code, message, .. } = error else {
+                panic!("{sql}: expected an unsupported coupled row generator");
+            };
+            assert_eq!(code, "unhonored_coupled_disjunction", "{sql}");
+            assert!(message.contains("cross-column OR"), "{sql}: {message}");
+        }
     }
 }
 
@@ -274,34 +304,31 @@ fn missing_schema_columns_and_lossy_literals_are_residual() {
 }
 
 #[test]
-fn timezone_dependent_timestamp_filters_require_session_assumption() {
+fn offset_free_timestamptz_literal_fails_closed_even_with_session_assumption() {
     let schemas = [schema("t", &[("tz", "TIMESTAMP WITH TIME ZONE")], "duckdb")];
+    // No timezone offset or calendar/session rule is certified by the protocol
+    // for a TIMESTAMPTZ literal with no offset. Supplying an assumption cannot
+    // turn an unsupported typed expression into an exact output constraint.
     let sql = "SELECT tz FROM t WHERE tz >= TIMESTAMPTZ '2024-01-01 00:00:00'";
-    let error = generate_classified_from_sql_with_assumptions(
-        sql,
-        "duckdb",
-        &schemas,
-        GenerationRowCounts::matching_only(4),
-        42,
-        &[],
-    )
-    .expect_err("session timezone must be explicitly declared");
-    assert!(
-        matches!(
-            error,
-            ProtocolGenerationError::MissingComparisonAssumptions { .. }
-        ),
-        "{error:?}"
-    );
-    assert!(error.to_string().contains("session_time_zone"));
-
-    generate_classified_from_sql_with_assumptions(
-        sql,
-        "duckdb",
-        &schemas,
-        GenerationRowCounts::matching_only(4),
-        42,
-        &[ComparisonAssumption::SessionTimeZone],
-    )
-    .expect("attested timezone semantics must permit generation");
+    for assumptions in [&[][..], &[ComparisonAssumption::SessionTimeZone][..]] {
+        let error = generate_classified_from_sql_with_assumptions(
+            sql,
+            "duckdb",
+            &schemas,
+            GenerationRowCounts::matching_only(4),
+            42,
+            assumptions,
+        )
+        .expect_err("uncertified timestamp conversion must remain fail-closed");
+        let ProtocolGenerationError::ResidualConditions { conditions, .. } = error else {
+            panic!("unsupported timestamp must be a named residual, got {error:?}");
+        };
+        assert!(
+            conditions
+                .iter()
+                .any(|condition| condition.contains("reason=computed_expression")
+                    && condition.contains("clause=where")),
+            "expected explicit computed/uncertified temporal boundary, got {conditions:?}"
+        );
+    }
 }
