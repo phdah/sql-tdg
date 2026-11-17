@@ -20,7 +20,7 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 parquet = { version = "60", default-features = false, features = ["arrow"] }
 rand_chacha = "0.10"
 rand_core = "0.10"
-sql-semantic-protocol = { version = "2.0.3", git = "https://github.com/phdah/sql-semantic-protocol", rev = "444b4a20910a0d145a46d284e4632d1dfa2e2ecc", default-features = false }
+sql-semantic-protocol = { version = "2.0.3", git = "https://github.com/phdah/sql-semantic-protocol", rev = "2b82ec075e6db82c9cd72ecba678f84a63a68ab6", default-features = false }
 
 [dev-dependencies]
 duckdb = "~1.10506.0"
