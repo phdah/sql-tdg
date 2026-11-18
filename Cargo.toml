@@ -21,7 +21,7 @@ parquet = { version = "60", default-features = false, features = ["arrow"] }
 rand_chacha = "0.10"
 rand_core = "0.10"
 # CI-only TASK-191 consumer gate; update the pin after final protocol review head.
-sql-semantic-protocol = { version = "2.0.3", git = "https://github.com/phdah/sql-semantic-protocol", rev = "44f8f497af57e3f26e82ec5e6c2002111730f24b", default-features = false }
+sql-semantic-protocol = { version = "2.0.3", git = "https://github.com/phdah/sql-semantic-protocol", rev = "8707db08a90ac6fa79cdc72732c90fb3851a65d1", default-features = false }
 
 [dev-dependencies]
 duckdb = "~1.10506.0"
