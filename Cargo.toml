@@ -20,8 +20,8 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 parquet = { version = "60", default-features = false, features = ["arrow"] }
 rand_chacha = "0.10"
 rand_core = "0.10"
-# CI-only PR #56 verifies the exact reviewed TASK-179 protocol head.
-sql-semantic-protocol = { version = "2.0.3", git = "https://github.com/phdah/sql-semantic-protocol", rev = "ad2ab3b0c71916948cd88d14ac64333a028f590d", default-features = false }
+# CI-only TASK-191 consumer gate; update the pin after final protocol review head.
+sql-semantic-protocol = { version = "2.0.3", git = "https://github.com/phdah/sql-semantic-protocol", rev = "44f8f497af57e3f26e82ec5e6c2002111730f24b", default-features = false }
 
 [dev-dependencies]
 duckdb = "~1.10506.0"
