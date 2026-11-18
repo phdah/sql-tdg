@@ -5,7 +5,7 @@ use sql_semantic_protocol::{
 use sql_tdg::{
     DataType, GenerationRowCounts, OutcomeSelector, ProtocolGenerationError, RelationSchema,
     SchemaColumn, generate_classified_from_sql, generate_classified_from_sql_with_assumptions,
-    generate_from_bundle, generate_from_sql, to_timestamp,
+    generate_from_bundle, generate_from_sql,
 };
 
 const ROWS: usize = 12;
@@ -120,28 +120,30 @@ fn protocol_driven_boolean_generation() {
 }
 
 #[test]
-fn protocol_driven_timestamp_generation() {
+fn offset_bearing_timestamp_without_zone_fails_closed() {
     let literal = "2013-06-17T14:29:00Z";
-    let generated = generate_classified_from_sql_with_assumptions(
-        &format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{literal}'"),
-        "generic",
-        &[schema("t", &[("created_at", "TIMESTAMP")])],
-        GenerationRowCounts::matching_only(ROWS),
-        SEED,
-        &[ComparisonAssumption::SessionTimeZone],
-    )
-    .expect("protocol-driven generation should succeed");
-
-    let expected = i64::from(to_timestamp(literal).expect("test timestamp should be valid"));
-    let values = generated
-        .table("t")
-        .expect("source table should exist")
-        .get_timestamps("created_at")
-        .expect("timestamp column should be readable")
-        .expect("timestamp column should be built");
-
-    assert_eq!(values.len(), ROWS);
-    assert!(values.iter().all(|value| value.timestamp() == expected));
+    let sql = format!("SELECT created_at FROM t WHERE created_at = TIMESTAMP '{literal}'");
+    for assumptions in [&[][..], &[ComparisonAssumption::SessionTimeZone][..]] {
+        let error = generate_classified_from_sql_with_assumptions(
+            &sql,
+            "generic",
+            &[schema("t", &[("created_at", "TIMESTAMP")])],
+            GenerationRowCounts::matching_only(ROWS),
+            SEED,
+            assumptions,
+        )
+        .expect_err("unsupported timezone conversion must not fabricate source rows");
+        let ProtocolGenerationError::ResidualConditions { conditions, .. } = error else {
+            panic!("unexpected generated outcome for unsupported temporal SQL: {error:?}");
+        };
+        assert!(
+            conditions
+                .iter()
+                .any(|text| text.contains("reason=computed_expression")
+                    && text.contains("clause=where")),
+            "expected typed temporal residual: {conditions:?}"
+        );
+    }
 }
 
 #[test]
